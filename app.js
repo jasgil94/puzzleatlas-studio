@@ -274,6 +274,7 @@ var STYLE_PACKS = {
   }
 };
 var DEFAULT_STYLE_PACK_ID = "studio-default";
+var BUILTIN_STYLE_PACK_IDS = Object.keys(STYLE_PACKS); // captured before any custom/imported packs are merged in
 var _injectedFontUrls = {};
 
 function getStylePack(id) { return clone(STYLE_PACKS[id] || STYLE_PACKS[DEFAULT_STYLE_PACK_ID]); }
@@ -287,9 +288,10 @@ function applyStylePack(pack) {
   pack = pack && styleFieldsPresent(pack) ? pack : getStylePack(DEFAULT_STYLE_PACK_ID);
   var t = pack.typography, pal = pack.palette, sh = pack.shape || {}, img = pack.imagery || {};
   var fam = pal.families || {};
-  // Applied to both the full-screen Preview overlay and the docked
-  // Player mockup's phone screen, so both always mirror the same pack.
-  ["previewOverlay", "phoneScreen"].forEach(function (targetId) {
+  // Applied to the full-screen Preview overlay, the docked Player mockup's
+  // phone screen, and the Style Builder's own live-preview phone screen —
+  // whichever of these exist in the DOM at the time all mirror the pack.
+  ["previewOverlay", "phoneScreen", "styleBuilderPreview"].forEach(function (targetId) {
     var target = document.getElementById(targetId);
     if (!target) return;
     var s = target.style;
@@ -345,6 +347,60 @@ function importStylePackFile(file) {
     }
   };
   reader.readAsText(file);
+}
+
+/* ---------------------------------------------------------------------
+   Style Library (custom style packs) — localStorage-backed, separate
+   from both the built-in STYLE_PACKS and the Hunt Library. A creator
+   crafts/saves styles here (via the Style Builder screen), and any
+   saved style then shows up in a hunt's Style Pack picker alongside the
+   built-ins. Saved custom packs are also merged into the in-memory
+   STYLE_PACKS registry so existing lookup/apply code (getStylePack,
+   applyStylePack, the Hunt Setup picker) needs no special-casing.
+--------------------------------------------------------------------- */
+var CUSTOM_STYLE_KEY = "puzzleatlas_studio_custom_styles_v1";
+
+function loadCustomStylePacksRaw() {
+  var raw = localStorage.getItem(CUSTOM_STYLE_KEY);
+  if (!raw) return [];
+  try { return JSON.parse(raw).packs || []; } catch (e) { return []; }
+}
+function persistCustomStylePacks(list) {
+  localStorage.setItem(CUSTOM_STYLE_KEY, JSON.stringify({ packs: list }));
+}
+function getCustomStylePacks() {
+  return loadCustomStylePacksRaw().slice().sort(function (a, b) {
+    return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+  });
+}
+function getCustomStylePackById(id) {
+  return loadCustomStylePacksRaw().find(function (p) { return p.id === id; });
+}
+function isCustomStylePackId(id) { return BUILTIN_STYLE_PACK_IDS.indexOf(id) === -1; }
+
+function upsertCustomStylePack(pack) {
+  pack.updatedAt = new Date().toISOString();
+  var list = loadCustomStylePacksRaw();
+  var idx = list.findIndex(function (p) { return p.id === pack.id; });
+  var copy = clone(pack);
+  if (idx === -1) list.push(copy); else list[idx] = copy;
+  persistCustomStylePacks(list);
+  STYLE_PACKS[pack.id] = clone(pack); // keep in-memory registry (picker, getStylePack) in sync
+}
+function deleteCustomStylePack(id) {
+  persistCustomStylePacks(loadCustomStylePacksRaw().filter(function (p) { return p.id !== id; }));
+  delete STYLE_PACKS[id];
+}
+function loadCustomStylePacksIntoRegistry() {
+  getCustomStylePacks().forEach(function (p) { STYLE_PACKS[p.id] = clone(p); });
+}
+function newBlankStylePack() {
+  var base = clone(STYLE_PACKS[DEFAULT_STYLE_PACK_ID]);
+  base.id = uid("style");
+  base.name = "New Style";
+  base.description = "";
+  base.vibe = { tags: [], toneNotes: "" };
+  return base;
 }
 
 function familyOf(nodeType) { return (NODE_TYPES[nodeType] || {}).family || "stub"; }
@@ -1678,22 +1734,39 @@ function importHuntFileToLibrary(file) {
 }
 
 /* ---------------------------------------------------------------------
-   Screens: Library (list of current Hunt projects) <-> Studio (canvas)
+   Screens: Library (Hunt Library / Style Library tabs) <-> Studio (canvas)
+   <-> Style Builder (craft a style pack)
 --------------------------------------------------------------------- */
-function showLibraryScreen() {
+var LibraryActiveTab = "hunt";
+function showLibraryScreen(tab) {
   dom.studioScreen.classList.add("hidden");
+  dom.styleBuilderScreen.classList.add("hidden");
   dom.libraryScreen.classList.remove("hidden");
-  renderLibrary();
+  setLibraryTab(tab || LibraryActiveTab);
+}
+function setLibraryTab(tab) {
+  LibraryActiveTab = tab;
+  document.getElementById("tabHuntLibrary").classList.toggle("active", tab === "hunt");
+  document.getElementById("tabStyleLibrary").classList.toggle("active", tab === "style");
+  document.getElementById("huntLibrarySection").classList.toggle("hidden", tab !== "hunt");
+  document.getElementById("styleLibrarySection").classList.toggle("hidden", tab !== "style");
+  document.getElementById("libraryActionsHunt").classList.toggle("hidden", tab !== "hunt");
+  document.getElementById("libraryActionsStyle").classList.toggle("hidden", tab !== "style");
+  if (tab === "style") renderStyleLibrary(); else renderLibrary();
 }
 function showStudioScreen() {
   dom.libraryScreen.classList.add("hidden");
+  dom.styleBuilderScreen.classList.add("hidden");
   dom.studioScreen.classList.remove("hidden");
   render();
 }
 function goToLibrary() {
   // Auto-save the open project so the library always reflects current state.
   if (Store.hunt && Store.hunt.id) saveCurrentHuntToLibrary(true);
-  showLibraryScreen();
+  showLibraryScreen("hunt");
+}
+function goToStyleLibrary() {
+  showLibraryScreen("style");
 }
 function openHuntById(id) {
   var hunt = getHuntFromLibrary(id);
@@ -2066,30 +2139,25 @@ function previewRestart() { Preview.restart(); }
 
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending"];
 
-// Renders whatever node was pinned via ctl.showNode() (canvas selection),
-// regardless of whether it's currently reachable in the live playthrough.
-// This is a creator "peek" — a status badge shows locked/open/completed,
-// and interacting with it (where possible) plays it for real and hands
-// control back to the normal auto-following flow.
+// Renders whatever node was pinned via ctl.showNode() (canvas selection).
+// This shows the node exactly as the player screen would — no creator
+// chrome overlaid — and hands control back to the normal auto-following
+// flow as soon as the player actually interacts with something.
 function renderPinnedNode(session, n, ctl) {
   var state = session.state;
-  var statusTag = state.completed[n.id] ? '<span class="pv-pin-tag ok">✓ completed</span>'
-    : state.available[n.id] ? '<span class="pv-pin-tag open">● open</span>'
-    : '<span class="pv-pin-tag locked">🔒 locked</span>';
-  var banner = '<div class="pv-pin-banner">📍 Canvas selection — <b>' + esc(n.title) + '</b> ' + statusTag + '</div>';
 
   if (n.type === "ending") {
-    ctl.mainEl.innerHTML = banner + '<div class="pv-ending"><h2>🏁 ' + esc(n.content.resultName) + '</h2><p class="pv-scene-body">' + esc(n.content.body) + '</p></div>';
+    ctl.mainEl.innerHTML = '<div class="pv-ending"><h2>🏁 ' + esc(n.content.resultName) + '</h2><p class="pv-scene-body">' + esc(n.content.body) + '</p></div>';
     ctl._activeIds = { expandedId: n.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
     return;
   }
   if (PLAYER_SCREEN_TYPES.indexOf(n.type) === -1) {
-    ctl.mainEl.innerHTML = banner + '<div class="pv-empty" style="padding-top:16px">' + NODE_TYPES[n.type].icon + " " + esc(NODE_TYPES[n.type].label) +
+    ctl.mainEl.innerHTML = '<div class="pv-empty" style="padding-top:16px">' + NODE_TYPES[n.type].icon + " " + esc(NODE_TYPES[n.type].label) +
       ' nodes run automatically and have no standalone player screen.' + (n.type === "hint" ? " Hints appear attached to their puzzle node instead." : "") + '</div>';
     ctl._activeIds = { expandedId: n.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
     return;
   }
-  ctl.mainEl.innerHTML = banner + renderPreviewNode(session, n, ctl);
+  ctl.mainEl.innerHTML = renderPreviewNode(session, n, ctl);
   // Already-completed nodes are shown read-only — wiring their controls
   // again would let a resubmit silently double up effects like score.
   if (!state.completed[n.id]) wirePreviewNodeInteractions(session, n, ctl);

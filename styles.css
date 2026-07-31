@@ -20,7 +20,7 @@
 *{box-sizing:border-box;}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);overflow:hidden;font-size:14px;}
 #app{display:flex;flex-direction:column;height:100vh;}
-#libraryScreen,#studioScreen{flex:1;display:flex;flex-direction:column;min-height:0;}
+#libraryScreen,#studioScreen,#styleBuilderScreen{flex:1;display:flex;flex-direction:column;min-height:0;}
 button{font-family:inherit;cursor:pointer;}
 .btn{background:var(--bg3);border:1px solid var(--line);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12.5px;}
 .btn:hover{background:#3a4050;}
@@ -46,6 +46,10 @@ button{font-family:inherit;cursor:pointer;}
 /* library screen */
 #libraryTopbar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--line);flex-shrink:0;}
 .library-actions{display:flex;align-items:center;gap:6px;}
+.library-tabs{display:flex;gap:2px;padding:0 40px;background:var(--bg2);border-bottom:1px solid var(--line);flex-shrink:0;}
+.library-tab{background:none;border:none;color:var(--text-dim);padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.library-tab:hover{color:var(--text);}
+.library-tab.active{color:var(--text);border-bottom-color:var(--accent);}
 #libraryBody{flex:1;overflow-y:auto;padding:32px 40px 60px;}
 .library-heading{max-width:1100px;margin:0 auto 22px;}
 .library-title{font-size:21px;font-weight:700;}
@@ -60,6 +64,11 @@ button{font-family:inherit;cursor:pointer;}
 .library-empty{max-width:1100px;margin:0 auto;color:var(--text-dim);font-size:13px;padding:6px 0 28px;}
 .library-templates{max-width:1100px;margin:24px auto 0;border-top:1px solid var(--line);padding-top:18px;}
 .library-template-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+
+/* style library cards */
+.style-card-swatch{height:44px;border-radius:6px;border:1px solid var(--line);display:flex;align-items:flex-end;gap:5px;padding:6px;margin-bottom:6px;}
+.style-card-swatch span{width:14px;height:14px;border-radius:50%;border:1px solid rgba(0,0,0,.25);display:inline-block;}
+.tag-builtin{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--bg3);border:1px solid var(--line);border-radius:8px;padding:1px 6px;margin-left:6px;vertical-align:1px;}
 
 /* main layout */
 #main{flex:1;display:flex;min-height:0;}
@@ -147,6 +156,18 @@ button{font-family:inherit;cursor:pointer;}
 .hint-badge{font-size:9px;background:var(--support);color:#08303a;padding:1px 6px;border-radius:8px;font-weight:700;}
 .chip{display:inline-block;font-size:10.5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin:2px 4px 2px 0;color:var(--text-dim);}
 
+/* Style Builder screen */
+#styleBuilderTopbar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--line);flex-shrink:0;}
+#styleBuilderMain{flex:1;display:flex;min-height:0;}
+#styleBuilderForm{flex:1;overflow-y:auto;padding:16px 20px;max-width:620px;}
+#styleBuilderPreviewWrap{width:300px;background:var(--bg2);border-left:1px solid var(--line);padding:14px;overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column;align-items:center;}
+.color-field-row{display:flex;gap:6px;align-items:center;}
+.color-field-row input[type=color]{width:34px;height:30px;padding:2px;border:1px solid var(--line);border-radius:5px;background:var(--bg3);cursor:pointer;flex-shrink:0;}
+.color-field-row input[type=text]{flex:1;}
+.style-fields-2col{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;}
+.style-builder-desc{font-size:11.5px;color:var(--text-dim);margin:-4px 0 14px;line-height:1.5;}
+.motion-check{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);margin-top:4px;}
+
 /* Player mockup panel — always-visible mobile mirror of the Player app,
    docked to the right of the Inspector. Screen content reuses the same
    .pv-* classes (and --pv-* style-pack variables) as the Preview overlay. */
@@ -198,10 +219,5 @@ button{font-family:inherit;cursor:pointer;}
 .pv-side-title:first-child{margin-top:0;}
 .pv-empty{color:var(--pv-text-dim);text-align:center;padding-top:60px;}
 .pv-image{border-radius:var(--pv-radius);filter:var(--pv-image-filter);max-width:100%;display:block;}
-.pv-pin-banner{font-size:11px;color:var(--pv-text-dim);background:var(--pv-surface);border:1px solid var(--pv-accent2);border-radius:var(--pv-radius);padding:6px 9px;margin-bottom:14px;}
-.pv-pin-tag{display:inline-block;font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:2px;}
-.pv-pin-tag.ok{background:var(--pv-ok);color:#08303a;}
-.pv-pin-tag.open{background:var(--pv-accent);color:#fff;}
-.pv-pin-tag.locked{background:var(--pv-warn);color:#3a2a05;}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}

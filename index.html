@@ -10,31 +10,49 @@
 
 <div id="app">
 
-  <!-- Library screen: the list of current Hunt projects, shown before the design canvas -->
+  <!-- Library screen: Hunt Library and Style Library, shown before the design canvas -->
   <div id="libraryScreen">
     <header id="libraryTopbar">
       <span class="logo">PuzzleAtlas <b>Studio</b></span>
-      <div class="library-actions">
+      <div class="library-actions" id="libraryActionsHunt">
         <button id="btnLibImport" class="btn">⬆ Import JSON</button>
         <input type="file" id="fileLibImport" accept="application/json" style="display:none" />
         <button id="btnNewHunt" class="btn primary-btn">＋ New Hunt</button>
       </div>
+      <div class="library-actions hidden" id="libraryActionsStyle">
+        <button id="btnLibImportStyle" class="btn">⬆ Import Style Pack</button>
+        <input type="file" id="fileLibImportStyle" accept="application/json" style="display:none" />
+        <button id="btnNewStyle" class="btn primary-btn">＋ New Style</button>
+      </div>
     </header>
+    <nav class="library-tabs">
+      <button id="tabHuntLibrary" class="library-tab active">📚 Hunt Library</button>
+      <button id="tabStyleLibrary" class="library-tab">🎨 Style Library</button>
+    </nav>
     <div id="libraryBody">
-      <div class="library-heading">
-        <div class="library-title">Your Hunt Projects</div>
-        <div class="library-sub">Open an existing project below, or start a new one.</div>
-      </div>
-      <div id="libraryGrid" class="library-grid"></div>
-      <div id="libraryEmpty" class="library-empty hidden">
-        No hunts yet — create a new one, or start from a template below.
-      </div>
-      <div class="library-templates">
-        <div class="palette-title">Start from a template</div>
-        <div class="library-template-row">
-          <button id="btnDemoFromLibrary" class="btn">✨ "The Printer's Last Edition" (demo hunt)</button>
-          <button id="btnBrokenFromLibrary" class="btn">🧪 Broken test hunt (validation demo)</button>
+      <div id="huntLibrarySection">
+        <div class="library-heading">
+          <div class="library-title">Your Hunt Projects</div>
+          <div class="library-sub">Open an existing project below, or start a new one.</div>
         </div>
+        <div id="libraryGrid" class="library-grid"></div>
+        <div id="libraryEmpty" class="library-empty hidden">
+          No hunts yet — create a new one, or start from a template below.
+        </div>
+        <div class="library-templates">
+          <div class="palette-title">Start from a template</div>
+          <div class="library-template-row">
+            <button id="btnDemoFromLibrary" class="btn">✨ "The Printer's Last Edition" (demo hunt)</button>
+            <button id="btnBrokenFromLibrary" class="btn">🧪 Broken test hunt (validation demo)</button>
+          </div>
+        </div>
+      </div>
+      <div id="styleLibrarySection" class="hidden">
+        <div class="library-heading">
+          <div class="library-title">Style Packs</div>
+          <div class="library-sub">Craft the fonts, colours, shape and vibe your hunts play in. Save a style here, then apply it to any hunt from its Hunt Setup panel.</div>
+        </div>
+        <div id="styleLibraryGrid" class="library-grid"></div>
       </div>
     </div>
   </div>
@@ -154,6 +172,43 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Style Builder screen: craft/edit a style pack, separate from the Hunt canvas -->
+  <div id="styleBuilderScreen" class="hidden">
+    <header id="styleBuilderTopbar">
+      <div class="topbar-left">
+        <button id="btnStyleBack" class="btn" title="Back to Style Library">🎨 Style Library</button>
+        <span class="logo">PuzzleAtlas <b>Studio</b></span>
+        <input id="styleNameInput" class="hunt-title-input" value="New Style" spellcheck="false" />
+      </div>
+      <div class="topbar-actions">
+        <button id="btnStyleSave" class="btn primary-btn">💾 Save</button>
+        <button id="btnStyleDuplicate" class="btn">⧉ Duplicate</button>
+        <span class="sep"></span>
+        <button id="btnStyleExport" class="btn">⬇ Export JSON</button>
+        <span class="sep"></span>
+        <button id="btnStyleDelete" class="btn warn-btn hidden">🗑 Delete</button>
+      </div>
+    </header>
+    <div id="styleBuilderMain">
+      <aside id="styleBuilderForm"></aside>
+      <main id="styleBuilderPreviewWrap">
+        <div class="mock-panel-header">
+          <span class="mock-panel-title">📱 Live preview</span>
+        </div>
+        <div class="phone-shell">
+          <div class="phone-notch"></div>
+          <div class="phone-screen" id="styleBuilderPreview">
+            <div class="phone-scroll">
+              <div class="phone-main" id="styleBuilderPreviewMain"></div>
+            </div>
+          </div>
+          <div class="phone-home"></div>
+        </div>
+        <p class="mock-panel-hint">Sample player-facing content, restyled live as you edit — this is what a hunt using this style will look like in Preview / Play.</p>
+      </main>
+    </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
