@@ -1,0 +1,296 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "hunt_printers_last_edition",
+  "title": "The Printer's Last Edition",
+  "metadata": {
+    "concept": "A suppressed newspaper was printed the night before a decisive political event. The player must reconstruct its final edition before a rival collector destroys the surviving evidence.",
+    "audience": "Armchair / at-home, 20-30 minute compact reference hunt",
+    "createdAt": "2026-07-30T00:00:00.000Z",
+    "updatedAt": "2026-07-30T00:00:00.000Z"
+  },
+  "entryPointIds": [
+    "n_prologue"
+  ],
+  "variables": [
+    {
+      "id": "var_trust",
+      "name": "trust",
+      "type": "number",
+      "initial": 0
+    }
+  ],
+  "items": [
+    {
+      "id": "item_altered_proof",
+      "name": "Altered Proof Fragment",
+      "description": "A torn proof sheet showing a deliberately changed headline."
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_prologue",
+      "type": "scene",
+      "family": "narrative",
+      "title": "Prologue — The Suppressed Edition",
+      "position": {
+        "x": 40,
+        "y": 220
+      },
+      "content": {
+        "body": "A newspaper archive has hired you to reconstruct a suppressed final edition, printed the night before a decisive political event. Three leads survive: the printer's type-case, the courier's delivery route, and a witness's account of that night. A rival collector is racing to destroy what's left — you don't need all three leads, but you'll need at least two."
+      },
+      "creatorNotes": "Entry point. Fans out to three parallel, non-exclusive leads so players can tackle them in any order.",
+      "effects": []
+    },
+    {
+      "id": "n_printer",
+      "type": "answerEntry",
+      "family": "puzzle",
+      "title": "The Printer's Type-Case",
+      "position": {
+        "x": 360,
+        "y": 40
+      },
+      "content": {
+        "prompt": "Two surviving proofs show the same headline, but one word was reset in a different typeface — a printer's tell for a late, unauthorized change. Compare the proofs (in the archive materials) and name the altered word.",
+        "acceptedAnswers": [
+          "TREASON",
+          "TREASONOUS"
+        ],
+        "caseSensitive": false
+      },
+      "creatorNotes": "Solution: the word 'treason' was substituted at the last minute to justify a raid that never happened. Accept both the noun and adjective form.",
+      "effects": [
+        {
+          "type": "awardItem",
+          "itemId": "item_altered_proof"
+        }
+      ]
+    },
+    {
+      "id": "n_courier",
+      "type": "answerEntry",
+      "family": "puzzle",
+      "title": "The Courier's Route",
+      "position": {
+        "x": 360,
+        "y": 220
+      },
+      "content": {
+        "prompt": "Cross-reference the delivery boy's route sheet against the district map to find the one stop he logged that doesn't exist on any map from that year. Name the street.",
+        "acceptedAnswers": [
+          "MOLASSES LANE",
+          "MOLASSES"
+        ],
+        "caseSensitive": false
+      },
+      "creatorNotes": "Molasses Lane was a private lane later absorbed into a rail yard — finding it proves the courier met someone off the record. Completing this branch is what later tips the ending toward 'Deception Preserved'.",
+      "effects": []
+    },
+    {
+      "id": "n_witness",
+      "type": "ordering",
+      "family": "puzzle",
+      "title": "The Witness's Timeline",
+      "position": {
+        "x": 360,
+        "y": 400
+      },
+      "content": {
+        "prompt": "A witness described four events out of order. Put them back into the true chronological sequence.",
+        "items": [
+          {
+            "id": "wi_1",
+            "label": "Lights seen in the print-room after midnight"
+          },
+          {
+            "id": "wi_2",
+            "label": "A coded knock at the back door"
+          },
+          {
+            "id": "wi_3",
+            "label": "The press runs one final time"
+          },
+          {
+            "id": "wi_4",
+            "label": "A single carriage leaves before dawn"
+          }
+        ],
+        "correctOrder": [
+          "wi_1",
+          "wi_2",
+          "wi_3",
+          "wi_4"
+        ]
+      },
+      "creatorNotes": "Order establishes that the press ran AFTER the secret visitor arrived, not before — key to the final reveal.",
+      "effects": [
+        {
+          "type": "setVariable",
+          "variableId": "var_trust",
+          "operation": "increment",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "id": "n_convergence",
+      "type": "convergence",
+      "family": "control",
+      "title": "Reconstruct the Front Page",
+      "position": {
+        "x": 700,
+        "y": 220
+      },
+      "content": {
+        "requiredMode": "any",
+        "requiredCount": 2
+      },
+      "creatorNotes": "Any two of the three leads are enough to reconstruct the page — deliberately non-linear so players don't need to exhaust every branch.",
+      "effects": [
+        {
+          "type": "addScore",
+          "delta": 10
+        }
+      ]
+    },
+    {
+      "id": "n_branch",
+      "type": "branch",
+      "family": "control",
+      "title": "Weigh the Evidence",
+      "position": {
+        "x": 980,
+        "y": 220
+      },
+      "content": {},
+      "creatorNotes": "Auto-routes based on whether the player uncovered the courier's off-record meeting. Connections are evaluated in priority order below.",
+      "effects": []
+    },
+    {
+      "id": "n_ending_deception",
+      "type": "ending",
+      "family": "control",
+      "title": "Ending — Deception Preserved",
+      "position": {
+        "x": 1260,
+        "y": 100
+      },
+      "content": {
+        "resultName": "Deception Preserved",
+        "body": "You realize the 'treasonous' edition was deliberate misinformation, designed to protect a clandestine evacuation the courier's meeting reveals. You choose to let the deception stand."
+      },
+      "creatorNotes": "Reached when the courier branch was solved.",
+      "effects": []
+    },
+    {
+      "id": "n_ending_truth",
+      "type": "ending",
+      "family": "control",
+      "title": "Ending — Truth Printed",
+      "position": {
+        "x": 1260,
+        "y": 340
+      },
+      "content": {
+        "resultName": "Truth Printed",
+        "body": "Without the courier's off-record evidence, you publish the reconstructed front page as historical record — the truth, without knowing what it once protected."
+      },
+      "creatorNotes": "Default/fallback ending when the courier branch was not solved.",
+      "effects": []
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_1",
+      "sourceId": "n_prologue",
+      "targetId": "n_printer",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "c_2",
+      "sourceId": "n_prologue",
+      "targetId": "n_courier",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "c_3",
+      "sourceId": "n_prologue",
+      "targetId": "n_witness",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "c_4",
+      "sourceId": "n_printer",
+      "targetId": "n_convergence",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "c_5",
+      "sourceId": "n_courier",
+      "targetId": "n_convergence",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "c_6",
+      "sourceId": "n_witness",
+      "targetId": "n_convergence",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "c_7",
+      "sourceId": "n_convergence",
+      "targetId": "n_branch",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "c_8",
+      "sourceId": "n_branch",
+      "targetId": "n_ending_deception",
+      "condition": {
+        "type": "nodeComplete",
+        "nodeId": "n_courier"
+      },
+      "priority": 0,
+      "label": "if courier branch solved"
+    },
+    {
+      "id": "c_9",
+      "sourceId": "n_branch",
+      "targetId": "n_ending_truth",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 1,
+      "label": "otherwise"
+    }
+  ]
+}

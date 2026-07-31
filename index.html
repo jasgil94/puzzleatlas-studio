@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PuzzleAtlas Studio — Phase 1 Prototype</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Top bar -->
+  <header id="topbar">
+    <div class="topbar-left">
+      <span class="logo">PuzzleAtlas <b>Studio</b></span>
+      <input id="huntTitleInput" class="hunt-title-input" value="Untitled Hunt" spellcheck="false" />
+    </div>
+    <div class="topbar-actions">
+      <button id="btnUndo" class="btn" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button id="btnRedo" class="btn" title="Redo (Ctrl+Y)">↷ Redo</button>
+      <span class="sep"></span>
+      <button id="btnSave" class="btn">💾 Save</button>
+      <button id="btnLoad" class="btn">📂 Reopen</button>
+      <span class="sep"></span>
+      <button id="btnExport" class="btn">⬇ Export JSON</button>
+      <button id="btnImport" class="btn">⬆ Import JSON</button>
+      <input type="file" id="fileImport" accept="application/json" style="display:none" />
+      <span class="sep"></span>
+      <button id="btnDemo" class="btn">✨ Load Demo Hunt</button>
+      <button id="btnBroken" class="btn">🧪 Load Broken Test Hunt</button>
+      <span class="sep"></span>
+      <button id="btnValidation" class="btn warn-btn">⚠ Validation <span id="warnBadge" class="badge">0</span></button>
+      <button id="btnPreview" class="btn primary-btn">▶ Preview / Play</button>
+    </div>
+  </header>
+
+  <div id="main">
+
+    <!-- Palette -->
+    <aside id="palette">
+      <div class="palette-title">Node Palette</div>
+      <div id="paletteList"></div>
+      <div class="palette-title" style="margin-top:16px">Canvas</div>
+      <div class="palette-controls">
+        <button id="btnZoomIn" class="btn small">＋</button>
+        <button id="btnZoomOut" class="btn small">－</button>
+        <button id="btnZoomReset" class="btn small">Reset</button>
+        <label class="snap-toggle"><input type="checkbox" id="chkSnap" checked /> Grid snap</label>
+      </div>
+      <div class="palette-title" style="margin-top:16px">Hunt Setup</div>
+      <div id="huntMeta"></div>
+    </aside>
+
+    <!-- Canvas -->
+    <main id="canvasWrap">
+      <div id="canvasViewport">
+        <svg id="edgeLayer"></svg>
+        <div id="nodeLayer"></div>
+      </div>
+      <div id="canvasHint">Drag a node from the palette onto the canvas to begin.</div>
+      <div id="marquee" class="marquee hidden"></div>
+    </main>
+
+    <!-- Inspector -->
+    <aside id="inspector">
+      <div class="inspector-title" id="inspectorTitle">Nothing selected</div>
+      <div id="inspectorBody"></div>
+    </aside>
+
+  </div>
+
+  <!-- Validation panel -->
+  <div id="validationPanel" class="drawer hidden">
+    <div class="drawer-header">
+      <span>Validation warnings</span>
+      <button class="btn small" id="btnCloseValidation">✕</button>
+    </div>
+    <div id="validationList"></div>
+  </div>
+
+  <!-- Preview / Player overlay -->
+  <div id="previewOverlay" class="overlay hidden">
+    <div class="preview-window">
+      <div class="preview-header">
+        <span>▶ Playing: <b id="previewHuntTitle"></b></span>
+        <div>
+          <button class="btn small" id="btnPreviewRestart">↺ Restart</button>
+          <button class="btn small" id="btnPreviewState">🔎 State</button>
+          <button class="btn small" id="btnClosePreview">✕ Close</button>
+        </div>
+      </div>
+      <div class="preview-body">
+        <div class="preview-main" id="previewMain"></div>
+        <div class="preview-side" id="previewSide"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "noir-case-file",
+  "name": "Noir Case-File",
+  "description": "A dark, moody 1940s pressroom mystery look. Serif headlines, warm brass accent, hard-boiled tone. Suits location hunts built around investigation and suppressed truth.",
+  "vibe": {
+    "tags": ["noir", "1940s pressroom", "urgent", "hard-boiled", "brass-on-charcoal"],
+    "toneNotes": "Clipped, present-tense narration. Short sentences. Let objects and evidence carry the atmosphere rather than adjectives."
+  },
+  "typography": {
+    "headingFont": "'Playfair Display', Georgia, 'Times New Roman', serif",
+    "bodyFont": "Georgia, 'Times New Roman', serif",
+    "monoFont": "'Courier New', Courier, monospace",
+    "headingTransform": "uppercase",
+    "headingLetterSpacing": "0.04em",
+    "importUrl": "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap"
+  },
+  "palette": {
+    "background": "#15120d",
+    "surface": "#211c15",
+    "text": "#ece4d3",
+    "textDim": "#a89a82",
+    "accent": "#b8862f",
+    "accent2": "#7c1f1f",
+    "ok": "#6b9c5f",
+    "warn": "#c78a2e",
+    "danger": "#a3312f",
+    "families": {
+      "narrative": "#8a7554",
+      "puzzle": "#b8862f",
+      "state": "#6b9c5f",
+      "control": "#7c1f1f",
+      "support": "#6a8a8c"
+    }
+  },
+  "shape": {
+    "radius": "2px",
+    "borderWidth": "1px",
+    "borderStyle": "solid"
+  },
+  "imagery": {
+    "treatment": "duotone",
+    "filterCss": "grayscale(1) sepia(0.35) contrast(1.15)"
+  },
+  "motion": {
+    "pace": "subtle",
+    "reducedMotionSafe": true
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "hunt_broken_validation_test",
+  "title": "Validation Test Hunt (deliberately broken)",
+  "metadata": {
+    "concept": "Fixture for exercising the validation panel.",
+    "audience": "QA",
+    "createdAt": "2026-07-30T00:00:00.000Z",
+    "updatedAt": "2026-07-30T00:00:00.000Z"
+  },
+  "entryPointIds": [
+    "b_start"
+  ],
+  "variables": [],
+  "items": [],
+  "nodes": [
+    {
+      "id": "b_start",
+      "type": "scene",
+      "family": "narrative",
+      "title": "Start",
+      "position": {
+        "x": 40,
+        "y": 160
+      },
+      "content": {
+        "body": "Two branches lead onward."
+      },
+      "creatorNotes": "",
+      "effects": []
+    },
+    {
+      "id": "b_branchA",
+      "type": "answerEntry",
+      "family": "puzzle",
+      "title": "Branch A Puzzle",
+      "position": {
+        "x": 320,
+        "y": 60
+      },
+      "content": {
+        "prompt": "Placeholder A",
+        "acceptedAnswers": [
+          "A"
+        ],
+        "caseSensitive": false
+      },
+      "creatorNotes": "",
+      "effects": []
+    },
+    {
+      "id": "b_branchB",
+      "type": "answerEntry",
+      "family": "puzzle",
+      "title": "Branch B Puzzle",
+      "position": {
+        "x": 320,
+        "y": 260
+      },
+      "content": {
+        "prompt": "Placeholder B",
+        "acceptedAnswers": [
+          "B"
+        ],
+        "caseSensitive": false
+      },
+      "creatorNotes": "",
+      "effects": []
+    },
+    {
+      "id": "b_gate",
+      "type": "convergence",
+      "family": "control",
+      "title": "Impossible Gate",
+      "position": {
+        "x": 600,
+        "y": 160
+      },
+      "content": {
+        "requiredMode": "any",
+        "requiredCount": 3
+      },
+      "creatorNotes": "Deliberately requires 3 of only 2 incoming branches — structurally impossible. Validation should flag this.",
+      "effects": []
+    },
+    {
+      "id": "b_end",
+      "type": "ending",
+      "family": "control",
+      "title": "Good End",
+      "position": {
+        "x": 880,
+        "y": 160
+      },
+      "content": {
+        "resultName": "Reached",
+        "body": "You made it."
+      },
+      "creatorNotes": "",
+      "effects": []
+    },
+    {
+      "id": "b_isolated",
+      "type": "answerEntry",
+      "family": "puzzle",
+      "title": "Isolated Puzzle",
+      "position": {
+        "x": 600,
+        "y": 400
+      },
+      "content": {
+        "prompt": "Nothing connects to this node — deliberately unreachable.",
+        "acceptedAnswers": [
+          "X"
+        ],
+        "caseSensitive": false
+      },
+      "creatorNotes": "Deliberately has no incoming connection at all. Validation should flag this as unreachable.",
+      "effects": []
+    }
+  ],
+  "connections": [
+    {
+      "id": "bc_1",
+      "sourceId": "b_start",
+      "targetId": "b_branchA",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "bc_2",
+      "sourceId": "b_start",
+      "targetId": "b_branchB",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "bc_3",
+      "sourceId": "b_branchA",
+      "targetId": "b_gate",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "bc_4",
+      "sourceId": "b_branchB",
+      "targetId": "b_gate",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    },
+    {
+      "id": "bc_5",
+      "sourceId": "b_gate",
+      "targetId": "b_end",
+      "condition": {
+        "type": "always"
+      },
+      "priority": 0,
+      "label": ""
+    }
+  ]
+}
