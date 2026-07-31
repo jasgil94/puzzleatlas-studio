@@ -376,6 +376,7 @@ function newNode(type, x, y) {
     family: def.family,
     title: def.defaultTitle,
     position: { x: x || 0, y: y || 0 },
+    size: { w: NODE_W, h: NODE_H },
     content: def.defaultContent(),
     creatorNotes: "",
     effects: []
@@ -633,11 +634,22 @@ function validateHunt(hunt) {
    Canvas geometry + rendering
 --------------------------------------------------------------------- */
 var NODE_W = 220, NODE_H = 100, EDGE_OFFSET = 5000, GRID = 20;
+var NODE_MIN_W = 160, NODE_MIN_H = 64, NODE_MAX_W = 560, NODE_MAX_H = 480;
+
+// A node's on-canvas size, falling back to the default for nodes created
+// before per-card resizing existed (demo/broken fixtures, older saves).
+function nodeSize(node) {
+  return {
+    w: (node.size && node.size.w) || NODE_W,
+    h: (node.size && node.size.h) || NODE_H
+  };
+}
 
 function getPortPos(node, isOutput) {
+  var sz = nodeSize(node);
   return {
-    x: node.position.x + (isOutput ? NODE_W : 0),
-    y: node.position.y + NODE_H / 2
+    x: node.position.x + (isOutput ? sz.w : 0),
+    y: node.position.y + sz.h / 2
   };
 }
 
@@ -671,6 +683,9 @@ function renderNodes() {
     div.dataset.nodeId = n.id;
     div.style.left = n.position.x + "px";
     div.style.top = n.position.y + "px";
+    var sz = nodeSize(n);
+    div.style.width = sz.w + "px";
+    div.style.height = sz.h + "px";
     var isEntry = Store.hunt.entryPointIds.indexOf(n.id) !== -1;
     div.innerHTML =
       '<div class="node-head">' + nodeIconSpan(n.type) +
@@ -678,7 +693,8 @@ function renderNodes() {
       '<div class="node-title">' + esc(n.title) + '</div>' +
       '<div class="node-sub">' + esc(def.summary(n.content, Store.hunt)) + '</div>' +
       '<div class="node-port in" title="Incoming"></div>' +
-      '<div class="node-port out" title="Drag to connect"></div>';
+      '<div class="node-port out" title="Drag to connect"></div>' +
+      '<div class="node-resize-handle" title="Drag to resize · double-click to reset"></div>';
     dom.nodeLayer.appendChild(div);
   });
   markUnreachable();
@@ -819,6 +835,19 @@ function initCanvasInteraction() {
     var nodeEl = e.target.closest(".node");
     var portEl = e.target.closest(".node-port");
     var edgeEl = e.target.closest(".edge-hit");
+    var resizeHandleEl = e.target.closest(".node-resize-handle");
+
+    if (resizeHandleEl && nodeEl) {
+      var rId = nodeEl.dataset.nodeId;
+      var rNode = Store.getNode(rId);
+      if (!rNode) return;
+      Store.select("node", rId);
+      var rStartWorld = screenToWorld(e.clientX, e.clientY);
+      drag = { kind: "resize", nodeId: rId, startWorld: rStartWorld, startSize: nodeSize(rNode), resized: false };
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     if (portEl && portEl.classList.contains("out")) {
       var srcNode = nodeEl;
@@ -886,6 +915,19 @@ function initCanvasInteraction() {
         n.position.x = nx; n.position.y = ny;
       });
       renderNodes(); renderEdges();
+    } else if (drag.kind === "resize") {
+      var n2 = Store.getNode(drag.nodeId);
+      if (n2) {
+        var world2 = screenToWorld(e.clientX, e.clientY);
+        var dw = world2.x - drag.startWorld.x, dh = world2.y - drag.startWorld.y;
+        if (Math.abs(dw) > 2 || Math.abs(dh) > 2) drag.resized = true;
+        var nw = drag.startSize.w + dw, nh = drag.startSize.h + dh;
+        if (Store.snapEnabled) { nw = snap(nw, GRID); nh = snap(nh, GRID); }
+        nw = clamp(nw, NODE_MIN_W, NODE_MAX_W);
+        nh = clamp(nh, NODE_MIN_H, NODE_MAX_H);
+        n2.size = { w: nw, h: nh };
+        renderNodes(); renderEdges();
+      }
     } else if (drag.kind === "connect") {
       drag.cur = screenToWorld(e.clientX, e.clientY);
       renderTempEdge(e.target.closest(".node"));
@@ -904,6 +946,8 @@ function initCanvasInteraction() {
     if (!drag) return;
     if (drag.kind === "move") {
       if (drag.moved) Store.pushHistory();
+    } else if (drag.kind === "resize") {
+      if (drag.resized) Store.pushHistory();
     } else if (drag.kind === "connect") {
       var targetEl = e.target.closest(".node");
       clearTempEdge();
@@ -919,12 +963,25 @@ function initCanvasInteraction() {
       var y1 = Math.min(drag.startWorld.y, drag.curWorld ? drag.curWorld.y : drag.startWorld.y);
       var y2 = Math.max(drag.startWorld.y, drag.curWorld ? drag.curWorld.y : drag.startWorld.y);
       var picked = Store.hunt.nodes.filter(function (n) {
-        return n.position.x + NODE_W >= x1 && n.position.x <= x2 && n.position.y + NODE_H >= y1 && n.position.y <= y2;
+        var sz = nodeSize(n);
+        return n.position.x + sz.w >= x1 && n.position.x <= x2 && n.position.y + sz.h >= y1 && n.position.y <= y2;
       }).map(function (n) { return n.id; });
       if (picked.length) { Store.multiSelectNodeIds = picked; Store.selection = { type: "node", id: picked[0] }; }
       renderSelectionOnly(); renderInspector();
     }
     drag = null;
+  });
+
+  dom.canvasWrap.addEventListener("dblclick", function (e) {
+    var handleEl = e.target.closest(".node-resize-handle");
+    if (!handleEl) return;
+    var nodeEl = e.target.closest(".node");
+    var n = nodeEl && Store.getNode(nodeEl.dataset.nodeId);
+    if (!n) return;
+    n.size = { w: NODE_W, h: NODE_H };
+    renderNodes(); renderEdges();
+    Store.pushHistory();
+    toast("Reset card to default size.");
   });
 
   document.addEventListener("keydown", function (e) {
@@ -1514,9 +1571,10 @@ function renderValidationPanel() {
 function focusOnNode(nodeId) {
   var n = Store.getNode(nodeId);
   if (!n) return;
+  var sz = nodeSize(n);
   var rect = dom.canvasWrap.getBoundingClientRect();
-  Store.view.x = rect.width / 2 - (n.position.x + NODE_W / 2) * Store.view.zoom;
-  Store.view.y = rect.height / 2 - (n.position.y + NODE_H / 2) * Store.view.zoom;
+  Store.view.x = rect.width / 2 - (n.position.x + sz.w / 2) * Store.view.zoom;
+  Store.view.y = rect.height / 2 - (n.position.y + sz.h / 2) * Store.view.zoom;
   applyViewportTransform();
   renderNodes(); renderEdges();
 }
