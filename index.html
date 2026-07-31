@@ -100,6 +100,31 @@
         <div id="inspectorBody"></div>
       </aside>
 
+      <!-- Player mockup — always-visible mobile mirror of the Player app.
+           Live: bound to the same hunt object being edited, so it updates
+           as you type. The node currently on screen is also highlighted
+           on the canvas (see .player-here / .player-open). -->
+      <aside id="playerMockPanel">
+        <div class="mock-panel-header">
+          <span class="mock-panel-title">📱 Player view</span>
+          <div class="mock-panel-actions">
+            <button id="btnMockRestart" class="btn small" title="Restart the live player session">↺</button>
+            <button id="btnMockState" class="btn small" title="Show/hide debug state">🔎</button>
+          </div>
+        </div>
+        <div class="phone-shell">
+          <div class="phone-notch"></div>
+          <div class="phone-screen" id="phoneScreen">
+            <div class="phone-scroll">
+              <div class="phone-main" id="mockMain"></div>
+              <div class="phone-side" id="mockSide"></div>
+            </div>
+          </div>
+          <div class="phone-home"></div>
+        </div>
+        <p class="mock-panel-hint">Live mirror of the Player app — interact with it directly. The node it's showing is highlighted on the canvas.</p>
+      </aside>
+
     </div>
 
     <!-- Validation panel -->

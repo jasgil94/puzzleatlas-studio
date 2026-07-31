@@ -64,7 +64,7 @@ button{font-family:inherit;cursor:pointer;}
 /* main layout */
 #main{flex:1;display:flex;min-height:0;}
 #palette{width:220px;background:var(--bg2);border-right:1px solid var(--line);padding:12px;overflow-y:auto;flex-shrink:0;}
-#inspector{width:320px;background:var(--bg2);border-left:1px solid var(--line);padding:0;overflow-y:auto;flex-shrink:0;}
+#inspector{width:300px;background:var(--bg2);border-left:1px solid var(--line);padding:0;overflow-y:auto;flex-shrink:0;}
 .palette-title{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:8px;font-weight:700;}
 .palette-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:6px;margin-bottom:6px;border:1px solid var(--line);background:var(--bg3);cursor:grab;font-size:12.5px;}
 .palette-item:active{cursor:grabbing;}
@@ -93,6 +93,12 @@ button{font-family:inherit;cursor:pointer;}
 .node:active{cursor:grabbing;}
 .node.selected{border-color:var(--accent);box-shadow:0 0 0 3px rgba(108,140,255,.3);}
 .node.unreachable{outline:2px dashed var(--danger);outline-offset:3px;}
+/* Live Player mockup sync — marks whichever node the docked mobile
+   preview is currently showing (player-here), and any other open leads
+   the player could go to next (player-open). */
+.node.player-here{outline:3px solid var(--accent2);outline-offset:4px;z-index:2;}
+.node.player-here::after{content:"▶ Player here";position:absolute;left:6px;top:-21px;background:var(--accent2);color:#fff;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap;letter-spacing:.02em;pointer-events:none;}
+.node.player-open{outline:2px dashed var(--accent2);outline-offset:4px;}
 .node-head{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
 .node-icon{width:9px;height:9px;border-radius:3px;flex-shrink:0;}
 .node-type{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);}
@@ -140,6 +146,22 @@ button{font-family:inherit;cursor:pointer;}
 .creator-note-box{border:1px dashed var(--warn);border-radius:6px;padding:8px;background:rgba(255,180,84,.08);}
 .hint-badge{font-size:9px;background:var(--support);color:#08303a;padding:1px 6px;border-radius:8px;font-weight:700;}
 .chip{display:inline-block;font-size:10.5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin:2px 4px 2px 0;color:var(--text-dim);}
+
+/* Player mockup panel — always-visible mobile mirror of the Player app,
+   docked to the right of the Inspector. Screen content reuses the same
+   .pv-* classes (and --pv-* style-pack variables) as the Preview overlay. */
+#playerMockPanel{width:288px;background:var(--bg2);border-left:1px solid var(--line);padding:14px;overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column;align-items:center;}
+.mock-panel-header{display:flex;align-items:center;justify-content:space-between;width:100%;margin-bottom:12px;}
+.mock-panel-title{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);font-weight:700;}
+.mock-panel-actions{display:flex;gap:6px;}
+.phone-shell{background:#0a0c11;border:2px solid #000;border-radius:32px;padding:10px 8px 12px;box-shadow:0 10px 26px rgba(0,0,0,.45);flex-shrink:0;}
+.phone-notch{width:64px;height:14px;background:#000;border-radius:0 0 9px 9px;margin:0 auto 6px;}
+.phone-screen{width:236px;height:440px;background:var(--pv-bg);color:var(--pv-text);border-radius:20px;overflow:hidden;display:flex;flex-direction:column;font-family:var(--pv-font-body);}
+.phone-scroll{flex:1;overflow-y:auto;padding:16px 14px;}
+.phone-main{font-size:13px;}
+.phone-side{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);font-size:11px;}
+.phone-home{width:80px;height:4px;background:#000;border-radius:3px;margin:9px auto 0;}
+.mock-panel-hint{font-size:10.5px;color:var(--text-dim);margin-top:12px;line-height:1.4;text-align:center;}
 
 /* validation drawer */
 .drawer{position:fixed;bottom:0;left:0;right:0;height:260px;background:var(--bg2);border-top:2px solid var(--warn);z-index:50;display:flex;flex-direction:column;box-shadow:0 -4px 20px rgba(0,0,0,.4);}

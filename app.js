@@ -286,33 +286,37 @@ function styleFieldsPresent(p) {
 function applyStylePack(pack) {
   pack = pack && styleFieldsPresent(pack) ? pack : getStylePack(DEFAULT_STYLE_PACK_ID);
   var t = pack.typography, pal = pack.palette, sh = pack.shape || {}, img = pack.imagery || {};
-  var target = document.getElementById("previewOverlay");
-  if (!target) return;
-  var s = target.style;
-  s.setProperty("--pv-bg", pal.background);
-  s.setProperty("--pv-surface", pal.surface);
-  s.setProperty("--pv-text", pal.text);
-  s.setProperty("--pv-text-dim", pal.textDim);
-  s.setProperty("--pv-accent", pal.accent);
-  s.setProperty("--pv-accent2", pal.accent2 || pal.accent);
-  s.setProperty("--pv-ok", pal.ok || "#57d38c");
-  s.setProperty("--pv-warn", pal.warn || "#ffb454");
-  s.setProperty("--pv-danger", pal.danger || "#ff6464");
   var fam = pal.families || {};
-  s.setProperty("--pv-narrative", fam.narrative || pal.accent);
-  s.setProperty("--pv-puzzle", fam.puzzle || pal.accent);
-  s.setProperty("--pv-state", fam.state || pal.ok || "#57d38c");
-  s.setProperty("--pv-control", fam.control || pal.accent2 || pal.accent);
-  s.setProperty("--pv-support", fam.support || pal.accent);
-  s.setProperty("--pv-font-heading", t.headingFont);
-  s.setProperty("--pv-font-body", t.bodyFont);
-  s.setProperty("--pv-font-mono", t.monoFont || t.bodyFont);
-  s.setProperty("--pv-heading-transform", t.headingTransform || "none");
-  s.setProperty("--pv-heading-letter-spacing", t.headingLetterSpacing || "normal");
-  s.setProperty("--pv-radius", sh.radius || "8px");
-  s.setProperty("--pv-border-width", sh.borderWidth || "1px");
-  s.setProperty("--pv-border-style", sh.borderStyle || "solid");
-  s.setProperty("--pv-image-filter", img.filterCss || "none");
+  // Applied to both the full-screen Preview overlay and the docked
+  // Player mockup's phone screen, so both always mirror the same pack.
+  ["previewOverlay", "phoneScreen"].forEach(function (targetId) {
+    var target = document.getElementById(targetId);
+    if (!target) return;
+    var s = target.style;
+    s.setProperty("--pv-bg", pal.background);
+    s.setProperty("--pv-surface", pal.surface);
+    s.setProperty("--pv-text", pal.text);
+    s.setProperty("--pv-text-dim", pal.textDim);
+    s.setProperty("--pv-accent", pal.accent);
+    s.setProperty("--pv-accent2", pal.accent2 || pal.accent);
+    s.setProperty("--pv-ok", pal.ok || "#57d38c");
+    s.setProperty("--pv-warn", pal.warn || "#ffb454");
+    s.setProperty("--pv-danger", pal.danger || "#ff6464");
+    s.setProperty("--pv-narrative", fam.narrative || pal.accent);
+    s.setProperty("--pv-puzzle", fam.puzzle || pal.accent);
+    s.setProperty("--pv-state", fam.state || pal.ok || "#57d38c");
+    s.setProperty("--pv-control", fam.control || pal.accent2 || pal.accent);
+    s.setProperty("--pv-support", fam.support || pal.accent);
+    s.setProperty("--pv-font-heading", t.headingFont);
+    s.setProperty("--pv-font-body", t.bodyFont);
+    s.setProperty("--pv-font-mono", t.monoFont || t.bodyFont);
+    s.setProperty("--pv-heading-transform", t.headingTransform || "none");
+    s.setProperty("--pv-heading-letter-spacing", t.headingLetterSpacing || "normal");
+    s.setProperty("--pv-radius", sh.radius || "8px");
+    s.setProperty("--pv-border-width", sh.borderWidth || "1px");
+    s.setProperty("--pv-border-style", sh.borderStyle || "solid");
+    s.setProperty("--pv-image-filter", img.filterCss || "none");
+  });
 
   if (t.importUrl && !_injectedFontUrls[t.importUrl]) {
     var link = document.createElement("link");
@@ -334,7 +338,7 @@ function importStylePackFile(file) {
       Store.hunt.stylePack = clone(pack);
       Store.pushHistory();
       renderHuntMeta();
-      if (!document.getElementById("previewOverlay").classList.contains("hidden")) applyStylePack(Store.hunt.stylePack);
+      applyStylePack(Store.hunt.stylePack); // keeps both the Preview overlay and the docked mock panel in sync
       toast("Imported style pack \"" + pack.name + "\".");
     } catch (e) {
       toast("Style pack import failed: " + e.message);
@@ -698,6 +702,7 @@ function renderNodes() {
     dom.nodeLayer.appendChild(div);
   });
   markUnreachable();
+  updateCanvasPlayerHighlight(LiveMock);
 }
 
 function markUnreachable() {
@@ -786,6 +791,7 @@ function render() {
   dom.canvasHint.style.display = Store.hunt.nodes.length ? "none" : "block";
   document.getElementById("huntTitleInput").value = Store.hunt.title;
   if (document.getElementById("validationPanel").classList.contains("hidden") === false) renderValidationPanel();
+  syncLiveMock();
 }
 
 function renderSelectionOnly() {
@@ -1104,7 +1110,7 @@ function renderHuntMeta() {
     h.stylePack = getStylePack(e.target.value);
     Store.pushHistory();
     document.getElementById("metaStylePackDesc").textContent = h.stylePack.description || "";
-    if (!document.getElementById("previewOverlay").classList.contains("hidden")) applyStylePack(h.stylePack);
+    applyStylePack(h.stylePack); // keeps both the Preview overlay and the docked mock panel in sync
     toast("Style pack set to \"" + h.stylePack.name + "\".");
   };
   document.getElementById("btnImportStylePack").onclick = function () { document.getElementById("styleImportInput").click(); };
@@ -1171,6 +1177,7 @@ function selectOptions(list, valueKey, labelKey, current, placeholder) {
 function afterEdit(refreshNodesEdges) {
   Store.pushHistory();
   if (refreshNodesEdges !== false) { renderNodes(); renderEdges(); }
+  syncLiveMock();
 }
 
 function renderInspector() {
@@ -1940,27 +1947,108 @@ function pv_action_revealHint(session, hintNodeId) {
 }
 
 /* ---------------------------------------------------------------------
-   Preview / Player UI
+   Preview / Player UI — a reusable controller factory. It powers both
+   the full-screen "Preview / Play" overlay (a frozen snapshot of the
+   exported JSON, for a distraction-free test run) and the always-visible
+   docked Player mockup beside the canvas (a live mirror bound directly
+   to Store.hunt — see "Live Player mockup" below). Each controller owns
+   its own session and UI state, and only ever queries inside its own
+   root element, so both can be on screen at once without id clashes.
 --------------------------------------------------------------------- */
-var Preview = { session: null, expandedNodeId: null, showState: false, orderingDraft: {}, matchingDraft: {} };
+var Preview, LiveMock;
+
+function createPreviewController(mainEl, sideEl) {
+  var ctl = {
+    mainEl: mainEl, sideEl: sideEl,
+    session: null, expandedNodeId: null, showState: false,
+    orderingDraft: {}, matchingDraft: {},
+    _activeIds: { expandedId: null, leadIds: [] },
+    onRender: null
+  };
+
+  ctl.open = function (hunt) {
+    ctl.session = createSession(hunt);
+    ctl.expandedNodeId = null;
+    ctl.showState = false;
+    ctl.orderingDraft = {};
+    ctl.matchingDraft = {};
+    ctl.render();
+  };
+
+  ctl.restart = function () { if (ctl.session) ctl.open(ctl.session.hunt); };
+
+  ctl.render = function () {
+    var session = ctl.session;
+    if (!session) return;
+    var hunt = session.hunt, state = session.state;
+    var main = ctl.mainEl, side = ctl.sideEl;
+
+    if (state.endingReached) {
+      var en = hunt.nodes.find(function (n) { return n.id === state.endingReached; });
+      main.innerHTML = en ?
+        ('<div class="pv-ending"><h2>🏁 ' + esc(en.content.resultName) + '</h2><p class="pv-scene-body">' + esc(en.content.body) + '</p>' +
+        '<p style="color:var(--pv-text-dim);font-size:12px">Hunt complete. ' + Object.keys(state.completed).length + " nodes visited · Score " + state.score + '</p></div>')
+        : '<div class="pv-empty">The reached ending was removed from the hunt.</div>';
+      ctl._activeIds = { expandedId: null, leadIds: [] };
+    } else {
+      var leads = openLeadNodes(session);
+      if (!leads.length) {
+        main.innerHTML = '<div class="pv-empty">No content is currently available. This may indicate an unreachable section — check the Validation panel.</div>';
+        ctl._activeIds = { expandedId: null, leadIds: [] };
+      } else {
+        if (leads.length === 1 && !ctl.expandedNodeId) ctl.expandedNodeId = leads[0].id;
+        var html = "";
+        if (leads.length > 1) {
+          html += '<p class="pv-side-title">Open leads (' + leads.length + ')</p>';
+          leads.forEach(function (n) {
+            var active = n.id === ctl.expandedNodeId;
+            html += '<div class="pv-choice-btn" style="' + (active ? "border-color:var(--pv-accent)" : "") + '" data-lead="' + n.id + '">' + NODE_TYPES[n.type].icon + " " + esc(n.title) + '</div>';
+          });
+          html += "<hr style='border-color:var(--pv-text-dim);opacity:.25;margin:16px 0'/>";
+        }
+        var expanded = leads.find(function (n) { return n.id === ctl.expandedNodeId; }) || leads[0];
+        if (expanded) html += renderPreviewNode(session, expanded, ctl);
+        main.innerHTML = html;
+
+        Array.prototype.forEach.call(main.querySelectorAll("[data-lead]"), function (el) {
+          el.onclick = function () { ctl.expandedNodeId = el.dataset.lead; ctl.render(); };
+        });
+        wirePreviewNodeInteractions(session, expanded, ctl);
+        ctl._activeIds = { expandedId: expanded ? expanded.id : null, leadIds: leads.map(function (n) { return n.id; }) };
+      }
+    }
+
+    if (side) {
+      var sideHtml = '<div class="pv-side-title">Score</div><div>' + state.score + '</div>';
+      sideHtml += '<div class="pv-side-title">Items</div><div>' + (Object.keys(state.items).length ? Object.keys(state.items).map(function (id) { return '<span class="chip">' + esc(itemName(hunt, id)) + '</span>'; }).join("") : '<span style="color:var(--pv-text-dim)">none</span>') + '</div>';
+      sideHtml += '<div class="pv-side-title">Variables</div><div>' + (hunt.variables.length ? hunt.variables.map(function (v) { return '<div>' + esc(v.name) + " = " + esc(String(state.variables[v.id])) + '</div>'; }).join("") : '<span style="color:var(--pv-text-dim)">none</span>') + '</div>';
+      sideHtml += '<div class="pv-side-title">Progress</div><div>' + Object.keys(state.completed).length + " / " + hunt.nodes.length + ' nodes complete</div>';
+      if (ctl.showState) {
+        sideHtml += '<div class="pv-side-title">Event history</div>' + state.history.slice().reverse().slice(0, 12).map(function (h) { return '<div style="font-size:11px;color:var(--pv-text-dim)">' + esc(h.title) + '</div>'; }).join("");
+        sideHtml += '<div class="pv-side-title">Available (not yet done)</div>' + Object.keys(state.available).filter(function (id) { return !state.completed[id]; }).map(function (id) { return '<div style="font-size:11px;color:var(--pv-text-dim)">' + esc(nodeTitle(hunt, id)) + '</div>'; }).join("");
+      }
+      side.innerHTML = sideHtml;
+    }
+
+    if (ctl.onRender) ctl.onRender(ctl);
+  };
+
+  return ctl;
+}
 
 function previewOpen() {
   // Interpret the EXPORTED JSON, not the live editable object — proves
-  // "one export drives both preview and player".
+  // "one export drives both preview and player". A frozen snapshot,
+  // distinct from the always-live docked mockup below.
   var exportedJson = JSON.stringify(Store.hunt);
   var hunt = JSON.parse(exportedJson);
-  Preview.session = createSession(hunt);
-  Preview.expandedNodeId = null;
-  Preview.showState = false;
-  Preview.orderingDraft = {};
-  Preview.matchingDraft = {};
   document.getElementById("previewHuntTitle").textContent = hunt.title;
   document.getElementById("previewOverlay").classList.remove("hidden");
   applyStylePack(hunt.stylePack);
-  renderPreview();
+  Preview.open(hunt);
 }
 function previewClose() { document.getElementById("previewOverlay").classList.add("hidden"); }
-function previewRestart() { previewOpen(); }
+function previewRestart() { Preview.restart(); }
 
 function openLeadNodes(session) {
   var hunt = session.hunt, state = session.state;
@@ -1973,56 +2061,7 @@ function hintsForNode(hunt, nodeId) {
   return hunt.nodes.filter(function (n) { return n.type === "hint" && n.content.forNodeId === nodeId; });
 }
 
-function renderPreview() {
-  var session = Preview.session;
-  if (!session) return;
-  var hunt = session.hunt, state = session.state;
-  var main = document.getElementById("previewMain");
-  var side = document.getElementById("previewSide");
-
-  if (state.endingReached) {
-    var en = hunt.nodes.find(function (n) { return n.id === state.endingReached; });
-    main.innerHTML = '<div class="pv-ending"><h2>🏁 ' + esc(en.content.resultName) + '</h2><p class="pv-scene-body">' + esc(en.content.body) + '</p>' +
-      '<p style="color:var(--pv-text-dim);font-size:12px">Hunt complete. ' + Object.keys(state.completed).length + " nodes visited · Score " + state.score + '</p></div>';
-  } else {
-    var leads = openLeadNodes(session);
-    if (!leads.length) {
-      main.innerHTML = '<div class="pv-empty">No content is currently available. This may indicate an unreachable section — check the Validation panel.</div>';
-    } else if (leads.length === 1 && !Preview.expandedNodeId) {
-      Preview.expandedNodeId = leads[0].id;
-    }
-    var html = "";
-    if (leads.length > 1) {
-      html += '<p class="pv-side-title">Open leads (' + leads.length + ')</p>';
-      leads.forEach(function (n) {
-        var active = n.id === Preview.expandedNodeId;
-        html += '<div class="pv-choice-btn" style="' + (active ? "border-color:var(--pv-accent)" : "") + '" data-lead="' + n.id + '">' + NODE_TYPES[n.type].icon + " " + esc(n.title) + '</div>';
-      });
-      html += "<hr style='border-color:var(--pv-text-dim);opacity:.25;margin:16px 0'/>";
-    }
-    var expanded = leads.find(function (n) { return n.id === Preview.expandedNodeId; }) || leads[0];
-    if (expanded) html += renderPreviewNode(session, expanded);
-    main.innerHTML = html;
-
-    Array.prototype.forEach.call(main.querySelectorAll("[data-lead]"), function (el) {
-      el.onclick = function () { Preview.expandedNodeId = el.dataset.lead; renderPreview(); };
-    });
-    wirePreviewNodeInteractions(session, expanded);
-  }
-
-  // side panel
-  var sideHtml = '<div class="pv-side-title">Score</div><div>' + state.score + '</div>';
-  sideHtml += '<div class="pv-side-title">Items</div><div>' + (Object.keys(state.items).length ? Object.keys(state.items).map(function (id) { return '<span class="chip">' + esc(itemName(hunt, id)) + '</span>'; }).join("") : '<span style="color:var(--pv-text-dim)">none</span>') + '</div>';
-  sideHtml += '<div class="pv-side-title">Variables</div><div>' + (hunt.variables.length ? hunt.variables.map(function (v) { return '<div>' + esc(v.name) + " = " + esc(String(state.variables[v.id])) + '</div>'; }).join("") : '<span style="color:var(--pv-text-dim)">none</span>') + '</div>';
-  sideHtml += '<div class="pv-side-title">Progress</div><div>' + Object.keys(state.completed).length + " / " + hunt.nodes.length + ' nodes complete</div>';
-  if (Preview.showState) {
-    sideHtml += '<div class="pv-side-title">Event history</div>' + state.history.slice().reverse().slice(0, 12).map(function (h) { return '<div style="font-size:11px;color:var(--pv-text-dim)">' + esc(h.title) + '</div>'; }).join("");
-    sideHtml += '<div class="pv-side-title">Available (not yet done)</div>' + Object.keys(state.available).filter(function (id) { return !state.completed[id]; }).map(function (id) { return '<div style="font-size:11px;color:var(--pv-text-dim)">' + esc(nodeTitle(hunt, id)) + '</div>'; }).join("");
-  }
-  side.innerHTML = sideHtml;
-}
-
-function renderPreviewNode(session, n) {
+function renderPreviewNode(session, n, ctl) {
   var c = n.content, html = "";
   var hints = hintsForNode(session.hunt, n.id);
   if (n.type === "scene") {
@@ -2037,9 +2076,9 @@ function renderPreviewNode(session, n) {
     var fb = session.state.feedback[n.id];
     if (fb) html += '<div class="pv-feedback ' + fb + '">' + (fb === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
   } else if (n.type === "ordering") {
-    if (!Preview.orderingDraft[n.id]) Preview.orderingDraft[n.id] = c.items.map(function (it) { return it.id; });
+    if (!ctl.orderingDraft[n.id]) ctl.orderingDraft[n.id] = c.items.map(function (it) { return it.id; });
     html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
-    Preview.orderingDraft[n.id].forEach(function (id, idx) {
+    ctl.orderingDraft[n.id].forEach(function (id, idx) {
       var it = c.items.find(function (x) { return x.id === id; });
       html += '<div class="list-item" data-ordidx="' + idx + '"><span class="chip">' + (idx + 1) + '</span><span style="flex:1">' + esc(it.label) + '</span><button class="small-btn ordUpPv">↑</button><button class="small-btn ordDownPv">↓</button></div>';
     });
@@ -2047,14 +2086,14 @@ function renderPreviewNode(session, n) {
     var fb2 = session.state.feedback[n.id];
     if (fb2) html += '<div class="pv-feedback ' + fb2 + '">' + (fb2 === "correct" ? "✓ Correct order." : "✗ Not the right order — try again.") + '</div>';
   } else if (n.type === "matching") {
-    if (!Preview.matchingDraft[n.id]) {
-      Preview.matchingDraft[n.id] = {};
-      c.left.forEach(function (l) { Preview.matchingDraft[n.id][l.id] = c.right[0] ? c.right[0].id : ""; });
+    if (!ctl.matchingDraft[n.id]) {
+      ctl.matchingDraft[n.id] = {};
+      c.left.forEach(function (l) { ctl.matchingDraft[n.id][l.id] = c.right[0] ? c.right[0].id : ""; });
     }
     html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
     c.left.forEach(function (l) {
       html += '<div class="list-item"><span style="flex:1">' + esc(l.label) + ' →</span><select class="pvPairSelect" data-lid="' + l.id + '">' +
-        c.right.map(function (r) { return '<option value="' + r.id + '"' + (Preview.matchingDraft[n.id][l.id] === r.id ? " selected" : "") + '>' + esc(r.label) + '</option>'; }).join("") + '</select></div>';
+        c.right.map(function (r) { return '<option value="' + r.id + '"' + (ctl.matchingDraft[n.id][l.id] === r.id ? " selected" : "") + '>' + esc(r.label) + '</option>'; }).join("") + '</select></div>';
     });
     html += '<button class="pv-choice-btn" id="pvSubmitMatching" style="max-width:160px;margin-top:10px">Submit matches</button>';
     var fb3 = session.state.feedback[n.id];
@@ -2075,46 +2114,84 @@ function renderPreviewNode(session, n) {
   return html;
 }
 
-function wirePreviewNodeInteractions(session, n) {
+function wirePreviewNodeInteractions(session, n, ctl) {
   if (!n) return;
-  var byId = function (id) { return document.getElementById(id); };
-  if (byId("pvContinue")) byId("pvContinue").onclick = function () { pv_action_continueScene(session, n.id); Preview.expandedNodeId = null; renderPreview(); };
-  Array.prototype.forEach.call(document.querySelectorAll("[data-opt]"), function (el) {
-    el.onclick = function () { pv_action_selectChoice(session, n.id, el.dataset.opt); Preview.expandedNodeId = null; renderPreview(); };
+  var root = ctl.mainEl;
+  var byId = function (id) { return root.querySelector("#" + id); };
+  if (byId("pvContinue")) byId("pvContinue").onclick = function () { pv_action_continueScene(session, n.id); ctl.expandedNodeId = null; ctl.render(); };
+  Array.prototype.forEach.call(root.querySelectorAll("[data-opt]"), function (el) {
+    el.onclick = function () { pv_action_selectChoice(session, n.id, el.dataset.opt); ctl.expandedNodeId = null; ctl.render(); };
   });
   if (byId("pvSubmitAnswer")) {
-    var submit = function () { pv_action_submitAnswer(session, n.id, byId("pvAnswerInput").value); if (session.state.feedback[n.id] === "correct") Preview.expandedNodeId = null; renderPreview(); };
+    var submit = function () { pv_action_submitAnswer(session, n.id, byId("pvAnswerInput").value); if (session.state.feedback[n.id] === "correct") ctl.expandedNodeId = null; ctl.render(); };
     byId("pvSubmitAnswer").onclick = submit;
     byId("pvAnswerInput").onkeydown = function (e) { if (e.key === "Enter") submit(); };
   }
-  Array.prototype.forEach.call(document.querySelectorAll(".ordUpPv"), function (btn) {
+  Array.prototype.forEach.call(root.querySelectorAll(".ordUpPv"), function (btn) {
     btn.onclick = function () {
-      var row = btn.closest("[data-ordidx]"); var idx = +row.dataset.ordidx; var arr = Preview.orderingDraft[n.id];
-      if (idx > 0) { var t = arr[idx - 1]; arr[idx - 1] = arr[idx]; arr[idx] = t; renderPreview(); }
+      var row = btn.closest("[data-ordidx]"); var idx = +row.dataset.ordidx; var arr = ctl.orderingDraft[n.id];
+      if (idx > 0) { var t = arr[idx - 1]; arr[idx - 1] = arr[idx]; arr[idx] = t; ctl.render(); }
     };
   });
-  Array.prototype.forEach.call(document.querySelectorAll(".ordDownPv"), function (btn) {
+  Array.prototype.forEach.call(root.querySelectorAll(".ordDownPv"), function (btn) {
     btn.onclick = function () {
-      var row = btn.closest("[data-ordidx]"); var idx = +row.dataset.ordidx; var arr = Preview.orderingDraft[n.id];
-      if (idx < arr.length - 1) { var t = arr[idx + 1]; arr[idx + 1] = arr[idx]; arr[idx] = t; renderPreview(); }
+      var row = btn.closest("[data-ordidx]"); var idx = +row.dataset.ordidx; var arr = ctl.orderingDraft[n.id];
+      if (idx < arr.length - 1) { var t = arr[idx + 1]; arr[idx + 1] = arr[idx]; arr[idx] = t; ctl.render(); }
     };
   });
   if (byId("pvSubmitOrdering")) byId("pvSubmitOrdering").onclick = function () {
-    pv_action_submitOrdering(session, n.id, Preview.orderingDraft[n.id]);
-    if (session.state.feedback[n.id] === "correct") Preview.expandedNodeId = null;
-    renderPreview();
+    pv_action_submitOrdering(session, n.id, ctl.orderingDraft[n.id]);
+    if (session.state.feedback[n.id] === "correct") ctl.expandedNodeId = null;
+    ctl.render();
   };
-  Array.prototype.forEach.call(document.querySelectorAll(".pvPairSelect"), function (sel) {
-    sel.onchange = function (e) { Preview.matchingDraft[n.id][sel.dataset.lid] = e.target.value; };
+  Array.prototype.forEach.call(root.querySelectorAll(".pvPairSelect"), function (sel) {
+    sel.onchange = function (e) { ctl.matchingDraft[n.id][sel.dataset.lid] = e.target.value; };
   });
   if (byId("pvSubmitMatching")) byId("pvSubmitMatching").onclick = function () {
-    var pairs = Object.keys(Preview.matchingDraft[n.id]).map(function (lid) { return [lid, Preview.matchingDraft[n.id][lid]]; });
+    var pairs = Object.keys(ctl.matchingDraft[n.id]).map(function (lid) { return [lid, ctl.matchingDraft[n.id][lid]]; });
     pv_action_submitMatching(session, n.id, pairs);
-    if (session.state.feedback[n.id] === "correct") Preview.expandedNodeId = null;
-    renderPreview();
+    if (session.state.feedback[n.id] === "correct") ctl.expandedNodeId = null;
+    ctl.render();
   };
-  Array.prototype.forEach.call(document.querySelectorAll("[data-hint]"), function (btn) {
-    btn.onclick = function () { pv_action_revealHint(session, btn.dataset.hint); renderPreview(); };
+  Array.prototype.forEach.call(root.querySelectorAll("[data-hint]"), function (btn) {
+    btn.onclick = function () { pv_action_revealHint(session, btn.dataset.hint); ctl.render(); };
+  });
+}
+
+/* ---------------------------------------------------------------------
+   Live Player mockup — an always-visible mobile mirror of the Player
+   app, docked beside the canvas. Unlike the Preview overlay above, its
+   session.hunt IS Store.hunt (the same live object, not a JSON
+   snapshot), so content edits appear immediately without a restart.
+   Structural changes (nodes/connections added or removed) are picked
+   up by re-running recompute() without discarding the player's current
+   progress through the hunt.
+--------------------------------------------------------------------- */
+function syncLiveMock() {
+  if (!LiveMock || !LiveMock.mainEl) return;
+  applyStylePack(Store.hunt.stylePack);
+  if (!LiveMock.session || LiveMock.session.hunt !== Store.hunt) {
+    LiveMock.open(Store.hunt);
+  } else {
+    // Seed state for any variables added after this session started.
+    (Store.hunt.variables || []).forEach(function (v) {
+      if (!(v.id in LiveMock.session.state.variables)) LiveMock.session.state.variables[v.id] = v.initial;
+    });
+    recompute(LiveMock.session);
+    LiveMock.render();
+  }
+}
+
+// Reflects whichever node(s) are currently on screen in the live
+// mockup back onto the design canvas, so a creator can see at a glance
+// where "the player" currently is while they work.
+function updateCanvasPlayerHighlight(ctl) {
+  if (!dom.nodeLayer) return;
+  var ids = (ctl && ctl._activeIds) || { expandedId: null, leadIds: [] };
+  Array.prototype.forEach.call(dom.nodeLayer.children, function (el) {
+    var id = el.dataset.nodeId;
+    el.classList.toggle("player-here", id === ids.expandedId);
+    el.classList.toggle("player-open", id !== ids.expandedId && ids.leadIds.indexOf(id) !== -1);
   });
 }
 
@@ -2265,6 +2342,10 @@ function init() {
   Store.view = { x: 60, y: 60, zoom: 1 };
   Store.init();
 
+  Preview = createPreviewController(document.getElementById("previewMain"), document.getElementById("previewSide"));
+  LiveMock = createPreviewController(document.getElementById("mockMain"), document.getElementById("mockSide"));
+  LiveMock.onRender = updateCanvasPlayerHighlight;
+
   initCanvasInteraction();
   initPaletteDrop();
 
@@ -2301,7 +2382,10 @@ function init() {
   document.getElementById("btnPreview").onclick = previewOpen;
   document.getElementById("btnClosePreview").onclick = previewClose;
   document.getElementById("btnPreviewRestart").onclick = previewRestart;
-  document.getElementById("btnPreviewState").onclick = function () { Preview.showState = !Preview.showState; renderPreview(); };
+  document.getElementById("btnPreviewState").onclick = function () { Preview.showState = !Preview.showState; Preview.render(); };
+
+  document.getElementById("btnMockRestart").onclick = function () { LiveMock.open(Store.hunt); toast("Player view restarted."); };
+  document.getElementById("btnMockState").onclick = function () { LiveMock.showState = !LiveMock.showState; LiveMock.render(); };
 
   // Library screen controls
   document.getElementById("btnNewHunt").onclick = createNewHuntAndOpen;
@@ -2317,6 +2401,7 @@ function init() {
     renderValidationPanel();
   };
 
+  syncLiveMock();
   showLibraryScreen();
   toast("Welcome to PuzzleAtlas Studio. Open a hunt from your library, or start a new one.", 4000);
 }
