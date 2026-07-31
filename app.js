@@ -351,11 +351,11 @@ var NODE_MIN_W = 160, NODE_MIN_H = 64, NODE_MAX_W = 560, NODE_MAX_H = 480;
    computeLayout() (below) turns that into actual pixel position.
 --------------------------------------------------------------------- */
 var LANES = [
-  { id: "story",     label: "Story" },
-  { id: "leads",     label: "Leads" },
-  { id: "map",       label: "Map" },
-  { id: "inventory", label: "Inventory" },
-  { id: "hints",     label: "Hints" }
+  { id: "story",     label: "Story",     icon: "📖" },
+  { id: "leads",     label: "Leads",     icon: "📋" },
+  { id: "map",       label: "Map",       icon: "📍" },
+  { id: "inventory", label: "Inventory", icon: "💼" },
+  { id: "hints",     label: "Hints",     icon: "💡" }
 ];
 var LANE_INDEX = {}, LANE_BY_ID = {};
 LANES.forEach(function (l, i) { LANE_INDEX[l.id] = i; LANE_BY_ID[l.id] = l; });
@@ -2243,6 +2243,88 @@ function renderStyleBuilderScreen() {
 --------------------------------------------------------------------- */
 var Preview, LiveMock;
 
+/* ---------------------------------------------------------------------
+   Player bottom tab bar — five buttons (Story/Leads/Map/Inventory/Hints)
+   mirroring the canvas lanes. Tapping a tab jumps the mock/preview
+   screen to a node in that lane within whatever scene is currently on
+   screen, using the same pin mechanism as clicking a node on the canvas
+   (ctl.showNode). Shared by both the docked mockup and the full-screen
+   Preview overlay.
+--------------------------------------------------------------------- */
+
+// The node currently on screen in a preview controller, however it got
+// there (a pinned/selected node, the expanded open lead, or a reached
+// ending) — renderPinnedNode/render() in engine.js keep _activeIds.expandedId
+// pointed at it in every case.
+function currentPreviewNode(ctl) {
+  if (!ctl.session) return null;
+  var id = ctl._activeIds && ctl._activeIds.expandedId;
+  if (!id) return null;
+  return ctl.session.hunt.nodes.find(function (n) { return n.id === id; }) || null;
+}
+
+// Which Scene column the tab bar should search within: the scene of
+// whatever's on screen, falling back to the hunt's first scene (or
+// Unassigned) once nothing is showing yet (e.g. an empty state).
+function currentSceneIdForCtl(ctl) {
+  var node = currentPreviewNode(ctl);
+  if (node) return node.sceneId || null;
+  var scenes = (ctl.session && ctl.session.hunt.scenes) || [];
+  return scenes.length ? scenes[0].id : null;
+}
+
+// Pick the node a lane tap should open: prefer whatever's currently an
+// open (available, not yet completed) lead in that lane+scene; failing
+// that, the most recently completed one; failing that, just the first
+// node placed there. Hints are matched to whatever puzzle is currently
+// on screen instead, since hint nodes are never "available" themselves.
+function nodeForLane(ctl, laneId) {
+  if (!ctl.session) return null;
+  var hunt = ctl.session.hunt, state = ctl.session.state;
+  var sceneId = currentSceneIdForCtl(ctl);
+  var inScene = hunt.nodes.filter(function (n) { return n.lane === laneId && (n.sceneId || null) === sceneId; });
+  if (!inScene.length) return null;
+
+  if (laneId === "hints") {
+    var current = currentPreviewNode(ctl);
+    if (current) {
+      var attached = inScene.find(function (n) { return n.content && n.content.forNodeId === current.id; });
+      if (attached) return attached;
+    }
+    return inScene[0];
+  }
+
+  var open = inScene.find(function (n) { return state.available[n.id] && !state.completed[n.id]; });
+  if (open) return open;
+  for (var i = inScene.length - 1; i >= 0; i--) {
+    if (state.completed[inScene[i].id]) return inScene[i];
+  }
+  return inScene[0];
+}
+
+function renderPlayerTabBar(ctl, tabBarEl) {
+  if (!tabBarEl || !ctl.session) return;
+  var current = currentPreviewNode(ctl);
+  var activeLane = current ? current.lane : null;
+
+  tabBarEl.innerHTML = LANES.map(function (l) {
+    var active = l.id === activeLane;
+    return '<button class="player-tab' + (active ? " active" : "") + '" data-lane="' + l.id + '"' +
+      (active ? ' style="color:var(--pv-text);border-top-color:var(--lane-' + l.id + ')"' : "") +
+      ' title="' + esc(l.label) + '">' +
+      '<span class="player-tab-icon">' + l.icon + '</span><span class="player-tab-label">' + esc(l.label) + '</span></button>';
+  }).join("");
+
+  Array.prototype.forEach.call(tabBarEl.querySelectorAll(".player-tab"), function (btn) {
+    btn.onclick = function () {
+      var laneId = btn.dataset.lane;
+      var node = nodeForLane(ctl, laneId);
+      if (node) ctl.showNode(node.id);
+      else toast("No " + LANE_BY_ID[laneId].label.toLowerCase() + " content in this scene yet.");
+    };
+  });
+}
+
 function previewOpen() {
   // Interpret the EXPORTED JSON, not the live editable object — proves
   // "one export drives both preview and player". A frozen snapshot,
@@ -2461,7 +2543,11 @@ function init() {
 
   Preview = createPreviewController(document.getElementById("previewMain"), document.getElementById("previewSide"));
   LiveMock = createPreviewController(document.getElementById("mockMain"), document.getElementById("mockSide"));
-  LiveMock.onRender = updateCanvasPlayerHighlight;
+
+  var mockTabBarEl = document.getElementById("mockTabBar");
+  var previewTabBarEl = document.getElementById("previewTabBar");
+  LiveMock.onRender = function (ctl) { updateCanvasPlayerHighlight(ctl); renderPlayerTabBar(ctl, mockTabBarEl); };
+  Preview.onRender = function (ctl) { renderPlayerTabBar(ctl, previewTabBarEl); };
 
   initCanvasInteraction();
   initPaletteDrop();

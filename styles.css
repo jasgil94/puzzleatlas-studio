@@ -217,6 +217,18 @@ button{font-family:inherit;cursor:pointer;}
 .phone-home{width:80px;height:4px;background:#000;border-radius:3px;margin:9px auto 0;}
 .mock-panel-hint{font-size:10.5px;color:var(--text-dim);margin-top:12px;line-height:1.4;text-align:center;}
 
+/* Player app bottom tab bar — Story/Leads/Map/Inventory/Hints, mirroring
+   the 5 canvas lanes. Shared by the docked mock panel's phone screen and
+   the full-screen Preview overlay; tapping a tab jumps to a node in that
+   lane for whatever scene is currently on screen (see renderPlayerTabBar
+   in app.js). Styled with --pv-* so it follows the active style pack. */
+.player-tabbar{display:flex;flex-shrink:0;border-top:var(--pv-border-width) var(--pv-border-style) var(--line);background:var(--pv-surface);}
+.player-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;border-top:2px solid transparent;color:var(--pv-text-dim);padding:8px 2px 7px;font-family:var(--pv-font-body);cursor:pointer;}
+.player-tab:hover{color:var(--pv-text);}
+.player-tab-icon{font-size:16px;line-height:1;}
+.player-tab-label{font-size:9px;text-transform:uppercase;letter-spacing:.03em;font-weight:600;}
+.phone-screen .player-tabbar{border-bottom-left-radius:20px;border-bottom-right-radius:20px;}
+
 /* validation drawer */
 .drawer{position:fixed;bottom:0;left:0;right:0;height:260px;background:var(--bg2);border-top:2px solid var(--warn);z-index:50;display:flex;flex-direction:column;box-shadow:0 -4px 20px rgba(0,0,0,.4);}
 .drawer-header{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);font-weight:700;}
