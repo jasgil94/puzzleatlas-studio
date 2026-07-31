@@ -1134,10 +1134,14 @@ function renderHuntMeta() {
     }).join("") + '</select>';
 
   var currentPackId = (h.stylePack && h.stylePack.id) || DEFAULT_STYLE_PACK_ID;
+  var optionHtml = function (id) { return '<option value="' + id + '"' + (id === currentPackId ? " selected" : "") + '>' + esc(STYLE_PACKS[id].name) + '</option>'; };
+  var allPackIds = Object.keys(STYLE_PACKS);
+  var builtinIds = allPackIds.filter(function (id) { return BUILTIN_STYLE_PACK_IDS.indexOf(id) !== -1; });
+  var otherIds = allPackIds.filter(function (id) { return BUILTIN_STYLE_PACK_IDS.indexOf(id) === -1; });
   var packSelect = '<select id="metaStylePack">' +
-    Object.keys(STYLE_PACKS).map(function (id) {
-      return '<option value="' + id + '"' + (id === currentPackId ? " selected" : "") + '>' + esc(STYLE_PACKS[id].name) + '</option>';
-    }).join("") + '</select>';
+    '<optgroup label="Built-in">' + builtinIds.map(optionHtml).join("") + '</optgroup>' +
+    (otherIds.length ? '<optgroup label="My Styles">' + otherIds.map(optionHtml).join("") + '</optgroup>' : "") +
+    '</select>';
   var currentPackDesc = (h.stylePack && h.stylePack.description) || STYLE_PACKS[DEFAULT_STYLE_PACK_ID].description;
 
   box.innerHTML =
@@ -1147,6 +1151,7 @@ function renderHuntMeta() {
     '<div class="section-title" style="margin-top:14px">Style Pack</div>' +
     '<label>Sets fonts, colours, imagery treatment and vibe for Preview / Play</label>' + packSelect +
     '<p id="metaStylePackDesc" style="font-size:11px;color:var(--text-dim);margin:6px 0 8px">' + esc(currentPackDesc) + '</p>' +
+    '<button class="small-btn" id="btnOpenStyleBuilder">🎨 Craft a style…</button>' +
     '<button class="small-btn" id="btnImportStylePack">⬆ Import Style Pack…</button>' +
     '<input type="file" id="styleImportInput" accept="application/json" style="display:none" />' +
     '<div class="section-title">Variables</div>' +
@@ -1175,6 +1180,12 @@ function renderHuntMeta() {
   document.getElementById("styleImportInput").onchange = function (e) {
     if (e.target.files[0]) importStylePackFile(e.target.files[0]);
     e.target.value = "";
+  };
+  document.getElementById("btnOpenStyleBuilder").onclick = function () {
+    // Craft/edit styles live in the Library's own Style Library section, not inline in the hunt —
+    // the hunt is auto-saved first so nothing is lost, matching the "back to library" pattern.
+    if (Store.hunt && Store.hunt.id) saveCurrentHuntToLibrary(true);
+    goToStyleLibrary();
   };
 
   var varList = document.getElementById("varList");
@@ -1876,6 +1887,300 @@ function renderLibrary() {
   });
 }
 
+/* ---------------------------------------------------------------------
+   Style Library grid (Library screen, "🎨 Style Library" tab) — built-in
+   packs (read-only templates) plus any custom packs the creator has
+   saved via the Style Builder.
+--------------------------------------------------------------------- */
+function exportStylePackObj(pack) {
+  var json = JSON.stringify(pack, null, 2);
+  var filename = (pack.name || "style-pack").replace(/[^a-z0-9\-_]+/gi, "_").toLowerCase() + ".json";
+  download(filename, json);
+  toast("Exported " + filename);
+}
+function importStylePackFileToLibrary(file) {
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      var pack = JSON.parse(reader.result);
+      if (!styleFieldsPresent(pack)) throw new Error("File is missing required style pack fields (typography.headingFont/bodyFont, palette.background/surface/text/textDim/accent).");
+      if (!pack.id || !isCustomStylePackId(pack.id)) pack.id = "imported-" + uid("style");
+      if (!pack.name) pack.name = "Imported Style Pack";
+      upsertCustomStylePack(pack);
+      renderStyleLibrary();
+      toast("Imported \"" + pack.name + "\" into your Style Library.");
+    } catch (e) {
+      toast("Style pack import failed: " + e.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderStyleLibrary() {
+  var grid = document.getElementById("styleLibraryGrid");
+  grid.innerHTML = "";
+
+  function makeCard(pack, isBuiltin) {
+    var pal = pack.palette || {};
+    var card = document.createElement("div");
+    card.className = "hunt-card";
+    card.innerHTML =
+      '<div class="style-card-swatch" style="background:' + esc(pal.background || "#000") + '">' +
+        '<span style="background:' + esc(pal.accent || "#888") + '"></span>' +
+        '<span style="background:' + esc(pal.accent2 || pal.accent || "#888") + '"></span>' +
+        '<span style="background:' + esc(pal.ok || "#57d38c") + '"></span>' +
+      '</div>' +
+      '<div class="hunt-card-title" style="cursor:default">' + esc(pack.name || "Untitled Style") + (isBuiltin ? ' <span class="tag-builtin">Built-in</span>' : '') + '</div>' +
+      '<div class="hunt-card-meta">' + esc(pack.description || "No description.") + '</div>' +
+      '<div class="hunt-card-actions">' +
+        (isBuiltin
+          ? '<button class="small-btn" data-duplicate="' + pack.id + '">⧉ Duplicate &amp; Edit</button>'
+          : '<button class="small-btn" data-edit="' + pack.id + '">Edit</button>' +
+            '<button class="small-btn" data-duplicate="' + pack.id + '">Duplicate</button>' +
+            '<button class="small-btn" data-export="' + pack.id + '">Export</button>' +
+            '<button class="small-btn" data-del="' + pack.id + '">Delete</button>') +
+      '</div>';
+    return card;
+  }
+
+  BUILTIN_STYLE_PACK_IDS.forEach(function (id) {
+    if (STYLE_PACKS[id]) grid.appendChild(makeCard(STYLE_PACKS[id], true));
+  });
+  getCustomStylePacks().forEach(function (p) {
+    grid.appendChild(makeCard(p, false));
+  });
+
+  Array.prototype.forEach.call(grid.querySelectorAll("[data-edit]"), function (btn) {
+    btn.onclick = function () { openStyleBuilder(btn.dataset.edit); };
+  });
+  Array.prototype.forEach.call(grid.querySelectorAll("[data-duplicate]"), function (btn) {
+    btn.onclick = function () {
+      var src = STYLE_PACKS[btn.dataset.duplicate];
+      if (!src) return;
+      var copy = clone(src);
+      copy.id = uid("style");
+      copy.name = (src.name || "Style") + " (copy)";
+      upsertCustomStylePack(copy);
+      openStyleBuilder(copy.id);
+      toast("Duplicated “" + (src.name || "Style") + "” — editing your copy.");
+    };
+  });
+  Array.prototype.forEach.call(grid.querySelectorAll("[data-export]"), function (btn) {
+    btn.onclick = function () {
+      var p = STYLE_PACKS[btn.dataset.export];
+      if (p) exportStylePackObj(p);
+    };
+  });
+  Array.prototype.forEach.call(grid.querySelectorAll("[data-del]"), function (btn) {
+    btn.onclick = function () {
+      var p = getCustomStylePackById(btn.dataset.del);
+      if (!p) return;
+      if (!confirm('Delete style "' + (p.name || "Untitled Style") + '"? Hunts already using it keep their own saved copy — this only removes it from your Style Library.')) return;
+      deleteCustomStylePack(p.id);
+      renderStyleLibrary();
+      toast("Deleted “" + (p.name || "Untitled Style") + "”.");
+    };
+  });
+}
+
+/* ---------------------------------------------------------------------
+   Style Builder screen — craft a style pack's typography, palette,
+   shape, imagery and motion, with a live phone-mockup preview driven by
+   the same --pv-* variables the Preview overlay and Player mockup use.
+   Opened from the Style Library grid ("+ New Style" / Edit / Duplicate).
+--------------------------------------------------------------------- */
+var StyleBuilder = { pack: null };
+
+function createNewStyleAndOpen() {
+  var pack = newBlankStylePack();
+  upsertCustomStylePack(pack);
+  openStyleBuilder(pack.id);
+  toast("Created a new style — craft it, then Save.");
+}
+
+function openStyleBuilder(id) {
+  var pack = STYLE_PACKS[id];
+  if (!pack) { toast("That style could not be found."); return; }
+  StyleBuilder.pack = clone(pack);
+  showStyleBuilderScreen();
+}
+
+function showStyleBuilderScreen() {
+  dom.libraryScreen.classList.add("hidden");
+  dom.studioScreen.classList.add("hidden");
+  dom.styleBuilderScreen.classList.remove("hidden");
+  renderStyleBuilderScreen();
+}
+
+function persistStyleBuilderDraft(quiet) {
+  if (!StyleBuilder.pack) return;
+  upsertCustomStylePack(StyleBuilder.pack);
+  if (!quiet) toast("Saved “" + (StyleBuilder.pack.name || "Untitled Style") + "”.");
+}
+
+function backToStyleLibrary() {
+  persistStyleBuilderDraft(true); // quiet auto-save, mirrors goToLibrary()'s auto-save for hunts
+  StyleBuilder.pack = null;
+  goToStyleLibrary();
+}
+
+function liveUpdateStyleBuilder() {
+  if (!StyleBuilder.pack) return;
+  applyStylePack(StyleBuilder.pack);
+}
+
+function setDeep(obj, path, value) {
+  var parts = path.split(".");
+  var cur = obj;
+  for (var i = 0; i < parts.length - 1; i++) {
+    if (cur[parts[i]] === undefined || cur[parts[i]] === null || typeof cur[parts[i]] !== "object") cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length - 1]] = value;
+}
+
+function sbField(labelText, path, value, type) {
+  return '<div class="field"><label>' + esc(labelText) + '</label><input type="' + (type || "text") + '" data-path="' + path + '" value="' + esc(value == null ? "" : value) + '" /></div>';
+}
+function sbColorField(labelText, path, value) {
+  var hex = /^#[0-9a-fA-F]{6}$/.test(value || "") ? value : "#000000";
+  return '<div class="field"><label>' + esc(labelText) + '</label><div class="color-field-row">' +
+    '<input type="color" data-cpath="' + path + '" value="' + hex + '" />' +
+    '<input type="text" data-path="' + path + '" value="' + esc(value || "") + '" />' +
+  '</div></div>';
+}
+function sbSelectField(labelText, path, options, value) {
+  return '<div class="field"><label>' + esc(labelText) + '</label><select data-path="' + path + '">' +
+    options.map(function (o) { return '<option value="' + o + '"' + (o === value ? " selected" : "") + '>' + o + '</option>'; }).join("") +
+  '</select></div>';
+}
+function sbTextareaField(labelText, path, value) {
+  return '<div class="field"><label>' + esc(labelText) + '</label><textarea data-path="' + path + '">' + esc(value || "") + '</textarea></div>';
+}
+
+function renderStyleBuilderForm() {
+  var box = document.getElementById("styleBuilderForm");
+  var p = StyleBuilder.pack;
+  p.typography = p.typography || {};
+  p.palette = p.palette || {};
+  p.palette.families = p.palette.families || {};
+  p.shape = p.shape || {};
+  p.imagery = p.imagery || {};
+  p.motion = p.motion || {};
+  p.vibe = p.vibe || {};
+
+  var html = '<div class="style-builder-desc">Sets the fonts, colours, shape and pacing a hunt’s Preview / Play uses. Never affects this Studio editor.</div>';
+
+  html += '<div class="section-title" style="border-top:none;margin-top:0;padding-top:0">Identity</div>';
+  html += sbTextareaField("Description", "description", p.description);
+  html += sbField("Vibe tags (comma-separated)", "__vibeTags", (p.vibe.tags || []).join(", "));
+  html += sbTextareaField("Tone notes", "vibe.toneNotes", p.vibe.toneNotes);
+
+  html += '<div class="section-title">Typography</div>';
+  html += sbField("Heading font (CSS font stack)", "typography.headingFont", p.typography.headingFont);
+  html += sbField("Body font", "typography.bodyFont", p.typography.bodyFont);
+  html += sbField("Mono font (codes / answers)", "typography.monoFont", p.typography.monoFont);
+  html += '<div class="field-row">' +
+    sbSelectField("Heading transform", "typography.headingTransform", ["none", "uppercase", "capitalize"], p.typography.headingTransform || "none") +
+    sbField("Heading letter spacing", "typography.headingLetterSpacing", p.typography.headingLetterSpacing || "normal") +
+  '</div>';
+  html += sbField("Google Fonts import URL (optional)", "typography.importUrl", p.typography.importUrl);
+
+  html += '<div class="section-title">Palette</div>';
+  html += sbColorField("Background", "palette.background", p.palette.background);
+  html += sbColorField("Surface", "palette.surface", p.palette.surface);
+  html += sbColorField("Text", "palette.text", p.palette.text);
+  html += sbColorField("Text (dim)", "palette.textDim", p.palette.textDim);
+  html += sbColorField("Accent", "palette.accent", p.palette.accent);
+  html += sbColorField("Accent 2", "palette.accent2", p.palette.accent2);
+  html += sbColorField("Success", "palette.ok", p.palette.ok);
+  html += sbColorField("Warning / hint", "palette.warn", p.palette.warn);
+  html += sbColorField("Danger / incorrect", "palette.danger", p.palette.danger);
+
+  html += '<div class="section-title">Node family accents</div>';
+  html += sbColorField("Narrative", "palette.families.narrative", p.palette.families.narrative);
+  html += sbColorField("Puzzle", "palette.families.puzzle", p.palette.families.puzzle);
+  html += sbColorField("State", "palette.families.state", p.palette.families.state);
+  html += sbColorField("Control", "palette.families.control", p.palette.families.control);
+  html += sbColorField("Support", "palette.families.support", p.palette.families.support);
+
+  html += '<div class="section-title">Shape</div>';
+  html += '<div class="field-row">' +
+    sbField("Border radius", "shape.radius", p.shape.radius || "8px") +
+    sbField("Border width", "shape.borderWidth", p.shape.borderWidth || "1px") +
+  '</div>';
+  html += sbSelectField("Border style", "shape.borderStyle", ["none", "solid", "dashed", "double"], p.shape.borderStyle || "solid");
+
+  html += '<div class="section-title">Imagery</div>';
+  html += sbSelectField("Treatment", "imagery.treatment", ["none", "grayscale", "sepia", "duotone", "high-contrast"], p.imagery.treatment || "none");
+  html += sbField("Filter CSS", "imagery.filterCss", p.imagery.filterCss);
+
+  html += '<div class="section-title">Motion</div>';
+  html += sbSelectField("Pace", "motion.pace", ["none", "subtle", "standard", "dramatic"], p.motion.pace || "subtle");
+  html += '<label class="motion-check"><input type="checkbox" id="styleMotionSafe"' + (p.motion.reducedMotionSafe !== false ? " checked" : "") + ' /> Respect reduced-motion preference</label>';
+
+  box.innerHTML = html;
+
+  Array.prototype.forEach.call(box.querySelectorAll("[data-path]"), function (el) {
+    var handler = function (e) {
+      var path = el.dataset.path;
+      var val = e.target.value;
+      if (path === "__vibeTags") {
+        p.vibe.tags = val.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+      } else {
+        setDeep(p, path, val);
+      }
+      var swatch = box.querySelector('[data-cpath="' + path + '"]');
+      if (swatch && /^#[0-9a-fA-F]{6}$/.test(val)) swatch.value = val;
+      liveUpdateStyleBuilder();
+    };
+    el.oninput = handler; el.onchange = handler; // onchange covers <select>, which doesn't reliably fire input in every browser
+  });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-cpath]"), function (el) {
+    el.oninput = function (e) {
+      var path = el.dataset.cpath;
+      setDeep(p, path, e.target.value);
+      var twin = box.querySelector('[data-path="' + path + '"]');
+      if (twin) twin.value = e.target.value;
+      liveUpdateStyleBuilder();
+    };
+  });
+  var motionChk = document.getElementById("styleMotionSafe");
+  if (motionChk) motionChk.onchange = function (e) { p.motion.reducedMotionSafe = e.target.checked; };
+}
+
+function renderStyleBuilderPreviewContent() {
+  var main = document.getElementById("styleBuilderPreviewMain");
+  main.innerHTML =
+    '<p class="pv-side-title">Open leads (2)</p>' +
+    '<div class="pv-choice-btn" style="border-color:var(--pv-accent)">📜 The Archive Room</div>' +
+    '<div class="pv-choice-btn">🔑 A Locked Drawer</div>' +
+    '<hr style="border-color:var(--pv-text-dim);opacity:.25;margin:16px 0" />' +
+    '<p class="pv-scene-body">Dust hangs in the light from the high windows. Someone has been through these files recently — the drawers aren’t quite square.</p>' +
+    '<p class="pv-scene-body">A brass plate on the desk reads: <b>THE CURATOR’S BENCH</b>.</p>' +
+    '<div class="pv-choice-btn">Search the desk</div>' +
+    '<div class="pv-choice-btn">Read the ledger</div>' +
+    '<input class="pv-answer-input" type="text" placeholder="TYPE YOUR ANSWER" disabled />' +
+    '<p class="pv-feedback correct">✓ Correct — the drawer clicks open.</p>' +
+    '<p class="pv-feedback incorrect">✗ Not quite. Try again.</p>' +
+    '<button class="pv-hint-btn">💡 Show a hint</button>' +
+    '<p class="pv-hint-text">First, gentle nudge: look at the ledger’s dates.</p>' +
+    '<div class="pv-ending" style="padding:20px 0 4px">' +
+      '<h2 style="font-size:18px;margin:0 0 6px">🏁 A CLEAN CLOSE</h2>' +
+      '<p class="pv-scene-body" style="margin:0">The case is closed, the files are back in order.</p>' +
+    '</div>';
+}
+
+function renderStyleBuilderScreen() {
+  var p = StyleBuilder.pack;
+  if (!p) return;
+  document.getElementById("styleNameInput").value = p.name || "";
+  document.getElementById("btnStyleDelete").classList.toggle("hidden", !isCustomStylePackId(p.id));
+  renderStyleBuilderForm();
+  renderStyleBuilderPreviewContent();
+  applyStylePack(p);
+}
+
 /* =========================================================================
    Player interpreter — walks the exported JSON hunt model directly.
    This same engine backs both the in-Studio Preview and (conceptually) a
@@ -2460,12 +2765,15 @@ var BROKEN_HUNT = {
 function init() {
   dom.libraryScreen = document.getElementById("libraryScreen");
   dom.studioScreen = document.getElementById("studioScreen");
+  dom.styleBuilderScreen = document.getElementById("styleBuilderScreen");
   dom.canvasWrap = document.getElementById("canvasWrap");
   dom.canvasViewport = document.getElementById("canvasViewport");
   dom.edgeLayer = document.getElementById("edgeLayer");
   dom.nodeLayer = document.getElementById("nodeLayer");
   dom.canvasHint = document.getElementById("canvasHint");
   dom.marquee = document.getElementById("marquee");
+
+  loadCustomStylePacksIntoRegistry();
 
   Store.view = { x: 60, y: 60, zoom: 1 };
   Store.init();
@@ -2527,6 +2835,41 @@ function init() {
     openTemplateAndOpen(BROKEN_HUNT, "the broken test hunt");
     document.getElementById("validationPanel").classList.remove("hidden");
     renderValidationPanel();
+  };
+
+  // Library tabs: Hunt Library <-> Style Library (a separate section, not the Hunt grid)
+  document.getElementById("tabHuntLibrary").onclick = function () { setLibraryTab("hunt"); };
+  document.getElementById("tabStyleLibrary").onclick = function () { setLibraryTab("style"); };
+  document.getElementById("btnNewStyle").onclick = createNewStyleAndOpen;
+  document.getElementById("btnLibImportStyle").onclick = function () { document.getElementById("fileLibImportStyle").click(); };
+  document.getElementById("fileLibImportStyle").onchange = function (e) {
+    if (e.target.files[0]) importStylePackFileToLibrary(e.target.files[0]);
+    e.target.value = "";
+  };
+
+  // Style Builder screen controls
+  document.getElementById("btnStyleBack").onclick = backToStyleLibrary;
+  document.getElementById("styleNameInput").oninput = function (e) { if (StyleBuilder.pack) StyleBuilder.pack.name = e.target.value; };
+  document.getElementById("styleNameInput").onblur = function () { persistStyleBuilderDraft(true); };
+  document.getElementById("btnStyleSave").onclick = function () { persistStyleBuilderDraft(false); };
+  document.getElementById("btnStyleDuplicate").onclick = function () {
+    if (!StyleBuilder.pack) return;
+    var copy = clone(StyleBuilder.pack);
+    copy.id = uid("style");
+    copy.name = (copy.name || "Style") + " (copy)";
+    upsertCustomStylePack(copy);
+    StyleBuilder.pack = copy;
+    renderStyleBuilderScreen();
+    toast("Duplicated as “" + copy.name + "”.");
+  };
+  document.getElementById("btnStyleExport").onclick = function () { if (StyleBuilder.pack) exportStylePackObj(StyleBuilder.pack); };
+  document.getElementById("btnStyleDelete").onclick = function () {
+    if (!StyleBuilder.pack) return;
+    if (!confirm('Delete style "' + (StyleBuilder.pack.name || "Untitled Style") + '"? Hunts already using it keep their own saved copy.')) return;
+    deleteCustomStylePack(StyleBuilder.pack.id);
+    StyleBuilder.pack = null;
+    toast("Style deleted.");
+    goToStyleLibrary();
   };
 
   syncLiveMock();
