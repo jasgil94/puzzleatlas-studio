@@ -198,5 +198,10 @@ button{font-family:inherit;cursor:pointer;}
 .pv-side-title:first-child{margin-top:0;}
 .pv-empty{color:var(--pv-text-dim);text-align:center;padding-top:60px;}
 .pv-image{border-radius:var(--pv-radius);filter:var(--pv-image-filter);max-width:100%;display:block;}
+.pv-pin-banner{font-size:11px;color:var(--pv-text-dim);background:var(--pv-surface);border:1px solid var(--pv-accent2);border-radius:var(--pv-radius);padding:6px 9px;margin-bottom:14px;}
+.pv-pin-tag{display:inline-block;font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:2px;}
+.pv-pin-tag.ok{background:var(--pv-ok);color:#08303a;}
+.pv-pin-tag.open{background:var(--pv-accent);color:#fff;}
+.pv-pin-tag.locked{background:var(--pv-warn);color:#3a2a05;}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}

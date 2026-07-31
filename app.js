@@ -500,6 +500,7 @@ var Store = {
     this.multiSelectNodeIds = (type === "node" && id) ? [id] : [];
     renderSelectionOnly();
     renderInspector();
+    syncLiveMockSelection();
   },
 
   clearSelection: function () {
@@ -507,6 +508,7 @@ var Store = {
     this.multiSelectNodeIds = [];
     renderSelectionOnly();
     renderInspector();
+    syncLiveMockSelection();
   }
 };
 
@@ -871,7 +873,7 @@ function initCanvasInteraction() {
         var idx = Store.multiSelectNodeIds.indexOf(id);
         if (idx === -1) Store.multiSelectNodeIds.push(id); else Store.multiSelectNodeIds.splice(idx, 1);
         Store.selection = { type: "node", id: id };
-        renderSelectionOnly(); renderInspector();
+        renderSelectionOnly(); renderInspector(); syncLiveMockSelection();
       } else if (Store.multiSelectNodeIds.indexOf(id) === -1) {
         Store.select("node", id);
       }
@@ -973,7 +975,7 @@ function initCanvasInteraction() {
         return n.position.x + sz.w >= x1 && n.position.x <= x2 && n.position.y + sz.h >= y1 && n.position.y <= y2;
       }).map(function (n) { return n.id; });
       if (picked.length) { Store.multiSelectNodeIds = picked; Store.selection = { type: "node", id: picked[0] }; }
-      renderSelectionOnly(); renderInspector();
+      renderSelectionOnly(); renderInspector(); syncLiveMockSelection();
     }
     drag = null;
   });
@@ -1962,6 +1964,7 @@ function createPreviewController(mainEl, sideEl) {
     mainEl: mainEl, sideEl: sideEl,
     session: null, expandedNodeId: null, showState: false,
     orderingDraft: {}, matchingDraft: {},
+    pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     _activeIds: { expandedId: null, leadIds: [] },
     onRender: null
   };
@@ -1972,10 +1975,16 @@ function createPreviewController(mainEl, sideEl) {
     ctl.showState = false;
     ctl.orderingDraft = {};
     ctl.matchingDraft = {};
+    ctl.pinnedNodeId = null;
     ctl.render();
   };
 
   ctl.restart = function () { if (ctl.session) ctl.open(ctl.session.hunt); };
+
+  // Force the mockup to show a specific node regardless of the normal
+  // "current open leads" flow — used when a node is selected on canvas.
+  ctl.showNode = function (nodeId) { ctl.pinnedNodeId = nodeId; ctl.render(); };
+  ctl.clearPin = function () { if (ctl.pinnedNodeId) { ctl.pinnedNodeId = null; ctl.render(); } };
 
   ctl.render = function () {
     var session = ctl.session;
@@ -1983,7 +1992,12 @@ function createPreviewController(mainEl, sideEl) {
     var hunt = session.hunt, state = session.state;
     var main = ctl.mainEl, side = ctl.sideEl;
 
-    if (state.endingReached) {
+    var pinnedNode = ctl.pinnedNodeId ? hunt.nodes.find(function (n) { return n.id === ctl.pinnedNodeId; }) : null;
+    if (ctl.pinnedNodeId && !pinnedNode) ctl.pinnedNodeId = null; // was deleted — fall back to normal flow
+
+    if (pinnedNode) {
+      renderPinnedNode(session, pinnedNode, ctl);
+    } else if (state.endingReached) {
       var en = hunt.nodes.find(function (n) { return n.id === state.endingReached; });
       main.innerHTML = en ?
         ('<div class="pv-ending"><h2>🏁 ' + esc(en.content.resultName) + '</h2><p class="pv-scene-body">' + esc(en.content.body) + '</p>' +
@@ -2049,6 +2063,38 @@ function previewOpen() {
 }
 function previewClose() { document.getElementById("previewOverlay").classList.add("hidden"); }
 function previewRestart() { Preview.restart(); }
+
+var PLAYER_SCREEN_TYPES = ["scene", "choice", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending"];
+
+// Renders whatever node was pinned via ctl.showNode() (canvas selection),
+// regardless of whether it's currently reachable in the live playthrough.
+// This is a creator "peek" — a status badge shows locked/open/completed,
+// and interacting with it (where possible) plays it for real and hands
+// control back to the normal auto-following flow.
+function renderPinnedNode(session, n, ctl) {
+  var state = session.state;
+  var statusTag = state.completed[n.id] ? '<span class="pv-pin-tag ok">✓ completed</span>'
+    : state.available[n.id] ? '<span class="pv-pin-tag open">● open</span>'
+    : '<span class="pv-pin-tag locked">🔒 locked</span>';
+  var banner = '<div class="pv-pin-banner">📍 Canvas selection — <b>' + esc(n.title) + '</b> ' + statusTag + '</div>';
+
+  if (n.type === "ending") {
+    ctl.mainEl.innerHTML = banner + '<div class="pv-ending"><h2>🏁 ' + esc(n.content.resultName) + '</h2><p class="pv-scene-body">' + esc(n.content.body) + '</p></div>';
+    ctl._activeIds = { expandedId: n.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
+    return;
+  }
+  if (PLAYER_SCREEN_TYPES.indexOf(n.type) === -1) {
+    ctl.mainEl.innerHTML = banner + '<div class="pv-empty" style="padding-top:16px">' + NODE_TYPES[n.type].icon + " " + esc(NODE_TYPES[n.type].label) +
+      ' nodes run automatically and have no standalone player screen.' + (n.type === "hint" ? " Hints appear attached to their puzzle node instead." : "") + '</div>';
+    ctl._activeIds = { expandedId: n.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
+    return;
+  }
+  ctl.mainEl.innerHTML = banner + renderPreviewNode(session, n, ctl);
+  // Already-completed nodes are shown read-only — wiring their controls
+  // again would let a resubmit silently double up effects like score.
+  if (!state.completed[n.id]) wirePreviewNodeInteractions(session, n, ctl);
+  ctl._activeIds = { expandedId: n.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
+}
 
 function openLeadNodes(session) {
   var hunt = session.hunt, state = session.state;
@@ -2118,12 +2164,12 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   if (!n) return;
   var root = ctl.mainEl;
   var byId = function (id) { return root.querySelector("#" + id); };
-  if (byId("pvContinue")) byId("pvContinue").onclick = function () { pv_action_continueScene(session, n.id); ctl.expandedNodeId = null; ctl.render(); };
+  if (byId("pvContinue")) byId("pvContinue").onclick = function () { pv_action_continueScene(session, n.id); ctl.expandedNodeId = null; ctl.pinnedNodeId = null; ctl.render(); };
   Array.prototype.forEach.call(root.querySelectorAll("[data-opt]"), function (el) {
-    el.onclick = function () { pv_action_selectChoice(session, n.id, el.dataset.opt); ctl.expandedNodeId = null; ctl.render(); };
+    el.onclick = function () { pv_action_selectChoice(session, n.id, el.dataset.opt); ctl.expandedNodeId = null; ctl.pinnedNodeId = null; ctl.render(); };
   });
   if (byId("pvSubmitAnswer")) {
-    var submit = function () { pv_action_submitAnswer(session, n.id, byId("pvAnswerInput").value); if (session.state.feedback[n.id] === "correct") ctl.expandedNodeId = null; ctl.render(); };
+    var submit = function () { pv_action_submitAnswer(session, n.id, byId("pvAnswerInput").value); if (session.state.feedback[n.id] === "correct") { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; } ctl.render(); };
     byId("pvSubmitAnswer").onclick = submit;
     byId("pvAnswerInput").onkeydown = function (e) { if (e.key === "Enter") submit(); };
   }
@@ -2141,7 +2187,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   });
   if (byId("pvSubmitOrdering")) byId("pvSubmitOrdering").onclick = function () {
     pv_action_submitOrdering(session, n.id, ctl.orderingDraft[n.id]);
-    if (session.state.feedback[n.id] === "correct") ctl.expandedNodeId = null;
+    if (session.state.feedback[n.id] === "correct") { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
     ctl.render();
   };
   Array.prototype.forEach.call(root.querySelectorAll(".pvPairSelect"), function (sel) {
@@ -2150,7 +2196,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   if (byId("pvSubmitMatching")) byId("pvSubmitMatching").onclick = function () {
     var pairs = Object.keys(ctl.matchingDraft[n.id]).map(function (lid) { return [lid, ctl.matchingDraft[n.id][lid]]; });
     pv_action_submitMatching(session, n.id, pairs);
-    if (session.state.feedback[n.id] === "correct") ctl.expandedNodeId = null;
+    if (session.state.feedback[n.id] === "correct") { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
     ctl.render();
   };
   Array.prototype.forEach.call(root.querySelectorAll("[data-hint]"), function (btn) {
@@ -2193,6 +2239,20 @@ function updateCanvasPlayerHighlight(ctl) {
     el.classList.toggle("player-here", id === ids.expandedId);
     el.classList.toggle("player-open", id !== ids.expandedId && ids.leadIds.indexOf(id) !== -1);
   });
+}
+
+// The reverse direction: selecting a node on the canvas should switch
+// the live mockup to show that node (see LiveMock.showNode/clearPin).
+// Selecting an edge is left alone — there's nothing to preview for it.
+function syncLiveMockSelection() {
+  if (!LiveMock || !LiveMock.mainEl) return;
+  if (Store.selection.type === "node" && Store.multiSelectNodeIds.length === 1) {
+    LiveMock.showNode(Store.multiSelectNodeIds[0]);
+  } else if (Store.selection.type === "node" && Store.multiSelectNodeIds.length > 1) {
+    LiveMock.clearPin(); // nothing single to show — fall back to the normal auto-following view
+  } else if (!Store.selection.type) {
+    LiveMock.clearPin();
+  }
 }
 
 /* ---------------------------------------------------------------------
