@@ -124,6 +124,10 @@ button{font-family:inherit;cursor:pointer;}
 .scene-hdr-btn:hover{color:var(--text);background:var(--bg3);}
 .scene-hdr-btn:disabled{opacity:.25;cursor:default;}
 .scene-add-btn{position:absolute;top:4px;white-space:nowrap;}
+.lane-resize-handle{position:absolute;left:0;height:8px;cursor:ns-resize;pointer-events:auto;z-index:1;}
+.lane-resize-handle:hover{background:rgba(108,140,255,.28);}
+.scene-resize-handle{position:absolute;top:0;width:8px;cursor:ew-resize;pointer-events:auto;z-index:1;}
+.scene-resize-handle:hover{background:rgba(108,140,255,.28);}
 
 /* nodes */
 .node{position:absolute;width:220px;height:100px;background:var(--bg3);border:2px solid var(--line);border-radius:10px;padding:8px 12px;user-select:none;box-shadow:0 2px 6px rgba(0,0,0,.3);cursor:grab;overflow:hidden;box-sizing:border-box;}

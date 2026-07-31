@@ -185,6 +185,13 @@ function newHunt(title) {
     nodes: [],
     connections: [],
     scenes: [{ id: uid("scene"), title: "Scene 1" }],
+    // Manual size overrides for the lane×scene grid — see computeLayout().
+    // Undefined/missing means "auto-fit to content" for that lane/column;
+    // a stored number can only ever push a lane taller or a column wider
+    // than its auto-fit size, never smaller (dragging the handle back down
+    // just clears the override once it reaches the content-fit floor).
+    laneHeights: {},
+    unassignedColWidth: undefined,
     stylePack: getStylePack(DEFAULT_STYLE_PACK_ID)
   };
 }
@@ -440,7 +447,46 @@ function nodeIconSpan(type) {
 --------------------------------------------------------------------- */
 function getColumns() {
   var scenes = Store.hunt.scenes || [];
-  return [{ id: null, title: "Unassigned", unassigned: true }].concat(scenes);
+  return [{ id: null, title: "Unassigned", unassigned: true, width: Store.hunt.unassignedColWidth }].concat(scenes);
+}
+
+// Stable ordering for the nodes stacked in one lane×scene cell: nodes
+// connected to each other by a connection whose source AND target both
+// land in this same cell stack in source-before-target order; a node with
+// no such connection keeps its original relative position (from
+// hunt.nodes array order) rather than being pushed to the end. This is a
+// plain stable topological sort (Kahn's algorithm, always breaking ties by
+// earliest original index among the currently-ready nodes) — any cycle
+// among in-cell connections just falls back to original order for
+// whatever's left, so a mistaken loop can never hang layout.
+function orderByConnections(nodes, connections) {
+  if (nodes.length < 2) return nodes;
+  var indexOf = {};
+  nodes.forEach(function (n, i) { indexOf[n.id] = i; });
+  var indeg = nodes.map(function () { return 0; });
+  var dependents = nodes.map(function () { return []; });
+  connections.forEach(function (c) {
+    var si = indexOf[c.sourceId], ti = indexOf[c.targetId];
+    if (si === undefined || ti === undefined || si === ti) return;
+    dependents[si].push(ti);
+    indeg[ti]++;
+  });
+  var used = nodes.map(function () { return false; });
+  var result = [];
+  for (var remaining = nodes.length; remaining > 0; remaining--) {
+    var pick = -1;
+    for (var i = 0; i < nodes.length; i++) {
+      if (!used[i] && indeg[i] === 0) { pick = i; break; }
+    }
+    if (pick === -1) { // cycle — bail out, keep whatever's left in original order
+      for (var j = 0; j < nodes.length; j++) if (!used[j]) result.push(nodes[j]);
+      break;
+    }
+    used[pick] = true;
+    result.push(nodes[pick]);
+    dependents[pick].forEach(function (ti) { indeg[ti]--; });
+  }
+  return result;
 }
 
 function computeLayout() {
@@ -450,7 +496,7 @@ function computeLayout() {
   columns.forEach(function (c, i) { colOf[c.id === null ? "__u__" : c.id] = i; });
 
   // Bucket nodes into [laneIdx][colIdx], preserving hunt.nodes array order
-  // as the stable stacking order within a cell.
+  // as the fallback stacking order within a cell.
   var buckets = LANES.map(function () { return columns.map(function () { return []; }); });
   hunt.nodes.forEach(function (n) {
     if (!n.lane || LANE_INDEX[n.lane] === undefined) n.lane = SUGGESTED_LANE[n.type] || "story";
@@ -461,18 +507,33 @@ function computeLayout() {
     buckets[li][ci].push(n);
   });
 
-  // Column widths: wide enough for the widest node currently placed in it.
-  var colWidths = columns.map(function (_, ci) {
+  // Within each cell, let connections between cellmates set the stacking
+  // order (see orderByConnections() above) instead of leaving it as
+  // whatever order hunt.nodes happens to be in.
+  LANES.forEach(function (l, li) {
+    columns.forEach(function (_, ci) {
+      buckets[li][ci] = orderByConnections(buckets[li][ci], hunt.connections);
+    });
+  });
+
+  // Column widths: wide enough for the widest node currently placed in it,
+  // or the creator's manually-dragged width if that's wider still (a
+  // manual override can only grow a column, never shrink it past what its
+  // content needs — see wireGridInteractions()'s colResize handling).
+  var colWidths = columns.map(function (col, ci) {
     var w = COL_W_BASE;
     LANES.forEach(function (l, li) {
       buckets[li][ci].forEach(function (n) { w = Math.max(w, nodeSize(n).w + CELL_PAD_SIDE * 2); });
     });
+    if (col.width && col.width > w) w = col.width;
     return w;
   });
   var colX = [], run = 0;
   columns.forEach(function (_, ci) { colX[ci] = run; run += colWidths[ci]; });
 
-  // Lane heights: tall enough to stack every node in that lane's fullest column.
+  // Lane heights: tall enough to stack every node in that lane's fullest
+  // column, or the creator's manually-dragged height if taller — same
+  // grow-only rule as column widths, above.
   var laneHeights = LANES.map(function (l, li) {
     var h = LANE_H_BASE;
     columns.forEach(function (_, ci) {
@@ -481,6 +542,8 @@ function computeLayout() {
       var stackH = CELL_PAD_TOP * 2 + cell.reduce(function (sum, n) { return sum + nodeSize(n).h; }, 0) + STACK_GAP * (cell.length - 1);
       h = Math.max(h, stackH);
     });
+    var manual = hunt.laneHeights && hunt.laneHeights[l.id];
+    if (manual && manual > h) h = manual;
     return h;
   });
   var laneY = [], runY = SCENE_HEADER_H;
@@ -539,6 +602,18 @@ function renderGrid() {
     label.style.height = L.laneHeights[li] + "px";
     label.innerHTML = '<span style="background:var(--lane-' + l.id + ')">' + esc(l.label) + '</span>';
     layer.appendChild(label);
+
+    // Drag this lane's bottom edge to grow/shrink it — see the
+    // "laneResize" drag kind in initCanvasInteraction(). Sits centered on
+    // the border, well clear of any node's edge (CELL_PAD_TOP on both
+    // sides of the border), so it never fights node dragging.
+    var laneHandle = document.createElement("div");
+    laneHandle.className = "lane-resize-handle";
+    laneHandle.dataset.laneId = l.id;
+    laneHandle.title = "Drag to resize lane · double-click to reset";
+    laneHandle.style.top = (L.laneY[li] + L.laneHeights[li] - 4) + "px";
+    laneHandle.style.width = L.totalWidth + "px";
+    layer.appendChild(laneHandle);
   });
 
   L.columns.forEach(function (col, ci) {
@@ -563,6 +638,20 @@ function renderGrid() {
         '<button class="scene-hdr-btn scene-delete" data-scene-id="' + col.id + '" title="Delete scene">🗑</button>';
     }
     layer.appendChild(header);
+
+    // Drag this column's right edge to grow/shrink it — see the
+    // "colResize" drag kind in initCanvasInteraction(). Same clearance
+    // logic as the lane handle above, but along CELL_PAD_SIDE. Starts
+    // below the header row so it never sits on top of the header's
+    // move/delete buttons, which live right at that same right edge.
+    var colHandle = document.createElement("div");
+    colHandle.className = "scene-resize-handle";
+    colHandle.dataset.colKey = col.unassigned ? "__u__" : col.id;
+    colHandle.title = "Drag to resize column · double-click to reset";
+    colHandle.style.left = (L.colX[ci] + L.colWidths[ci] - 4) + "px";
+    colHandle.style.top = SCENE_HEADER_H + "px";
+    colHandle.style.height = (L.totalHeight - SCENE_HEADER_H) + "px";
+    layer.appendChild(colHandle);
   });
 
   var addBtn = document.createElement("button");
@@ -657,6 +746,7 @@ function allIssues(hunt) {
 // older hunts open already organized instead of dumped into Unassigned.
 function migrateHuntForLanes(hunt) {
   if (!hunt.scenes) hunt.scenes = [];
+  if (!hunt.laneHeights) hunt.laneHeights = {}; // older saves predate manual lane/column sizing
   var needsMigration = hunt.nodes.some(function (n) { return !n.lane; });
   if (!needsMigration) return hunt;
 
@@ -857,6 +947,26 @@ function initCanvasInteraction() {
     var portEl = e.target.closest(".node-port");
     var edgeEl = e.target.closest(".edge-hit");
     var resizeHandleEl = e.target.closest(".node-resize-handle");
+    var laneHandleEl = e.target.closest(".lane-resize-handle");
+    var colHandleEl = e.target.closest(".scene-resize-handle");
+
+    if (laneHandleEl) {
+      var L0 = lastLayout || computeLayout();
+      var lhIdx = LANE_INDEX[laneHandleEl.dataset.laneId];
+      drag = { kind: "laneResize", laneId: laneHandleEl.dataset.laneId, startClientY: e.clientY, startHeight: L0.laneHeights[lhIdx], resized: false };
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (colHandleEl) {
+      var L1 = lastLayout || computeLayout();
+      var chKey = colHandleEl.dataset.colKey;
+      var chIdx = L1.columns.findIndex(function (c) { return (c.unassigned ? "__u__" : c.id) === chKey; });
+      drag = { kind: "colResize", colKey: chKey, startClientX: e.clientX, startWidth: L1.colWidths[chIdx], resized: false };
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     if (resizeHandleEl && nodeEl) {
       var rId = nodeEl.dataset.nodeId;
@@ -963,6 +1073,23 @@ function initCanvasInteraction() {
         n2.size = { w: nw, h: nh };
         renderNodes(); renderEdges();
       }
+    } else if (drag.kind === "laneResize") {
+      var dyLane = (e.clientY - drag.startClientY) / Store.view.zoom;
+      if (Math.abs(dyLane) > 2) drag.resized = true;
+      Store.hunt.laneHeights = Store.hunt.laneHeights || {};
+      Store.hunt.laneHeights[drag.laneId] = Math.max(40, Math.round(drag.startHeight + dyLane));
+      renderNodes(); renderEdges(); // computeLayout() clamps back up to content-fit if this override is too small
+    } else if (drag.kind === "colResize") {
+      var dxCol = (e.clientX - drag.startClientX) / Store.view.zoom;
+      if (Math.abs(dxCol) > 2) drag.resized = true;
+      var newW = Math.max(60, Math.round(drag.startWidth + dxCol));
+      if (drag.colKey === "__u__") {
+        Store.hunt.unassignedColWidth = newW;
+      } else {
+        var sc = (Store.hunt.scenes || []).find(function (s) { return s.id === drag.colKey; });
+        if (sc) sc.width = newW;
+      }
+      renderNodes(); renderEdges();
     } else if (drag.kind === "connect") {
       drag.cur = screenToWorld(e.clientX, e.clientY);
       renderTempEdge(e.target.closest(".node"));
@@ -998,6 +1125,8 @@ function initCanvasInteraction() {
       renderNodes(); renderEdges(); // clears the live-drag DOM overrides + drop highlight, relayouts into the grid
     } else if (drag.kind === "resize") {
       if (drag.resized) Store.pushHistory();
+    } else if (drag.kind === "laneResize" || drag.kind === "colResize") {
+      if (drag.resized) Store.pushHistory();
     } else if (drag.kind === "connect") {
       var targetEl = e.target.closest(".node");
       clearTempEdge();
@@ -1023,6 +1152,27 @@ function initCanvasInteraction() {
   });
 
   dom.canvasWrap.addEventListener("dblclick", function (e) {
+    var laneHandleEl = e.target.closest(".lane-resize-handle");
+    var colHandleEl = e.target.closest(".scene-resize-handle");
+    if (laneHandleEl) {
+      if (Store.hunt.laneHeights) delete Store.hunt.laneHeights[laneHandleEl.dataset.laneId];
+      renderNodes(); renderEdges();
+      Store.pushHistory();
+      toast("Reset lane to auto height.");
+      return;
+    }
+    if (colHandleEl) {
+      var chKey = colHandleEl.dataset.colKey;
+      if (chKey === "__u__") delete Store.hunt.unassignedColWidth;
+      else {
+        var sc = (Store.hunt.scenes || []).find(function (s) { return s.id === chKey; });
+        if (sc) delete sc.width;
+      }
+      renderNodes(); renderEdges();
+      Store.pushHistory();
+      toast("Reset column to auto width.");
+      return;
+    }
     var handleEl = e.target.closest(".node-resize-handle");
     if (!handleEl) return;
     var nodeEl = e.target.closest(".node");
