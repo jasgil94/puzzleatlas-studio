@@ -632,7 +632,7 @@ function validateHunt(hunt) {
 /* ---------------------------------------------------------------------
    Canvas geometry + rendering
 --------------------------------------------------------------------- */
-var NODE_W = 180, NODE_H = 64, EDGE_OFFSET = 5000, GRID = 20;
+var NODE_W = 220, NODE_H = 100, EDGE_OFFSET = 5000, GRID = 20;
 
 function getPortPos(node, isOutput) {
   return {

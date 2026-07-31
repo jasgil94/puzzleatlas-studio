@@ -45,3 +45,20 @@ Since this sandbox also has no way to drive a real browser for this session, ver
 ## Known Phase 1 limitations (by design, per spec)
 
 No accounts, backend, publishing, GPS/map editor, media pipeline, templates library, AI authoring, or analytics — all explicitly out of scope for this build. The location node is a structural stub only.
+
+## Live hosting and deployment
+
+The Studio prototype is hosted live at **https://puzzleatlas-studio.josh-gilmore.workers.dev**, served by Cloudflare Pages directly from the `main` branch of the `jasgil94/puzzleatlas-studio` GitHub repository. Every push to `main` triggers an automatic rebuild and redeploy (usually live within about a minute) — there is no separate build step, since the site is static HTML/CSS/JS.
+
+### How to publish an update
+
+1. Claude edits the relevant files in this folder as usual.
+2. Open **GitHub Desktop** with the PuzzleAtlas repository selected.
+3. Review the changed files under the **Changes** tab, write a short commit summary, and click **Commit to main**.
+4. Click **Push origin**.
+
+Cloudflare Pages picks up the push automatically and redeploys — no Terminal, tokens, or manual Cloudflare steps required for routine updates.
+
+### One-time setup (already done)
+
+For reference, the one-time setup that got the site live: a local git repo was initialized in this folder and connected to the `jasgil94/puzzleatlas-studio` GitHub repository (via GitHub Desktop, signed in with a browser-based login), then a Cloudflare Pages project was created under **Workers & Pages → Create → Pages → Connect to Git**, pointed at that repo, with framework preset "None," no build command, and output directory `/`.
