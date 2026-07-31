@@ -17,11 +17,12 @@ The spec suggested React + React Flow. This sandbox has no npm registry access (
 
 ## What's in the box
 
+- **Hunt library** — the Studio opens to a library screen listing every hunt project saved in this browser (title, node/entry-point counts, last-updated time), before you ever touch a canvas. From here: open a project into the canvas, start a new blank hunt, duplicate/rename/delete a project, export/import a project's JSON, or start a new project from the demo or broken-test templates. The "📚 Library" button in the canvas topbar returns here at any time (auto-saving the open project first).
 - **Canvas** — drag nodes from the palette, connect them by dragging from a node's right-hand port to another node, pan (drag empty canvas), zoom (scroll wheel or +/- buttons), multi-select (shift-drag a marquee), grid-snap, undo/redo (Ctrl+Z / Ctrl+Y).
 - **Node families** — Narrative (scene, choice), Puzzle (answer entry, ordering, matching), State (award item, set variable, score), Control (branch, convergence, ending), Support (progressive hint), and a Location stub (explicitly out of scope, included only as a structural placeholder).
 - **Inspector** — click a node to edit its content, effects, and creator-only notes (never shown to the player) in the right panel. Click a connection to open the rule inspector and build its condition from dropdowns (node/variable/item pickers) — no free-text logic required.
 - **Hunt setup** — title, concept, audience, entry point(s), and declared variables/items live in the bottom of the left panel.
-- **Save/reopen** — "Save" writes the hunt to this browser's local storage; "Reopen" restores it, positions and all.
+- **Save** — writes the open hunt to this browser's local storage as an entry in the hunt library (positions and all), keyed by the hunt's own id so re-saving updates the same project rather than creating a duplicate.
 - **Export/import** — "Export JSON" downloads the canonical hunt document; "Import JSON" reconstructs the canvas from a file. Round-tripping is lossless (verified — see Testing below).
 - **Validation** — the warnings panel flags unreachable nodes, dangling references, missing endings, and impossible convergences, and clicking a warning jumps you to the offending node/connection.
 - **Preview** — click "Preview / Play" to interpret the *exported* JSON directly and play the hunt end to end: open leads, answer entry, ordering/matching, progressive hints, branching, convergence, and endings. There is no separate hard-coded demo flow — preview and export share one interpreter.

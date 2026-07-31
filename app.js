@@ -1522,29 +1522,62 @@ function focusOnNode(nodeId) {
 }
 
 /* ---------------------------------------------------------------------
-   Save / Load (localStorage) + Export / Import (file)
+   Hunt library (multi-project localStorage) + per-hunt Save + Export / Import
 --------------------------------------------------------------------- */
-var STORAGE_KEY = "puzzleatlas_studio_hunt_v0";
+var LEGACY_STORAGE_KEY = "puzzleatlas_studio_hunt_v0"; // Phase 1 single-slot save, migrated below
+var LIBRARY_KEY = "puzzleatlas_studio_library_v1";
 
-function saveToLocalStorage() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(Store.hunt));
-  toast("Saved to browser local storage.");
+function loadLibraryRaw() {
+  var raw = localStorage.getItem(LIBRARY_KEY);
+  if (raw) {
+    try { return JSON.parse(raw).hunts || []; } catch (e) { return []; }
+  }
+  // First run after this update: migrate a Phase 1 single-slot save, if any.
+  var legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (legacy) {
+    try {
+      var h = JSON.parse(legacy);
+      if (h && h.id) { persistLibrary([h]); return [h]; }
+    } catch (e) { /* ignore corrupted legacy save */ }
+  }
+  return [];
 }
-function loadFromLocalStorage() {
-  var raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) { toast("No saved hunt found in this browser."); return; }
-  try {
-    var hunt = JSON.parse(raw);
-    Store.replaceHunt(hunt);
-    toast("Reopened saved hunt.");
-  } catch (e) { toast("Saved data is corrupted: " + e.message); }
+function persistLibrary(hunts) {
+  localStorage.setItem(LIBRARY_KEY, JSON.stringify({ hunts: hunts }));
 }
-function exportHunt() {
-  var json = JSON.stringify(Store.hunt, null, 2);
-  var filename = (Store.hunt.title || "hunt").replace(/[^a-z0-9\-_]+/gi, "_").toLowerCase() + ".json";
+function getLibraryHunts() {
+  return loadLibraryRaw().slice().sort(function (a, b) {
+    return new Date((b.metadata || {}).updatedAt || 0) - new Date((a.metadata || {}).updatedAt || 0);
+  });
+}
+function getHuntFromLibrary(id) {
+  return loadLibraryRaw().find(function (h) { return h.id === id; });
+}
+function upsertHuntInLibrary(hunt) {
+  hunt.metadata = hunt.metadata || {};
+  hunt.metadata.updatedAt = new Date().toISOString();
+  var hunts = loadLibraryRaw();
+  var idx = hunts.findIndex(function (h) { return h.id === hunt.id; });
+  var copy = clone(hunt);
+  if (idx === -1) hunts.push(copy); else hunts[idx] = copy;
+  persistLibrary(hunts);
+}
+function deleteHuntFromLibrary(id) {
+  persistLibrary(loadLibraryRaw().filter(function (h) { return h.id !== id; }));
+}
+function saveCurrentHuntToLibrary(quiet) {
+  upsertHuntInLibrary(Store.hunt);
+  if (!quiet) toast("Saved “" + Store.hunt.title + "” to your hunt library.");
+}
+
+function exportHuntObj(hunt) {
+  var json = JSON.stringify(hunt, null, 2);
+  var filename = (hunt.title || "hunt").replace(/[^a-z0-9\-_]+/gi, "_").toLowerCase() + ".json";
   download(filename, json);
   toast("Exported " + filename);
 }
+function exportHunt() { exportHuntObj(Store.hunt); }
+
 function importHuntFile(file) {
   var reader = new FileReader();
   reader.onload = function () {
@@ -1552,12 +1585,155 @@ function importHuntFile(file) {
       var hunt = JSON.parse(reader.result);
       if (!hunt.schemaVersion || !hunt.nodes || !hunt.connections) throw new Error("File does not look like a PuzzleAtlas hunt export.");
       Store.replaceHunt(hunt);
+      saveCurrentHuntToLibrary(true);
       toast("Imported \"" + hunt.title + "\".");
     } catch (e) {
       toast("Import failed: " + e.message);
     }
   };
   reader.readAsText(file);
+}
+function importHuntFileToLibrary(file) {
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      var hunt = JSON.parse(reader.result);
+      if (!hunt.schemaVersion || !hunt.nodes || !hunt.connections) throw new Error("File does not look like a PuzzleAtlas hunt export.");
+      if (!hunt.id) hunt.id = uid("hunt");
+      upsertHuntInLibrary(hunt);
+      renderLibrary();
+      toast("Imported \"" + hunt.title + "\" into your library.");
+    } catch (e) {
+      toast("Import failed: " + e.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ---------------------------------------------------------------------
+   Screens: Library (list of current Hunt projects) <-> Studio (canvas)
+--------------------------------------------------------------------- */
+function showLibraryScreen() {
+  dom.studioScreen.classList.add("hidden");
+  dom.libraryScreen.classList.remove("hidden");
+  renderLibrary();
+}
+function showStudioScreen() {
+  dom.libraryScreen.classList.add("hidden");
+  dom.studioScreen.classList.remove("hidden");
+  render();
+}
+function goToLibrary() {
+  // Auto-save the open project so the library always reflects current state.
+  if (Store.hunt && Store.hunt.id) saveCurrentHuntToLibrary(true);
+  showLibraryScreen();
+}
+function openHuntById(id) {
+  var hunt = getHuntFromLibrary(id);
+  if (!hunt) { toast("That hunt could not be found."); return; }
+  Store.replaceHunt(clone(hunt));
+  showStudioScreen();
+}
+function createNewHuntAndOpen() {
+  var h = newHunt();
+  upsertHuntInLibrary(h);
+  Store.replaceHunt(clone(h));
+  showStudioScreen();
+  toast("Created a new hunt.");
+}
+function openTemplateAndOpen(template, label) {
+  var h = clone(template);
+  h.id = uid("hunt");
+  h.metadata = h.metadata || {};
+  h.metadata.createdAt = new Date().toISOString();
+  upsertHuntInLibrary(h);
+  Store.replaceHunt(clone(h));
+  showStudioScreen();
+  toast("Created new hunt from " + label + ".");
+}
+
+function formatUpdated(iso) {
+  var d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return "unknown";
+  var now = new Date();
+  var sameYear = d.getFullYear() === now.getFullYear();
+  var datePart = d.toLocaleDateString(undefined, sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+  var timePart = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return datePart + " at " + timePart;
+}
+
+function renderLibrary() {
+  var hunts = getLibraryHunts();
+  var grid = document.getElementById("libraryGrid");
+  var empty = document.getElementById("libraryEmpty");
+  grid.innerHTML = "";
+  empty.classList.toggle("hidden", hunts.length > 0);
+
+  hunts.forEach(function (h) {
+    var nodeCount = (h.nodes || []).length;
+    var entryCount = (h.entryPointIds || []).length;
+    var card = document.createElement("div");
+    card.className = "hunt-card";
+    card.innerHTML =
+      '<button class="hunt-card-title" data-open="' + h.id + '">' + esc(h.title || "Untitled Hunt") + "</button>" +
+      '<div class="hunt-card-meta">' + nodeCount + " node" + (nodeCount === 1 ? "" : "s") + " · " + entryCount + " entry point" + (entryCount === 1 ? "" : "s") + "</div>" +
+      '<div class="hunt-card-meta">Updated ' + esc(formatUpdated((h.metadata || {}).updatedAt)) + "</div>" +
+      '<div class="hunt-card-actions">' +
+        '<button class="small-btn" data-open="' + h.id + '">Open</button>' +
+        '<button class="small-btn" data-rename="' + h.id + '">Rename</button>' +
+        '<button class="small-btn" data-dup="' + h.id + '">Duplicate</button>' +
+        '<button class="small-btn" data-export="' + h.id + '">Export</button>' +
+        '<button class="small-btn" data-del="' + h.id + '">Delete</button>' +
+      "</div>";
+    grid.appendChild(card);
+  });
+
+  Array.prototype.forEach.call(grid.querySelectorAll("[data-open]"), function (btn) {
+    btn.onclick = function () { openHuntById(btn.dataset.open); };
+  });
+  Array.prototype.forEach.call(grid.querySelectorAll("[data-rename]"), function (btn) {
+    btn.onclick = function () {
+      var hunt = getHuntFromLibrary(btn.dataset.rename);
+      if (!hunt) return;
+      var name = prompt("Rename hunt:", hunt.title || "Untitled Hunt");
+      if (name === null) return;
+      name = name.trim();
+      if (!name) return;
+      hunt.title = name;
+      upsertHuntInLibrary(hunt);
+      renderLibrary();
+    };
+  });
+  Array.prototype.forEach.call(grid.querySelectorAll("[data-dup]"), function (btn) {
+    btn.onclick = function () {
+      var hunt = getHuntFromLibrary(btn.dataset.dup);
+      if (!hunt) return;
+      var copy = clone(hunt);
+      copy.id = uid("hunt");
+      copy.title = (hunt.title || "Untitled Hunt") + " (copy)";
+      copy.metadata = copy.metadata || {};
+      copy.metadata.createdAt = new Date().toISOString();
+      upsertHuntInLibrary(copy);
+      renderLibrary();
+      toast("Duplicated “" + (hunt.title || "Untitled Hunt") + "”.");
+    };
+  });
+  Array.prototype.forEach.call(grid.querySelectorAll("[data-export]"), function (btn) {
+    btn.onclick = function () {
+      var hunt = getHuntFromLibrary(btn.dataset.export);
+      if (hunt) exportHuntObj(hunt);
+    };
+  });
+  Array.prototype.forEach.call(grid.querySelectorAll("[data-del]"), function (btn) {
+    btn.onclick = function () {
+      var hunt = getHuntFromLibrary(btn.dataset.del);
+      if (!hunt) return;
+      if (!confirm('Delete "' + (hunt.title || "Untitled Hunt") + '"? This cannot be undone.')) return;
+      deleteHuntFromLibrary(hunt.id);
+      renderLibrary();
+      toast("Deleted “" + (hunt.title || "Untitled Hunt") + "”.");
+    };
+  });
 }
 
 /* =========================================================================
@@ -2019,6 +2195,8 @@ var BROKEN_HUNT = {
    Bootstrap
 --------------------------------------------------------------------- */
 function init() {
+  dom.libraryScreen = document.getElementById("libraryScreen");
+  dom.studioScreen = document.getElementById("studioScreen");
   dom.canvasWrap = document.getElementById("canvasWrap");
   dom.canvasViewport = document.getElementById("canvasViewport");
   dom.edgeLayer = document.getElementById("edgeLayer");
@@ -2035,10 +2213,10 @@ function init() {
   document.getElementById("huntTitleInput").oninput = function (e) { Store.hunt.title = e.target.value; };
   document.getElementById("huntTitleInput").onblur = function () { Store.pushHistory(); };
 
+  document.getElementById("btnLibrary").onclick = goToLibrary;
   document.getElementById("btnUndo").onclick = function () { Store.undo(); };
   document.getElementById("btnRedo").onclick = function () { Store.redo(); };
-  document.getElementById("btnSave").onclick = saveToLocalStorage;
-  document.getElementById("btnLoad").onclick = loadFromLocalStorage;
+  document.getElementById("btnSave").onclick = function () { saveCurrentHuntToLibrary(false); };
   document.getElementById("btnExport").onclick = exportHunt;
   document.getElementById("btnImport").onclick = function () { document.getElementById("fileImport").click(); };
   document.getElementById("fileImport").onchange = function (e) {
@@ -2067,8 +2245,22 @@ function init() {
   document.getElementById("btnPreviewRestart").onclick = previewRestart;
   document.getElementById("btnPreviewState").onclick = function () { Preview.showState = !Preview.showState; renderPreview(); };
 
-  render();
-  toast("Welcome to PuzzleAtlas Studio. Try \"Load Demo Hunt\" to explore a working example.", 4000);
+  // Library screen controls
+  document.getElementById("btnNewHunt").onclick = createNewHuntAndOpen;
+  document.getElementById("btnLibImport").onclick = function () { document.getElementById("fileLibImport").click(); };
+  document.getElementById("fileLibImport").onchange = function (e) {
+    if (e.target.files[0]) importHuntFileToLibrary(e.target.files[0]);
+    e.target.value = "";
+  };
+  document.getElementById("btnDemoFromLibrary").onclick = function () { openTemplateAndOpen(DEMO_HUNT, "the demo hunt"); };
+  document.getElementById("btnBrokenFromLibrary").onclick = function () {
+    openTemplateAndOpen(BROKEN_HUNT, "the broken test hunt");
+    document.getElementById("validationPanel").classList.remove("hidden");
+    renderValidationPanel();
+  };
+
+  showLibraryScreen();
+  toast("Welcome to PuzzleAtlas Studio. Open a hunt from your library, or start a new one.", 4000);
 }
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
