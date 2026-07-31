@@ -3,6 +3,12 @@
   --text:#e8eaf0; --text-dim:#9aa1b2; --accent:#6c8cff; --accent2:#8f6cff;
   --warn:#ffb454; --danger:#ff6464; --ok:#57d38c;
   --narrative:#5b8def; --puzzle:#e2a33a; --state:#57d38c; --control:#c86bd6; --support:#4fc3c8; --stub:#8a8f9c;
+
+  /* Player-app lanes — Story / Leads / Map / Inventory / Hints, mirrored
+     from the bottom tab bar onto the Studio canvas as 5 fixed rows. */
+  --lane-story:#5b8def; --lane-leads:#e2a33a; --lane-map:#57d38c; --lane-inventory:#8f6cff; --lane-hints:#4fc3c8;
+  --lane-story-bg:rgba(91,141,239,.06); --lane-leads-bg:rgba(226,163,58,.06); --lane-map-bg:rgba(87,211,140,.06);
+  --lane-inventory-bg:rgba(143,108,255,.06); --lane-hints-bg:rgba(79,195,200,.06);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 
   /* Style-pack-driven variables — these govern only the Preview / Play
@@ -97,11 +103,36 @@ button{font-family:inherit;cursor:pointer;}
 .marquee{position:absolute;border:1px solid var(--accent);background:rgba(108,140,255,.15);pointer-events:none;}
 .hidden{display:none !important;}
 
+/* Lane x Scene grid — background layer behind edges/nodes. Lanes are full-
+   width horizontal rows (Story/Leads/Map/Inventory/Hints); Scene columns
+   are creator-defined vertical bands crossing all 5 lanes. Both grow to
+   fit their contents (see computeLayout() in app.js). */
+#gridLayer{position:absolute;top:0;left:0;width:1px;height:1px;}
+.lane-band{position:absolute;left:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);pointer-events:none;}
+.lane-band.drop-target{outline:2px dashed var(--accent);outline-offset:-2px;}
+.lane-label{position:absolute;left:-108px;width:100px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;pointer-events:none;}
+.lane-label span{color:#0b0e14;font-weight:700;font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;padding:5px 10px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);}
+.scene-col{position:absolute;top:0;border-right:1px dashed var(--line);pointer-events:none;}
+.scene-col.unassigned{background:rgba(255,255,255,.015);border-right:1px solid var(--line);}
+.scene-col.drop-target{background:rgba(108,140,255,.07);}
+.scene-header{position:absolute;top:0;height:40px;display:flex;align-items:center;gap:2px;padding:0 6px;pointer-events:auto;}
+.scene-title-text{color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;}
+.scene-title-input{flex:1;min-width:0;background:transparent;border:1px solid transparent;color:var(--text);font-size:12.5px;font-weight:700;padding:3px 5px;border-radius:5px;font-family:inherit;}
+.scene-title-input:hover{border-color:var(--line);}
+.scene-title-input:focus{outline:none;border-color:var(--accent);background:var(--bg3);}
+.scene-hdr-btn{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:11px;padding:2px 4px;border-radius:4px;flex-shrink:0;}
+.scene-hdr-btn:hover{color:var(--text);background:var(--bg3);}
+.scene-hdr-btn:disabled{opacity:.25;cursor:default;}
+.scene-add-btn{position:absolute;top:4px;white-space:nowrap;}
+
 /* nodes */
 .node{position:absolute;width:220px;height:100px;background:var(--bg3);border:2px solid var(--line);border-radius:10px;padding:8px 12px;user-select:none;box-shadow:0 2px 6px rgba(0,0,0,.3);cursor:grab;overflow:hidden;box-sizing:border-box;}
 .node:active{cursor:grabbing;}
 .node.selected{border-color:var(--accent);box-shadow:0 0 0 3px rgba(108,140,255,.3);}
 .node.unreachable{outline:2px dashed var(--danger);outline-offset:3px;}
+.node.lane-mismatch{outline:2px dashed var(--warn);outline-offset:3px;}
+.node.unreachable.lane-mismatch{outline-color:var(--danger);}
+.node-lane-warn{margin-left:auto;font-size:11px;flex-shrink:0;}
 /* Live Player mockup sync — marks whichever node the docked mobile
    preview is currently showing (player-here), and any other open leads
    the player could go to next (player-open). */
@@ -153,6 +184,7 @@ button{font-family:inherit;cursor:pointer;}
 .section-title{font-size:11.5px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;border-top:1px solid var(--line);padding-top:12px;}
 .section-title:first-child{border-top:none;padding-top:0;margin-top:0;}
 .creator-note-box{border:1px dashed var(--warn);border-radius:6px;padding:8px;background:rgba(255,180,84,.08);}
+.lane-warn-note{font-size:11px;color:var(--warn);background:rgba(255,180,84,.08);border:1px dashed var(--warn);border-radius:6px;padding:6px 8px;margin:-4px 0 12px;line-height:1.4;}
 .hint-badge{font-size:9px;background:var(--support);color:#08303a;padding:1px 6px;border-radius:8px;font-weight:700;}
 .chip{display:inline-block;font-size:10.5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin:2px 4px 2px 0;color:var(--text-dim);}
 

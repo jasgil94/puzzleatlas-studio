@@ -184,11 +184,12 @@ function newHunt(title) {
     items: [],
     nodes: [],
     connections: [],
+    scenes: [{ id: uid("scene"), title: "Scene 1" }],
     stylePack: getStylePack(DEFAULT_STYLE_PACK_ID)
   };
 }
 
-function newNode(type, x, y) {
+function newNode(type, x, y, lane, sceneId) {
   var def = NODE_TYPES[type];
   return {
     id: uid("n"),
@@ -199,7 +200,9 @@ function newNode(type, x, y) {
     size: { w: NODE_W, h: NODE_H },
     content: def.defaultContent(),
     creatorNotes: "",
-    effects: []
+    effects: [],
+    lane: lane || SUGGESTED_LANE[type] || "story",
+    sceneId: sceneId !== undefined ? sceneId : null
   };
 }
 
@@ -258,6 +261,7 @@ var Store = {
   },
 
   replaceHunt: function (hunt) {
+    migrateHuntForLanes(hunt);
     this.hunt = hunt;
     this.selection = { type: null, id: null };
     this.multiSelectNodeIds = [];
@@ -266,8 +270,8 @@ var Store = {
     render();
   },
 
-  addNode: function (type, x, y) {
-    var n = newNode(type, x, y);
+  addNode: function (type, x, y, lane, sceneId) {
+    var n = newNode(type, x, y, lane, sceneId);
     this.hunt.nodes.push(n);
     if (this.hunt.entryPointIds.length === 0) this.hunt.entryPointIds.push(n.id);
     this.pushHistory();
@@ -339,6 +343,41 @@ var Store = {
 var NODE_W = 220, NODE_H = 100, EDGE_OFFSET = 5000, GRID = 20;
 var NODE_MIN_W = 160, NODE_MIN_H = 64, NODE_MAX_W = 560, NODE_MAX_H = 480;
 
+/* ---------------------------------------------------------------------
+   Player-app lanes — the canvas is organized as 5 fixed horizontal lanes
+   that mirror the Player app's bottom tab bar (Story / Leads / Map /
+   Inventory / Hints), crossed by creator-defined vertical "Scene"
+   columns. A node's lane + sceneId together pick its cell in this grid;
+   computeLayout() (below) turns that into actual pixel position.
+--------------------------------------------------------------------- */
+var LANES = [
+  { id: "story",     label: "Story" },
+  { id: "leads",     label: "Leads" },
+  { id: "map",       label: "Map" },
+  { id: "inventory", label: "Inventory" },
+  { id: "hints",     label: "Hints" }
+];
+var LANE_INDEX = {}, LANE_BY_ID = {};
+LANES.forEach(function (l, i) { LANE_INDEX[l.id] = i; LANE_BY_ID[l.id] = l; });
+
+// The lane each node type is normally authored into. Dragging a node into
+// a different lane is allowed (lane is a manual, per-node placement) but
+// is flagged as a soft validation warning — see studioIssues().
+var SUGGESTED_LANE = {
+  scene: "story", ending: "story",
+  choice: "leads", answerEntry: "leads", ordering: "leads", matching: "leads", branch: "leads", convergence: "leads",
+  locationPlaceholder: "map",
+  awardItem: "inventory", score: "inventory", setVariable: "inventory",
+  hint: "hints"
+};
+
+// Grid geometry. Lanes and scene columns are contiguous (no gap) and
+// divided only by a border line; each lane's height and each column's
+// width grow to fit whatever it currently contains.
+var SCENE_HEADER_H = 40, LANE_H_BASE = 140, COL_W_BASE = 260;
+var CELL_PAD_TOP = 14, CELL_PAD_SIDE = 14, STACK_GAP = 14;
+var lastLayout = null; // populated by computeLayout(), consulted by drag/drop-target logic
+
 // A node's on-canvas size, falling back to the default for nodes created
 // before per-card resizing existed (demo/broken fixtures, older saves).
 function nodeSize(node) {
@@ -376,13 +415,278 @@ function nodeIconSpan(type) {
   return '<span class="node-icon" style="background:var(--' + FAMILIES[familyOf(type)].color + ')"></span>';
 }
 
+/* ---------------------------------------------------------------------
+   Lane x Scene grid — layout, rendering and scene-column management.
+
+   The grid is the canonical arrangement of the canvas: 5 fixed lanes
+   (rows) crossed by creator-defined Scene columns. A node's pixel
+   position is *derived* from its (lane, sceneId) cell, never stored as
+   free-form truth — computeLayout() recomputes every node's
+   position.x/position.y from scratch on every render, stacking however
+   many nodes share a cell top-to-bottom, and growing that lane's height
+   / that column's width to fit. This keeps position.x/position.y valid
+   for all the existing edge/port/marquee/resize code, which never needs
+   to know the grid exists.
+--------------------------------------------------------------------- */
+function getColumns() {
+  var scenes = Store.hunt.scenes || [];
+  return [{ id: null, title: "Unassigned", unassigned: true }].concat(scenes);
+}
+
+function computeLayout() {
+  var hunt = Store.hunt;
+  var columns = getColumns();
+  var colOf = {};
+  columns.forEach(function (c, i) { colOf[c.id === null ? "__u__" : c.id] = i; });
+
+  // Bucket nodes into [laneIdx][colIdx], preserving hunt.nodes array order
+  // as the stable stacking order within a cell.
+  var buckets = LANES.map(function () { return columns.map(function () { return []; }); });
+  hunt.nodes.forEach(function (n) {
+    if (!n.lane || LANE_INDEX[n.lane] === undefined) n.lane = SUGGESTED_LANE[n.type] || "story";
+    var li = LANE_INDEX[n.lane];
+    var key = n.sceneId === null || n.sceneId === undefined ? "__u__" : n.sceneId;
+    var ci = colOf[key];
+    if (ci === undefined) { n.sceneId = null; ci = 0; } // scene was deleted elsewhere — fall back to Unassigned
+    buckets[li][ci].push(n);
+  });
+
+  // Column widths: wide enough for the widest node currently placed in it.
+  var colWidths = columns.map(function (_, ci) {
+    var w = COL_W_BASE;
+    LANES.forEach(function (l, li) {
+      buckets[li][ci].forEach(function (n) { w = Math.max(w, nodeSize(n).w + CELL_PAD_SIDE * 2); });
+    });
+    return w;
+  });
+  var colX = [], run = 0;
+  columns.forEach(function (_, ci) { colX[ci] = run; run += colWidths[ci]; });
+
+  // Lane heights: tall enough to stack every node in that lane's fullest column.
+  var laneHeights = LANES.map(function (l, li) {
+    var h = LANE_H_BASE;
+    columns.forEach(function (_, ci) {
+      var cell = buckets[li][ci];
+      if (!cell.length) return;
+      var stackH = CELL_PAD_TOP * 2 + cell.reduce(function (sum, n) { return sum + nodeSize(n).h; }, 0) + STACK_GAP * (cell.length - 1);
+      h = Math.max(h, stackH);
+    });
+    return h;
+  });
+  var laneY = [], runY = SCENE_HEADER_H;
+  LANES.forEach(function (l, li) { laneY[li] = runY; runY += laneHeights[li]; });
+
+  // Place every node: left-aligned in its column, stacked top-down in its cell.
+  LANES.forEach(function (l, li) {
+    columns.forEach(function (_, ci) {
+      var y = laneY[li] + CELL_PAD_TOP;
+      buckets[li][ci].forEach(function (n) {
+        var sz = nodeSize(n);
+        n.position.x = colX[ci] + CELL_PAD_SIDE;
+        n.position.y = y;
+        y += sz.h + STACK_GAP;
+      });
+    });
+  });
+
+  lastLayout = { columns: columns, colX: colX, colWidths: colWidths, laneY: laneY, laneHeights: laneHeights,
+    totalWidth: run, totalHeight: runY };
+  return lastLayout;
+}
+
+function laneIndexForWorldY(y) {
+  var L = lastLayout || computeLayout();
+  for (var i = 0; i < LANES.length; i++) {
+    if (y < L.laneY[i] + L.laneHeights[i] || i === LANES.length - 1) return i;
+  }
+  return LANES.length - 1;
+}
+function colIndexForWorldX(x) {
+  var L = lastLayout || computeLayout();
+  for (var i = 0; i < L.columns.length; i++) {
+    if (x < L.colX[i] + L.colWidths[i] || i === L.columns.length - 1) return i;
+  }
+  return L.columns.length - 1;
+}
+
+function renderGrid() {
+  var L = lastLayout || computeLayout();
+  var layer = dom.gridLayer;
+  layer.innerHTML = "";
+
+  LANES.forEach(function (l, li) {
+    var band = document.createElement("div");
+    band.className = "lane-band";
+    band.style.top = L.laneY[li] + "px";
+    band.style.height = L.laneHeights[li] + "px";
+    band.style.width = L.totalWidth + "px";
+    band.style.background = "var(--lane-" + l.id + "-bg)";
+    layer.appendChild(band);
+
+    var label = document.createElement("div");
+    label.className = "lane-label";
+    label.style.top = L.laneY[li] + "px";
+    label.style.height = L.laneHeights[li] + "px";
+    label.innerHTML = '<span style="background:var(--lane-' + l.id + ')">' + esc(l.label) + '</span>';
+    layer.appendChild(label);
+  });
+
+  L.columns.forEach(function (col, ci) {
+    var colDiv = document.createElement("div");
+    colDiv.className = "scene-col" + (col.unassigned ? " unassigned" : "");
+    colDiv.style.left = L.colX[ci] + "px";
+    colDiv.style.width = L.colWidths[ci] + "px";
+    colDiv.style.height = L.totalHeight + "px";
+    layer.appendChild(colDiv);
+
+    var header = document.createElement("div");
+    header.className = "scene-header" + (col.unassigned ? " unassigned" : "");
+    header.style.left = L.colX[ci] + "px";
+    header.style.width = L.colWidths[ci] + "px";
+    if (col.unassigned) {
+      header.innerHTML = '<span class="scene-title-text">Unassigned</span>';
+    } else {
+      header.innerHTML =
+        '<button class="scene-hdr-btn scene-move-left" data-scene-id="' + col.id + '" title="Move left"' + (ci === 1 ? " disabled" : "") + '>◀</button>' +
+        '<input type="text" class="scene-title-input" data-scene-id="' + col.id + '" value="' + esc(col.title) + '" />' +
+        '<button class="scene-hdr-btn scene-move-right" data-scene-id="' + col.id + '" title="Move right"' + (ci === L.columns.length - 1 ? " disabled" : "") + '>▶</button>' +
+        '<button class="scene-hdr-btn scene-delete" data-scene-id="' + col.id + '" title="Delete scene">🗑</button>';
+    }
+    layer.appendChild(header);
+  });
+
+  var addBtn = document.createElement("button");
+  addBtn.className = "btn small scene-add-btn";
+  addBtn.textContent = "＋ Scene";
+  addBtn.style.left = (L.colX[L.columns.length - 1] + L.colWidths[L.columns.length - 1] + 10) + "px";
+  addBtn.onclick = function () { addScene(); };
+  layer.appendChild(addBtn);
+
+  wireGridInteractions();
+}
+
+function wireGridInteractions() {
+  Array.prototype.forEach.call(dom.gridLayer.querySelectorAll(".scene-title-input"), function (inp) {
+    inp.oninput = function (e) { renameScene(inp.dataset.sceneId, e.target.value); };
+    inp.onblur = function () { Store.pushHistory(); };
+  });
+  Array.prototype.forEach.call(dom.gridLayer.querySelectorAll(".scene-move-left"), function (btn) {
+    btn.onclick = function () { moveScene(btn.dataset.sceneId, -1); };
+  });
+  Array.prototype.forEach.call(dom.gridLayer.querySelectorAll(".scene-move-right"), function (btn) {
+    btn.onclick = function () { moveScene(btn.dataset.sceneId, 1); };
+  });
+  Array.prototype.forEach.call(dom.gridLayer.querySelectorAll(".scene-delete"), function (btn) {
+    btn.onclick = function () { deleteScene(btn.dataset.sceneId); };
+  });
+}
+
+function highlightDropTarget(worldX, worldY) {
+  var li = laneIndexForWorldY(worldY), ci = colIndexForWorldX(worldX);
+  Array.prototype.forEach.call(dom.gridLayer.querySelectorAll(".lane-band"), function (el, i) { el.classList.toggle("drop-target", i === li); });
+  Array.prototype.forEach.call(dom.gridLayer.querySelectorAll(".scene-col"), function (el, i) { el.classList.toggle("drop-target", i === ci); });
+}
+
+function addScene() {
+  Store.hunt.scenes = Store.hunt.scenes || [];
+  Store.hunt.scenes.push({ id: uid("scene"), title: "Scene " + (Store.hunt.scenes.length + 1) });
+  Store.pushHistory();
+  render();
+}
+function renameScene(id, title) {
+  // No re-render here: the scene header lives inside #gridLayer, which a
+  // render rebuilds from scratch — doing that on every keystroke would
+  // yank focus out of the input the creator is still typing into. The
+  // input already shows what they typed; onblur (below) persists it.
+  var s = (Store.hunt.scenes || []).find(function (x) { return x.id === id; });
+  if (s) s.title = title;
+}
+function moveScene(id, dir) {
+  var arr = Store.hunt.scenes;
+  var idx = arr.findIndex(function (s) { return s.id === id; });
+  var swapIdx = idx + dir;
+  if (idx < 0 || swapIdx < 0 || swapIdx >= arr.length) return;
+  var tmp = arr[idx]; arr[idx] = arr[swapIdx]; arr[swapIdx] = tmp;
+  Store.pushHistory();
+  render();
+}
+function deleteScene(id) {
+  var s = (Store.hunt.scenes || []).find(function (x) { return x.id === id; });
+  if (!s) return;
+  if (!confirm('Delete scene "' + s.title + '"? Its nodes will move to Unassigned.')) return;
+  Store.hunt.nodes.forEach(function (n) { if (n.sceneId === id) n.sceneId = null; });
+  Store.hunt.scenes = Store.hunt.scenes.filter(function (x) { return x.id !== id; });
+  Store.pushHistory();
+  render();
+}
+
+// Studio-only lane-mismatch notices, merged with the shared engine
+// validation for the badge count and the validation drawer.
+function studioIssues(hunt) {
+  var issues = [];
+  hunt.nodes.forEach(function (n) {
+    var suggested = SUGGESTED_LANE[n.type];
+    if (suggested && n.lane && n.lane !== suggested) {
+      issues.push({
+        level: "warning",
+        title: "Lane placement",
+        detail: '"' + n.title + '" is in the ' + LANE_BY_ID[n.lane].label + ' lane, but ' + NODE_TYPES[n.type].label + ' nodes are usually placed in ' + LANE_BY_ID[suggested].label + '.',
+        nodeId: n.id
+      });
+    }
+  });
+  return issues;
+}
+function allIssues(hunt) {
+  return validateHunt(hunt).concat(studioIssues(hunt));
+}
+
+// Bring a hunt saved/imported before the lane+scene grid existed up to
+// date: assign every node a lane (from its type) and cluster nodes that
+// shared roughly the same x position into inferred Scene columns, so
+// older hunts open already organized instead of dumped into Unassigned.
+function migrateHuntForLanes(hunt) {
+  if (!hunt.scenes) hunt.scenes = [];
+  var needsMigration = hunt.nodes.some(function (n) { return !n.lane; });
+  if (!needsMigration) return hunt;
+
+  var THRESH = 150;
+  var byX = hunt.nodes.map(function (n) { return { n: n, x: (n.position && n.position.x) || 0 }; })
+    .sort(function (a, b) { return a.x - b.x; });
+  var clusters = [];
+  byX.forEach(function (item) {
+    var last = clusters[clusters.length - 1];
+    if (last && Math.abs(item.x - last.x0) <= THRESH) last.nodeIds.push(item.n.id);
+    else clusters.push({ x0: item.x, nodeIds: [item.n.id] });
+  });
+
+  if (clusters.length > 1 || hunt.scenes.length === 0) {
+    var scenes = clusters.map(function (cl, i) { return { id: uid("scene"), title: "Scene " + (i + 1), nodeIds: cl.nodeIds }; });
+    hunt.scenes = scenes.map(function (s) { return { id: s.id, title: s.title }; });
+    scenes.forEach(function (s) {
+      s.nodeIds.forEach(function (nid) {
+        var n = hunt.nodes.find(function (x) { return x.id === nid; });
+        if (n && n.sceneId === undefined) n.sceneId = s.id;
+      });
+    });
+  }
+  hunt.nodes.forEach(function (n) {
+    if (!n.lane) n.lane = SUGGESTED_LANE[n.type] || "story";
+    if (n.sceneId === undefined) n.sceneId = null;
+  });
+  return hunt;
+}
+
 function renderNodes() {
+  computeLayout();
+  renderGrid();
   dom.nodeLayer.innerHTML = "";
   Store.hunt.nodes.forEach(function (n) {
     var def = NODE_TYPES[n.type];
     var div = document.createElement("div");
     var selected = Store.multiSelectNodeIds.indexOf(n.id) !== -1;
-    div.className = "node fam-" + def.family + (selected ? " selected" : "");
+    var mismatch = SUGGESTED_LANE[n.type] && n.lane && n.lane !== SUGGESTED_LANE[n.type];
+    div.className = "node fam-" + def.family + (selected ? " selected" : "") + (mismatch ? " lane-mismatch" : "");
     div.dataset.nodeId = n.id;
     div.style.left = n.position.x + "px";
     div.style.top = n.position.y + "px";
@@ -392,7 +696,9 @@ function renderNodes() {
     var isEntry = Store.hunt.entryPointIds.indexOf(n.id) !== -1;
     div.innerHTML =
       '<div class="node-head">' + nodeIconSpan(n.type) +
-        '<span class="node-type">' + def.icon + " " + esc(def.label) + (isEntry ? " · ENTRY" : "") + '</span></div>' +
+        '<span class="node-type">' + def.icon + " " + esc(def.label) + (isEntry ? " · ENTRY" : "") + '</span>' +
+        (mismatch ? '<span class="node-lane-warn" title="Usually placed in the ' + esc(LANE_BY_ID[SUGGESTED_LANE[n.type]].label) + ' lane">⚠</span>' : '') +
+      '</div>' +
       '<div class="node-title">' + esc(n.title) + '</div>' +
       '<div class="node-sub">' + esc(def.summary(n.content, Store.hunt)) + '</div>' +
       '<div class="node-port in" title="Incoming"></div>' +
@@ -405,7 +711,7 @@ function renderNodes() {
 }
 
 function markUnreachable() {
-  var issues = validateHunt(Store.hunt);
+  var issues = allIssues(Store.hunt);
   var badIds = {};
   issues.forEach(function (i) { if (i.title === "Unreachable node" && i.nodeId) badIds[i.nodeId] = true; });
   Array.prototype.forEach.call(dom.nodeLayer.children, function (el) {
@@ -471,7 +777,7 @@ function renderEdges() {
 }
 
 function renderValidationBadge(issues) {
-  issues = issues || validateHunt(Store.hunt);
+  issues = issues || allIssues(Store.hunt);
   var errCount = issues.filter(function (i) { return i.level === "error"; }).length;
   var badge = document.getElementById("warnBadge");
   badge.textContent = String(issues.length);
@@ -609,17 +915,31 @@ function initCanvasInteraction() {
       Store.view.y = drag.startView.y + (e.clientY - drag.startClient.y);
       applyViewportTransform();
     } else if (drag.kind === "move") {
+      // Live drag: move the dragged node(s) directly via their DOM elements
+      // and their in-memory position, without calling renderNodes() —
+      // renderNodes() runs computeLayout(), which would immediately snap
+      // the node back into its *current* lane/scene cell every frame.
+      // The real lane/scene reassignment (the "strict snap") happens once,
+      // on mouseup below, then a normal render() lays everything out fresh.
       var world = screenToWorld(e.clientX, e.clientY);
       var dx = world.x - drag.startWorld.x, dy = world.y - drag.startWorld.y;
       if (Math.abs(dx) > 2 || Math.abs(dy) > 2) drag.moved = true;
+      var lastN = null;
       Object.keys(drag.starts).forEach(function (nid) {
         var n = Store.getNode(nid);
         if (!n) return;
         var nx = drag.starts[nid].x + dx, ny = drag.starts[nid].y + dy;
         if (Store.snapEnabled) { nx = snap(nx, GRID); ny = snap(ny, GRID); }
         n.position.x = nx; n.position.y = ny;
+        var el = dom.nodeLayer.querySelector('[data-node-id="' + nid + '"]');
+        if (el) { el.style.left = nx + "px"; el.style.top = ny + "px"; }
+        lastN = n;
       });
-      renderNodes(); renderEdges();
+      if (lastN) {
+        var sz = nodeSize(lastN);
+        highlightDropTarget(lastN.position.x + sz.w / 2, lastN.position.y + sz.h / 2);
+      }
+      renderEdges();
     } else if (drag.kind === "resize") {
       var n2 = Store.getNode(drag.nodeId);
       if (n2) {
@@ -650,7 +970,22 @@ function initCanvasInteraction() {
   window.addEventListener("mouseup", function (e) {
     if (!drag) return;
     if (drag.kind === "move") {
-      if (drag.moved) Store.pushHistory();
+      if (drag.moved) {
+        // Strict snap: whichever lane row / scene column each dropped
+        // node's centre now falls in becomes its new home cell.
+        Object.keys(drag.starts).forEach(function (nid) {
+          var n = Store.getNode(nid);
+          if (!n) return;
+          var sz = nodeSize(n);
+          var cx = n.position.x + sz.w / 2, cy = n.position.y + sz.h / 2;
+          var li = laneIndexForWorldY(cy), ci = colIndexForWorldX(cx);
+          n.lane = LANES[li].id;
+          var col = lastLayout.columns[ci];
+          n.sceneId = col.unassigned ? null : col.id;
+        });
+        Store.pushHistory();
+      }
+      renderNodes(); renderEdges(); // clears the live-drag DOM overrides + drop highlight, relayouts into the grid
     } else if (drag.kind === "resize") {
       if (drag.resized) Store.pushHistory();
     } else if (drag.kind === "connect") {
@@ -754,9 +1089,11 @@ function initPaletteDrop() {
     var type = e.dataTransfer.getData("text/plain");
     if (!NODE_TYPES[type]) return;
     var world = screenToWorld(e.clientX, e.clientY);
-    var x = Store.snapEnabled ? snap(world.x - NODE_W / 2, GRID) : world.x - NODE_W / 2;
-    var y = Store.snapEnabled ? snap(world.y - NODE_H / 2, GRID) : world.y - NODE_H / 2;
-    var n = Store.addNode(type, x, y);
+    // Where it's dropped picks its starting lane + scene column; the grid
+    // lays out the exact pixel position once it's added.
+    var li = laneIndexForWorldY(world.y), ci = colIndexForWorldX(world.x);
+    var col = lastLayout.columns[ci];
+    var n = Store.addNode(type, world.x, world.y, LANES[li].id, col.unassigned ? null : col.id);
     render();
     Store.select("node", n.id);
   });
@@ -923,6 +1260,16 @@ function renderInspector() {
 function buildNodeInspector(n) {
   var html = '<div class="section-title">Basics</div>';
   html += fieldWrap("Title", '<input type="text" id="fTitle" value="' + esc(n.title) + '" />');
+  html += '<div class="section-title">Canvas placement</div>';
+  html += fieldWrap("Lane", '<select id="fLane">' +
+    LANES.map(function (l) { return '<option value="' + l.id + '"' + (n.lane === l.id ? " selected" : "") + '>' + esc(l.label) + '</option>'; }).join("") +
+    '</select>');
+  var sceneOpts = '<option value=""' + (!n.sceneId ? " selected" : "") + '>Unassigned</option>' +
+    (Store.hunt.scenes || []).map(function (s) { return '<option value="' + s.id + '"' + (n.sceneId === s.id ? " selected" : "") + '>' + esc(s.title) + '</option>'; }).join("");
+  html += fieldWrap("Scene column", '<select id="fSceneId">' + sceneOpts + '</select>');
+  if (SUGGESTED_LANE[n.type] && n.lane && SUGGESTED_LANE[n.type] !== n.lane) {
+    html += '<p class="lane-warn-note">⚠ ' + esc(NODE_TYPES[n.type].label) + ' nodes are usually placed in the <b>' + esc(LANE_BY_ID[SUGGESTED_LANE[n.type]].label) + '</b> lane.</p>';
+  }
   html += buildTypeSpecificFields(n);
   html += '<div class="section-title">Effects (applied when node completes)</div>';
   html += buildEffectsEditor(n);
@@ -1048,6 +1395,8 @@ function wireNodeInspector(n) {
     byId("fTitle").oninput = function (e) { n.title = e.target.value; renderNodes(); };
     byId("fTitle").onblur = function () { afterEdit(false); };
   }
+  if (byId("fLane")) byId("fLane").onchange = function (e) { n.lane = e.target.value; afterEdit(); renderInspector(); };
+  if (byId("fSceneId")) byId("fSceneId").onchange = function (e) { n.sceneId = e.target.value || null; afterEdit(); renderInspector(); };
   var c = n.content;
 
   function bindText(elId, prop, onCommit) {
@@ -1268,7 +1617,7 @@ function wireEdgeInspector(c) {
    Validation panel (drawer)
 --------------------------------------------------------------------- */
 function renderValidationPanel() {
-  var issues = validateHunt(Store.hunt);
+  var issues = allIssues(Store.hunt);
   renderValidationBadge(issues);
   var list = document.getElementById("validationList");
   if (!issues.length) { list.innerHTML = '<div class="warn-empty">✓ No structural issues detected.</div>'; return; }
@@ -2099,6 +2448,7 @@ function init() {
   dom.styleBuilderScreen = document.getElementById("styleBuilderScreen");
   dom.canvasWrap = document.getElementById("canvasWrap");
   dom.canvasViewport = document.getElementById("canvasViewport");
+  dom.gridLayer = document.getElementById("gridLayer");
   dom.edgeLayer = document.getElementById("edgeLayer");
   dom.nodeLayer = document.getElementById("nodeLayer");
   dom.canvasHint = document.getElementById("canvasHint");
@@ -2138,6 +2488,7 @@ function init() {
   };
 
   document.getElementById("chkSnap").onchange = function (e) { Store.snapEnabled = e.target.checked; };
+  document.getElementById("btnAddSceneSide").onclick = function () { addScene(); };
 
   document.getElementById("btnValidation").onclick = function () {
     var panel = document.getElementById("validationPanel");
