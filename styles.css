@@ -223,10 +223,11 @@ button{font-family:inherit;cursor:pointer;}
    lane for whatever scene is currently on screen (see renderPlayerTabBar
    in app.js). Styled with --pv-* so it follows the active style pack. */
 .player-tabbar{display:flex;flex-shrink:0;border-top:var(--pv-border-width) var(--pv-border-style) var(--line);background:var(--pv-surface);}
-.player-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;border-top:2px solid transparent;color:var(--pv-text-dim);padding:8px 2px 7px;font-family:var(--pv-font-body);cursor:pointer;}
-.player-tab:hover{color:var(--pv-text);}
-.player-tab-icon{font-size:16px;line-height:1;}
-.player-tab-label{font-size:9px;text-transform:uppercase;letter-spacing:.03em;font-weight:600;}
+.player-tab{flex:1;display:flex;align-items:center;justify-content:center;background:none;border:none;border-top:2px solid transparent;color:var(--pv-text-dim);padding:10px 2px;cursor:pointer;}
+.player-tab:hover{color:var(--pv-accent);}
+.player-tab.active{color:var(--pv-accent);border-top-color:var(--pv-accent);}
+.player-tab-icon{width:20px;height:20px;line-height:0;}
+.player-tab-icon svg{width:100%;height:100%;display:block;}
 .phone-screen .player-tabbar{border-bottom-left-radius:20px;border-bottom-right-radius:20px;}
 
 /* validation drawer */

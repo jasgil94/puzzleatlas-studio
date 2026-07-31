@@ -350,12 +350,22 @@ var NODE_MIN_W = 160, NODE_MIN_H = 64, NODE_MAX_W = 560, NODE_MAX_H = 480;
    columns. A node's lane + sceneId together pick its cell in this grid;
    computeLayout() (below) turns that into actual pixel position.
 --------------------------------------------------------------------- */
+// Player tab bar icons — plain single-color line drawings (stroke:
+// currentColor, no fill) so they pick up whatever color the tab bar CSS
+// gives them, including the active style pack's accent color.
+var LANE_TAB_SVG = {
+  story: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-1.8-1.3-4.2-2-7-2-1 0-2 .1-3 .3v13.7c1-.2 2-.3 3-.3 2.8 0 5.2.7 7 2 1.8-1.3 4.2-2 7-2 1 0 2 .1 3 .3V4.3c-1-.2-2-.3-3-.3-2.8 0-5.2.7-7 2Z"/><path d="M12 6v14"/></svg>',
+  leads: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l1.5 1.5L8 5.5"/><path d="M11 6h9"/><path d="M4 12.5l1.5 1.5L8 11.5"/><path d="M11 12h9"/><path d="M4 18.5l1.5 1.5L8 17.5"/><path d="M11 18h9"/></svg>',
+  map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-7.2 7-12a7 7 0 1 0-14 0c0 4.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.4"/></svg>',
+  inventory: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="11" rx="2"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>',
+  hints: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 .8 1.1 1.6l.1.5h4.6l.1-.5c.1-.8.5-1.2 1.1-1.6A6 6 0 0 0 12 3Z"/></svg>'
+};
 var LANES = [
-  { id: "story",     label: "Story",     icon: "📖" },
-  { id: "leads",     label: "Leads",     icon: "📋" },
-  { id: "map",       label: "Map",       icon: "📍" },
-  { id: "inventory", label: "Inventory", icon: "💼" },
-  { id: "hints",     label: "Hints",     icon: "💡" }
+  { id: "story",     label: "Story",     icon: LANE_TAB_SVG.story },
+  { id: "leads",     label: "Leads",     icon: LANE_TAB_SVG.leads },
+  { id: "map",       label: "Map",       icon: LANE_TAB_SVG.map },
+  { id: "inventory", label: "Inventory", icon: LANE_TAB_SVG.inventory },
+  { id: "hints",     label: "Hints",     icon: LANE_TAB_SVG.hints }
 ];
 var LANE_INDEX = {}, LANE_BY_ID = {};
 LANES.forEach(function (l, i) { LANE_INDEX[l.id] = i; LANE_BY_ID[l.id] = l; });
@@ -2310,9 +2320,8 @@ function renderPlayerTabBar(ctl, tabBarEl) {
   tabBarEl.innerHTML = LANES.map(function (l) {
     var active = l.id === activeLane;
     return '<button class="player-tab' + (active ? " active" : "") + '" data-lane="' + l.id + '"' +
-      (active ? ' style="color:var(--pv-text);border-top-color:var(--lane-' + l.id + ')"' : "") +
-      ' title="' + esc(l.label) + '">' +
-      '<span class="player-tab-icon">' + l.icon + '</span><span class="player-tab-label">' + esc(l.label) + '</span></button>';
+      ' title="' + esc(l.label) + '" aria-label="' + esc(l.label) + '">' +
+      '<span class="player-tab-icon">' + l.icon + '</span></button>';
   }).join("");
 
   Array.prototype.forEach.call(tabBarEl.querySelectorAll(".player-tab"), function (btn) {
