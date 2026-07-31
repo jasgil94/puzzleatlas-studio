@@ -166,6 +166,7 @@ button{font-family:inherit;cursor:pointer;}
 .color-field-row input[type=text]{flex:1;}
 .style-fields-2col{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;}
 .style-builder-desc{font-size:11.5px;color:var(--text-dim);margin:-4px 0 14px;line-height:1.5;}
+.font-pick-select{font-size:13px;}
 .motion-check{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);margin-top:4px;}
 
 /* Player mockup panel — always-visible mobile mirror of the Player app,

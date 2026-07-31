@@ -2039,8 +2039,57 @@ function setDeep(obj, path, value) {
   cur[parts[parts.length - 1]] = value;
 }
 
+// 30 widely-installed system/web-safe fonts, offered as quick-pick dropdown
+// options for the typography fields. Each option is rendered in its own
+// font (via an inline style) so the name previews the face. The stack
+// value (not just the bare name) is what actually gets stored/applied,
+// matching how style packs already declare fonts as CSS font stacks.
+var SYSTEM_FONT_OPTIONS = [
+  { label: "Arial", stack: "Arial, Helvetica, sans-serif" },
+  { label: "Helvetica", stack: "Helvetica, Arial, sans-serif" },
+  { label: "Verdana", stack: "Verdana, Geneva, sans-serif" },
+  { label: "Tahoma", stack: "Tahoma, Geneva, sans-serif" },
+  { label: "Trebuchet MS", stack: "'Trebuchet MS', Helvetica, sans-serif" },
+  { label: "Segoe UI", stack: "'Segoe UI', Tahoma, sans-serif" },
+  { label: "Calibri", stack: "Calibri, Candara, sans-serif" },
+  { label: "Candara", stack: "Candara, Calibri, sans-serif" },
+  { label: "Century Gothic", stack: "'Century Gothic', Futura, sans-serif" },
+  { label: "Futura", stack: "Futura, 'Century Gothic', sans-serif" },
+  { label: "Gill Sans", stack: "'Gill Sans', 'Gill Sans MT', sans-serif" },
+  { label: "Franklin Gothic Medium", stack: "'Franklin Gothic Medium', Arial, sans-serif" },
+  { label: "Georgia", stack: "Georgia, 'Times New Roman', serif" },
+  { label: "Times New Roman", stack: "'Times New Roman', Times, serif" },
+  { label: "Palatino Linotype", stack: "'Palatino Linotype', Palatino, serif" },
+  { label: "Book Antiqua", stack: "'Book Antiqua', Palatino, serif" },
+  { label: "Garamond", stack: "Garamond, 'Times New Roman', serif" },
+  { label: "Cambria", stack: "Cambria, Georgia, serif" },
+  { label: "Constantia", stack: "Constantia, Georgia, serif" },
+  { label: "Baskerville", stack: "Baskerville, 'Times New Roman', serif" },
+  { label: "Rockwell", stack: "Rockwell, 'Courier New', serif" },
+  { label: "Bookman Old Style", stack: "'Bookman Old Style', Bookman, serif" },
+  { label: "Courier New", stack: "'Courier New', Courier, monospace" },
+  { label: "Consolas", stack: "Consolas, 'Courier New', monospace" },
+  { label: "Lucida Console", stack: "'Lucida Console', Monaco, monospace" },
+  { label: "Monaco", stack: "Monaco, Consolas, monospace" },
+  { label: "Impact", stack: "Impact, Haettenschweiler, sans-serif" },
+  { label: "Comic Sans MS", stack: "'Comic Sans MS', cursive, sans-serif" },
+  { label: "Papyrus", stack: "Papyrus, fantasy" },
+  { label: "Brush Script MT", stack: "'Brush Script MT', cursive" }
+];
+
 function sbField(labelText, path, value, type) {
   return '<div class="field"><label>' + esc(labelText) + '</label><input type="' + (type || "text") + '" data-path="' + path + '" value="' + esc(value == null ? "" : value) + '" /></div>';
+}
+function sbFontField(labelText, path, value) {
+  var isPreset = SYSTEM_FONT_OPTIONS.some(function (f) { return f.stack === value; });
+  var options = '<option value=""' + (isPreset ? "" : " selected") + '>Custom (type below)…</option>' +
+    SYSTEM_FONT_OPTIONS.map(function (f) {
+      return '<option value="' + esc(f.stack) + '" style="font-family:' + esc(f.stack) + '"' + (f.stack === value ? " selected" : "") + '>' + esc(f.label) + '</option>';
+    }).join("");
+  return '<div class="field"><label>' + esc(labelText) + '</label>' +
+    '<select data-fpath="' + path + '" class="font-pick-select">' + options + '</select>' +
+    '<input type="text" data-path="' + path + '" value="' + esc(value == null ? "" : value) + '" placeholder="CSS font stack, e.g. Georgia, serif" style="margin-top:6px" />' +
+  '</div>';
 }
 function sbColorField(labelText, path, value) {
   var hex = /^#[0-9a-fA-F]{6}$/.test(value || "") ? value : "#000000";
@@ -2077,9 +2126,9 @@ function renderStyleBuilderForm() {
   html += sbTextareaField("Tone notes", "vibe.toneNotes", p.vibe.toneNotes);
 
   html += '<div class="section-title">Typography</div>';
-  html += sbField("Heading font (CSS font stack)", "typography.headingFont", p.typography.headingFont);
-  html += sbField("Body font", "typography.bodyFont", p.typography.bodyFont);
-  html += sbField("Mono font (codes / answers)", "typography.monoFont", p.typography.monoFont);
+  html += sbFontField("Heading font", "typography.headingFont", p.typography.headingFont);
+  html += sbFontField("Body font", "typography.bodyFont", p.typography.bodyFont);
+  html += sbFontField("Mono font (codes / answers)", "typography.monoFont", p.typography.monoFont);
   html += '<div class="field-row">' +
     sbSelectField("Heading transform", "typography.headingTransform", ["none", "uppercase", "capitalize"], p.typography.headingTransform || "none") +
     sbField("Heading letter spacing", "typography.headingLetterSpacing", p.typography.headingLetterSpacing || "normal") +
@@ -2132,6 +2181,8 @@ function renderStyleBuilderForm() {
       }
       var swatch = box.querySelector('[data-cpath="' + path + '"]');
       if (swatch && /^#[0-9a-fA-F]{6}$/.test(val)) swatch.value = val;
+      var picker = box.querySelector('[data-fpath="' + path + '"]');
+      if (picker) picker.value = SYSTEM_FONT_OPTIONS.some(function (f) { return f.stack === val; }) ? val : "";
       liveUpdateStyleBuilder();
     };
     el.oninput = handler; el.onchange = handler; // onchange covers <select>, which doesn't reliably fire input in every browser
@@ -2142,6 +2193,17 @@ function renderStyleBuilderForm() {
       setDeep(p, path, e.target.value);
       var twin = box.querySelector('[data-path="' + path + '"]');
       if (twin) twin.value = e.target.value;
+      liveUpdateStyleBuilder();
+    };
+  });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-fpath]"), function (el) {
+    el.onchange = function (e) {
+      var path = el.dataset.fpath;
+      var val = e.target.value;
+      if (!val) return; // "Custom (type below)…" chosen — leave the typed stack in the text field alone
+      setDeep(p, path, val);
+      var twin = box.querySelector('[data-path="' + path + '"]');
+      if (twin) twin.value = val;
       liveUpdateStyleBuilder();
     };
   });
