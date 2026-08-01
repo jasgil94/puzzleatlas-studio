@@ -385,7 +385,24 @@ var SUGGESTED_LANE = {
   choice: "leads", answerEntry: "leads", ordering: "leads", matching: "leads", branch: "leads", convergence: "leads",
   locationPlaceholder: "map",
   awardItem: "inventory", score: "inventory", setVariable: "inventory",
-  hint: "hints"
+  hint: "hints",
+  // Node Type Expansion additions (see docs) — puzzle-family and
+  // puzzle-like control-family types default alongside the existing
+  // puzzles in Leads; state-family goes to Inventory; the new Support
+  // type goes to Hints, same as the existing Hint node.
+  cipher: "leads", mathLogic: "leads", anagram: "leads", sequencePattern: "leads", slidingTile: "leads",
+  multiPartAnswer: "leads", physicalLockCode: "leads", crossReferenceLookup: "leads",
+  gate: "leads", randomizer: "leads", teamSplitMerge: "leads", metaPuzzleCombine: "leads",
+  timer: "leads", attemptLimiter: "leads",
+  combineCraftItem: "inventory", trade: "inventory",
+  hintUnlockCost: "hints",
+  // Media nodes are content reveals like Scene, so they default to Story;
+  // Map Display is the one exception since it's literally a map.
+  imageReveal: "story", audioReveal: "story", videoReveal: "story", documentReveal: "story", gallery: "story",
+  mapDisplay: "map",
+  // Real-world input nodes are Location Placeholder's siblings, so they
+  // default to the same Map lane.
+  photoUploadVerification: "map", geolocationCheckIn: "map", qrNfcScan: "map", gameMasterCheckIn: "map"
 };
 
 // Grid geometry. Lanes and scene columns are contiguous (no gap) and
@@ -1222,23 +1239,68 @@ function clearTempEdge() {
 /* ---------------------------------------------------------------------
    Palette — drag new nodes onto canvas
 --------------------------------------------------------------------- */
+// Palette grouping is by node *family* (Narrative/Puzzle/State/Control/
+// Support/Media/Real-World Input/Stub) — a different axis from the
+// canvas's Story/Leads/Map/Inventory/Hints *lanes* (see LANES above).
+// Deliberately not calling this "lane" to avoid colliding with that.
+var PALETTE_FAMILY_ORDER = ["narrative", "puzzle", "state", "control", "support", "media", "input", "stub"];
+var PALETTE_COLLAPSED = {}; // familyId -> true when collapsed; expanded by default
+
 function renderPalette() {
   var list = document.getElementById("paletteList");
   if (list.dataset.built) return; // static, build once
   list.dataset.built = "1";
-  var order = ["scene","choice","answerEntry","ordering","matching","awardItem","setVariable","score","branch","convergence","ending","hint","locationPlaceholder"];
-  order.forEach(function (type) {
-    var def = NODE_TYPES[type];
-    var item = document.createElement("div");
-    item.className = "palette-item";
-    item.draggable = true;
-    item.dataset.type = type;
-    item.innerHTML = '<span class="fam-dot fam-' + def.family + '"></span><span>' + def.icon + " " + esc(def.label) + "</span>";
-    item.addEventListener("dragstart", function (e) {
-      e.dataTransfer.setData("text/plain", type);
-      e.dataTransfer.effectAllowed = "copy";
+
+  // Group every registered node type by family, preserving declaration order within each family.
+  var byFamily = {};
+  Object.keys(NODE_TYPES).forEach(function (type) {
+    var fam = NODE_TYPES[type].family;
+    (byFamily[fam] = byFamily[fam] || []).push(type);
+  });
+
+  var families = PALETTE_FAMILY_ORDER.filter(function (f) { return byFamily[f] && byFamily[f].length; });
+  // Catch any family not accounted for above so new families never silently disappear from the palette.
+  Object.keys(byFamily).forEach(function (f) { if (families.indexOf(f) === -1) families.push(f); });
+
+  list.innerHTML = "";
+  families.forEach(function (famId) {
+    var types = byFamily[famId];
+    var famDef = FAMILIES[famId] || { label: famId };
+    var group = document.createElement("div");
+    group.className = "palette-group" + (PALETTE_COLLAPSED[famId] ? " collapsed" : "");
+    group.dataset.family = famId;
+
+    var header = document.createElement("div");
+    header.className = "palette-group-header";
+    header.innerHTML = '<span class="palette-group-chevron">▾</span>' +
+      '<span class="fam-dot fam-' + famId + '"></span>' +
+      '<span class="palette-group-label">' + esc(famDef.label) + '</span>' +
+      '<span class="palette-group-count">' + types.length + '</span>';
+    header.addEventListener("click", function () {
+      PALETTE_COLLAPSED[famId] = !PALETTE_COLLAPSED[famId];
+      group.classList.toggle("collapsed", !!PALETTE_COLLAPSED[famId]);
     });
-    list.appendChild(item);
+    group.appendChild(header);
+
+    var itemsWrap = document.createElement("div");
+    itemsWrap.className = "palette-group-items";
+    types.forEach(function (type) {
+      var def = NODE_TYPES[type];
+      var item = document.createElement("div");
+      item.className = "palette-item";
+      item.draggable = true;
+      item.dataset.type = type;
+      item.title = def.label;
+      item.innerHTML = '<span>' + def.icon + " " + esc(def.label) + "</span>";
+      item.addEventListener("dragstart", function (e) {
+        e.dataTransfer.setData("text/plain", type);
+        e.dataTransfer.effectAllowed = "copy";
+      });
+      itemsWrap.appendChild(item);
+    });
+    group.appendChild(itemsWrap);
+
+    list.appendChild(group);
   });
 }
 
@@ -1521,8 +1583,64 @@ function buildTypeSpecificFields(n) {
     case "locationPlaceholder":
       html += '<p style="font-size:12px;color:var(--text-dim)">' + esc(c.placeholderNote) + '</p>';
       break;
+    default:
+      html += buildGenericContentFields(n);
+      break;
   }
   return html;
+}
+
+/* Generic content editor for node types without a bespoke inspector layout
+   (currently: the node types proposed in the Node Type Expansion draft).
+   Renders a plain input/textarea per string/number/boolean field, and a
+   raw-JSON textarea for anything array/object-shaped, keyed off whatever
+   shape that type's defaultContent() produced. Keeps every new node type
+   immediately usable in the canvas + inspector without a bespoke editor
+   per type; swap in a hand-built case above as each type's fields settle. */
+function genericFieldLabel(key) {
+  return key.replace(/([A-Z])/g, " $1").replace(/^./, function (s) { return s.toUpperCase(); });
+}
+function buildGenericContentFields(n) {
+  var c = n.content || {}, html = "";
+  Object.keys(c).forEach(function (key) {
+    var v = c[key], label = genericFieldLabel(key);
+    if (typeof v === "string") {
+      var longField = v.length > 60 || /body|prompt|instruction|note|final/i.test(key);
+      html += fieldWrap(label, longField
+        ? '<textarea data-gkey="' + key + '" class="genericField">' + esc(v) + '</textarea>'
+        : '<input type="text" data-gkey="' + key + '" class="genericField" value="' + esc(v) + '" />');
+    } else if (typeof v === "number") {
+      html += fieldWrap(label, '<input type="number" data-gkey="' + key + '" class="genericField" value="' + v + '" />');
+    } else if (typeof v === "boolean") {
+      html += fieldWrap(label, '<select data-gkey="' + key + '" class="genericField"><option value="1"' + (v ? " selected" : "") + '>Yes</option><option value="0"' + (!v ? " selected" : "") + '>No</option></select>');
+    } else {
+      html += fieldWrap(label + " (advanced — raw JSON)", '<textarea data-gkey="' + key + '" data-gjson="1" class="genericField" style="font-family:\'Courier New\',monospace;font-size:11.5px">' + esc(JSON.stringify(v, null, 2)) + '</textarea>');
+    }
+  });
+  html += '<p style="font-size:11px;color:var(--text-dim);margin-top:6px">This node type doesn’t have a custom editor yet, so fields are shown generically. List/object fields are edited as raw JSON.</p>';
+  return html;
+}
+function wireGenericContentFields(n) {
+  var c = n.content || {};
+  Array.prototype.forEach.call(document.querySelectorAll(".genericField"), function (el) {
+    var key = el.dataset.gkey, isJson = el.dataset.gjson === "1";
+    if (el.tagName === "SELECT") {
+      el.onchange = function (e) { c[key] = e.target.value === "1"; afterEdit(); };
+      return;
+    }
+    el.oninput = function (e) {
+      if (isJson) return; // JSON fields commit on blur only, so partial typing doesn't break parsing
+      c[key] = (el.type === "number") ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value;
+    };
+    el.onblur = function () {
+      if (isJson) {
+        try { c[key] = JSON.parse(el.value); afterEdit(); }
+        catch (err) { toast('Invalid JSON for "' + key + '" — change not saved.'); }
+      } else {
+        afterEdit();
+      }
+    };
+  });
 }
 
 function buildEffectsEditor(n) {
@@ -1670,6 +1788,9 @@ function wireNodeInspector(n) {
         btn.onclick = function () { c.stages = c.stages.filter(function (s) { return s.id !== btn.dataset.hid; }); afterEdit(false); renderInspector(); };
       });
       if (byId("btnAddHintStage")) byId("btnAddHintStage").onclick = function () { c.stages.push({ id: uid("hs"), text: "Another hint stage." }); afterEdit(false); renderInspector(); };
+      break;
+    default:
+      wireGenericContentFields(n);
       break;
   }
 

@@ -3,6 +3,7 @@
   --text:#e8eaf0; --text-dim:#9aa1b2; --accent:#6c8cff; --accent2:#8f6cff;
   --warn:#ffb454; --danger:#ff6464; --ok:#57d38c;
   --narrative:#5b8def; --puzzle:#e2a33a; --state:#57d38c; --control:#c86bd6; --support:#4fc3c8; --stub:#8a8f9c;
+  --media:#e2686b; --input:#54b8a3;
 
   /* Player-app lanes — Story / Leads / Map / Inventory / Hints, mirrored
      from the bottom tab bar onto the Studio canvas as 5 fixed rows. */
@@ -87,7 +88,17 @@ button{font-family:inherit;cursor:pointer;}
 .fam-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
 .fam-narrative{background:var(--narrative);} .fam-puzzle{background:var(--puzzle);} .fam-state{background:var(--state);}
 .fam-control{background:var(--control);} .fam-support{background:var(--support);} .fam-stub{background:var(--stub);}
+.fam-media{background:var(--media);} .fam-input{background:var(--input);}
 .palette-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.palette-group{margin-bottom:4px;}
+.palette-group-header{display:flex;align-items:center;gap:6px;padding:6px 4px;cursor:pointer;border-radius:6px;user-select:none;}
+.palette-group-header:hover{background:var(--bg3);}
+.palette-group-chevron{display:inline-block;width:10px;font-size:10px;color:var(--text-dim);transition:transform .12s;flex-shrink:0;}
+.palette-group.collapsed .palette-group-chevron{transform:rotate(-90deg);}
+.palette-group-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);font-weight:700;flex:1;}
+.palette-group-count{font-size:10.5px;color:var(--text-dim);background:var(--bg3);border-radius:8px;padding:0 6px;}
+.palette-group-items{padding-left:2px;}
+.palette-group.collapsed .palette-group-items{display:none;}
 .snap-toggle{font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:4px;margin-top:6px;}
 #huntMeta label{display:block;font-size:11px;color:var(--text-dim);margin:8px 0 3px;}
 #huntMeta input, #huntMeta textarea{width:100%;background:var(--bg3);border:1px solid var(--line);color:var(--text);border-radius:5px;padding:5px 7px;font-size:12.5px;font-family:inherit;}
@@ -160,6 +171,8 @@ button{font-family:inherit;cursor:pointer;}
 .node.fam-control{border-left:5px solid var(--control);}
 .node.fam-support{border-left:5px solid var(--support);}
 .node.fam-stub{border-left:5px solid var(--stub);}
+.node.fam-media{border-left:5px solid var(--media);}
+.node.fam-input{border-left:5px solid var(--input);}
 
 /* edges */
 .edge-path{fill:none;stroke:#6a7180;stroke-width:2;pointer-events:stroke;cursor:pointer;}

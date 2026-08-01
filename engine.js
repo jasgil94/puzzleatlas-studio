@@ -51,6 +51,8 @@ var FAMILIES = {
   state:     { label: "State",     color: "state" },
   control:   { label: "Control",   color: "control" },
   support:   { label: "Support",   color: "support" },
+  media:     { label: "Media",     color: "media" },
+  input:     { label: "Real-World Input", color: "input" },
   stub:      { label: "Stub",      color: "stub" }
 };
 
@@ -107,6 +109,58 @@ var NODE_TYPES = {
     },
     summary: function (c) { return (c.left || []).length + " pairs to match"; }
   },
+  cipher: {
+    family: "puzzle", label: "Cipher / Cryptogram", icon: "🔐",
+    defaultTitle: "New Cipher Puzzle",
+    defaultContent: function () {
+      return { cipherType: "caesar", ciphertext: "Enter the ciphertext here.", key: "", acceptedAnswers: ["ANSWER"] };
+    },
+    summary: function (c) { return (c.cipherType || "cipher") + " — " + (c.acceptedAnswers || []).join(", "); }
+  },
+  mathLogic: {
+    family: "puzzle", label: "Math / Logic Puzzle", icon: "🧮",
+    defaultTitle: "New Math / Logic Puzzle",
+    defaultContent: function () { return { prompt: "Describe the math or logic puzzle.", expectedValue: "", tolerance: 0, unit: "" }; },
+    summary: function (c) { return "Answer: " + c.expectedValue + (c.unit ? " " + c.unit : ""); }
+  },
+  anagram: {
+    family: "puzzle", label: "Anagram / Word Puzzle", icon: "🔤",
+    defaultTitle: "New Anagram Puzzle",
+    defaultContent: function () { return { scrambled: "TENISL", acceptedAnswers: ["LISTEN"] }; },
+    summary: function (c) { return "Scrambled: " + c.scrambled; }
+  },
+  sequencePattern: {
+    family: "puzzle", label: "Sequence / Pattern (Simon-style)", icon: "🎹",
+    defaultTitle: "New Sequence Puzzle",
+    defaultContent: function () { return { sequence: ["red", "blue", "green"], inputMode: "playerRepeats" }; },
+    summary: function (c) { return (c.sequence || []).length + "-step sequence"; }
+  },
+  slidingTile: {
+    family: "puzzle", label: "Sliding Tile / Jigsaw", icon: "🔲",
+    defaultTitle: "New Sliding Tile Puzzle",
+    defaultContent: function () { return { imageAsset: "", gridSize: 3, solvedState: "" }; },
+    summary: function (c) { return c.gridSize + "×" + c.gridSize + " tile puzzle"; }
+  },
+  multiPartAnswer: {
+    family: "puzzle", label: "Multi-Part Answer", icon: "🧷",
+    defaultTitle: "New Multi-Part Answer",
+    defaultContent: function () {
+      return { parts: [{ id: uid("part"), prompt: "Part 1 prompt", acceptedAnswers: ["A"] }, { id: uid("part"), prompt: "Part 2 prompt", acceptedAnswers: ["B"] }], combineRule: "concatenate" };
+    },
+    summary: function (c) { return (c.parts || []).length + " parts to combine"; }
+  },
+  physicalLockCode: {
+    family: "puzzle", label: "Physical Lock Code Entry", icon: "🔒",
+    defaultTitle: "New Lock Code Entry",
+    defaultContent: function () { return { codeLength: 4, codeFormat: "numeric", acceptedCode: "1234" }; },
+    summary: function (c) { return c.codeFormat + " code, length " + c.codeLength; }
+  },
+  crossReferenceLookup: {
+    family: "puzzle", label: "Cross-Reference Lookup", icon: "🔍",
+    defaultTitle: "New Cross-Reference Lookup",
+    defaultContent: function () { return { sourceNodeIds: [], prompt: "Combine information from the referenced nodes.", acceptedAnswers: ["ANSWER"] }; },
+    summary: function (c) { return "Refs " + (c.sourceNodeIds || []).length + " node(s)"; }
+  },
   awardItem: {
     family: "state", label: "Award Item", icon: "🎒",
     defaultTitle: "Award Item",
@@ -124,6 +178,18 @@ var NODE_TYPES = {
     defaultTitle: "Score Change",
     defaultContent: function () { return { delta: 1 }; },
     summary: function (c) { return "Score " + (c.delta >= 0 ? "+" : "") + c.delta; }
+  },
+  combineCraftItem: {
+    family: "state", label: "Combine / Craft Item", icon: "🛠️",
+    defaultTitle: "Combine / Craft Item",
+    defaultContent: function () { return { inputItemIds: [], outputItemId: "" }; },
+    summary: function (c, hunt) { return "Crafts: " + itemName(hunt, c.outputItemId); }
+  },
+  trade: {
+    family: "state", label: "Trade", icon: "💱",
+    defaultTitle: "Trade",
+    defaultContent: function () { return { costType: "score", costValue: 1, rewardType: "hint", rewardId: "" }; },
+    summary: function (c) { return "Cost " + c.costValue + " " + c.costType; }
   },
   branch: {
     family: "control", label: "Branch", icon: "🌿",
@@ -145,6 +211,42 @@ var NODE_TYPES = {
     defaultContent: function () { return { resultName: "An Ending", body: "Describe how the hunt concludes." }; },
     summary: function (c) { return "Result: " + c.resultName; }
   },
+  gate: {
+    family: "control", label: "Gate (multi-condition)", icon: "🚦",
+    defaultTitle: "New Gate",
+    defaultContent: function () { return { conditionGroups: [] }; },
+    summary: function (c) { return (c.conditionGroups || []).length + " condition group(s)"; }
+  },
+  randomizer: {
+    family: "control", label: "Randomizer", icon: "🎲",
+    defaultTitle: "New Randomizer",
+    defaultContent: function () { return { mode: "uniform", weights: [] }; },
+    summary: function (c) { return c.mode + " random routing"; }
+  },
+  teamSplitMerge: {
+    family: "control", label: "Team Split / Merge", icon: "👥",
+    defaultTitle: "New Team Split / Merge",
+    defaultContent: function () { return { splitCount: 2, mergeNodeId: "" }; },
+    summary: function (c) { return "Splits into " + c.splitCount; }
+  },
+  metaPuzzleCombine: {
+    family: "control", label: "Meta-Puzzle / Combine", icon: "🕸️",
+    defaultTitle: "New Meta-Puzzle",
+    defaultContent: function () { return { sourceNodeIds: [], combineRule: "concatenate", finalPrompt: "Combine the fragments to form the master answer.", acceptedAnswers: ["ANSWER"] }; },
+    summary: function (c) { return "Combines " + (c.sourceNodeIds || []).length + " node(s)"; }
+  },
+  timer: {
+    family: "control", label: "Timer", icon: "⏱️",
+    defaultTitle: "New Timer",
+    defaultContent: function () { return { durationSeconds: 300, onExpireNodeId: "", scope: "node" }; },
+    summary: function (c) { return c.durationSeconds + "s (" + c.scope + ")"; }
+  },
+  attemptLimiter: {
+    family: "control", label: "Attempt Limiter / Penalty", icon: "⛔",
+    defaultTitle: "New Attempt Limiter",
+    defaultContent: function () { return { maxAttempts: 3, penaltyType: "hintAutoReveal", penaltyValue: 0 }; },
+    summary: function (c) { return "Max " + c.maxAttempts + " attempts → " + c.penaltyType; }
+  },
   hint: {
     family: "support", label: "Hint (progressive)", icon: "💡",
     defaultTitle: "Hint",
@@ -152,6 +254,74 @@ var NODE_TYPES = {
       return { forNodeId: "", stages: [{ id: uid("hs"), text: "First, gentle nudge." }, { id: uid("hs"), text: "A stronger hint." }] };
     },
     summary: function (c, hunt) { return "For: " + nodeTitle(hunt, c.forNodeId) + " (" + (c.stages || []).length + " stages)"; }
+  },
+  hintUnlockCost: {
+    family: "support", label: "Hint Unlock Cost", icon: "🔓",
+    defaultTitle: "Hint (with unlock cost)",
+    defaultContent: function () {
+      return { forNodeId: "", costType: "score", costPerStage: 1, stages: [{ id: uid("hs"), text: "First, gentle nudge." }, { id: uid("hs"), text: "A stronger hint." }] };
+    },
+    summary: function (c, hunt) { return "For: " + nodeTitle(hunt, c.forNodeId) + " — costs " + c.costPerStage + " " + c.costType + "/stage"; }
+  },
+  imageReveal: {
+    family: "media", label: "Image Reveal", icon: "🖼️",
+    defaultTitle: "New Image Reveal",
+    defaultContent: function () { return { imageAsset: "", caption: "", zoomable: true }; },
+    summary: function (c) { return c.caption || "Image reveal"; }
+  },
+  audioReveal: {
+    family: "media", label: "Audio Reveal", icon: "🔊",
+    defaultTitle: "New Audio Reveal",
+    defaultContent: function () { return { audioAsset: "", caption: "", loop: false }; },
+    summary: function (c) { return c.caption || "Audio reveal"; }
+  },
+  videoReveal: {
+    family: "media", label: "Video Reveal", icon: "🎬",
+    defaultTitle: "New Video Reveal",
+    defaultContent: function () { return { videoAsset: "", caption: "" }; },
+    summary: function (c) { return c.caption || "Video reveal"; }
+  },
+  documentReveal: {
+    family: "media", label: "Document / Letter Reveal", icon: "📄",
+    defaultTitle: "New Document Reveal",
+    defaultContent: function () { return { body: "Write the found document's text here.", documentStyle: "letter" }; },
+    summary: function (c) { return c.body ? c.body.slice(0, 60) : ""; }
+  },
+  mapDisplay: {
+    family: "media", label: "Map Display", icon: "🗺️",
+    defaultTitle: "New Map Display",
+    defaultContent: function () { return { mapAsset: "", markers: [] }; },
+    summary: function (c) { return (c.markers || []).length + " marker(s)"; }
+  },
+  gallery: {
+    family: "media", label: "Gallery", icon: "🗂️",
+    defaultTitle: "New Gallery",
+    defaultContent: function () { return { images: [], layout: "grid" }; },
+    summary: function (c) { return (c.images || []).length + " image(s)"; }
+  },
+  photoUploadVerification: {
+    family: "input", label: "Photo Upload Verification", icon: "📸",
+    defaultTitle: "New Photo Upload",
+    defaultContent: function () { return { instructions: "Describe what the player should photograph.", requiresApproval: true }; },
+    summary: function (c) { return c.requiresApproval ? "Requires approval" : "Auto-passes"; }
+  },
+  geolocationCheckIn: {
+    family: "input", label: "Geolocation Check-in", icon: "🧭",
+    defaultTitle: "New Geolocation Check-in",
+    defaultContent: function () { return { lat: 0, lng: 0, radiusMeters: 25 }; },
+    summary: function (c) { return "Within " + c.radiusMeters + "m of point"; }
+  },
+  qrNfcScan: {
+    family: "input", label: "QR / NFC Scan Trigger", icon: "📱",
+    defaultTitle: "New QR / NFC Scan",
+    defaultContent: function () { return { expectedCode: "" }; },
+    summary: function (c) { return "Expects code: " + (c.expectedCode || "(unset)"); }
+  },
+  gameMasterCheckIn: {
+    family: "input", label: "Game Master Check-in", icon: "🛂",
+    defaultTitle: "New GM Check-in",
+    defaultContent: function () { return { instructions: "Describe what the Game Master should verify.", approverNote: "" }; },
+    summary: function () { return "Manual Game Master approval"; }
   },
   locationPlaceholder: {
     family: "stub", label: "Location Placeholder (stub)", icon: "📍",
