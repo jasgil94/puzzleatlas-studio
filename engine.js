@@ -741,6 +741,45 @@ function normalizeAnswer(s, caseSensitive) {
   return caseSensitive ? s : s.toLowerCase();
 }
 
+// Shared "does this free-text answer match one of the accepted answers"
+// check — used by Answer Entry and by every puzzle-family node that's
+// mechanically a themed variant of it (Cipher, Anagram, Cross-Reference
+// Lookup). Defaults to case-insensitive when a node type's content has no
+// caseSensitive field of its own.
+function checkTextAnswer(content, text) {
+  var caseSensitive = !!content.caseSensitive;
+  return (content.acceptedAnswers || []).some(function (a) { return normalizeAnswer(a, caseSensitive) === normalizeAnswer(text, caseSensitive); });
+}
+
+// Sliding Tile helpers — a classic numbered slide puzzle (no image asset
+// support yet, see the Node Type Expansion draft's open question on asset
+// storage) used as the simple functioning demo for this node type. Tiles
+// are stored as a flat array, 0 standing in for the empty cell.
+function tileNeighbors(idx, size) {
+  var r = Math.floor(idx / size), col = idx % size, out = [];
+  if (r > 0) out.push(idx - size);
+  if (r < size - 1) out.push(idx + size);
+  if (col > 0) out.push(idx - 1);
+  if (col < size - 1) out.push(idx + 1);
+  return out;
+}
+function solvedTileOrder(size) {
+  var out = []; for (var i = 1; i < size * size; i++) out.push(i); out.push(0); return out;
+}
+// Always shuffles by performing random legal slides from the solved state,
+// which guarantees the result stays solvable (no illegal-permutation risk).
+function generateSolvableTiles(size) {
+  var tiles = solvedTileOrder(size);
+  var blank = tiles.length - 1;
+  var steps = size * size * 25;
+  for (var s = 0; s < steps; s++) {
+    var neighbors = tileNeighbors(blank, size);
+    var pick = neighbors[Math.floor(Math.random() * neighbors.length)];
+    tiles[blank] = tiles[pick]; tiles[pick] = 0; blank = pick;
+  }
+  return tiles;
+}
+
 function pv_action_continueScene(session, nodeId) {
   var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
   completeNodeInternal(n, session.hunt, session.state);
@@ -754,7 +793,7 @@ function pv_action_selectChoice(session, nodeId, optionId) {
 }
 function pv_action_submitAnswer(session, nodeId, text) {
   var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
-  var ok = (n.content.acceptedAnswers || []).some(function (a) { return normalizeAnswer(a, n.content.caseSensitive) === normalizeAnswer(text, n.content.caseSensitive); });
+  var ok = checkTextAnswer(n.content, text);
   session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
   if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
   return ok;
@@ -774,6 +813,75 @@ function pv_action_submitMatching(session, nodeId, pairs) {
   if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
   return ok;
 }
+// --- Node Type Expansion: simple functioning submit actions for the
+// puzzle-family types added alongside Answer Entry/Ordering/Matching.
+// Each follows the same shape as the actions above: validate, record
+// feedback, and on success complete the node + recompute availability.
+function pv_action_submitCipherAnswer(session, nodeId, text) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var ok = checkTextAnswer(n.content, text);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+function pv_action_submitMathAnswer(session, nodeId, text) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var val = parseFloat(text), expected = parseFloat(n.content.expectedValue);
+  var tolerance = Math.abs(Number(n.content.tolerance)) || 0;
+  var ok = !isNaN(val) && !isNaN(expected) && Math.abs(val - expected) <= tolerance;
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+function pv_action_submitAnagramAnswer(session, nodeId, text) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var ok = checkTextAnswer(n.content, text);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+function pv_action_submitSequence(session, nodeId, attempt) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var ok = JSON.stringify(attempt) === JSON.stringify(n.content.sequence || []);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+function pv_action_submitSlidingTile(session, nodeId, tiles) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var size = Number(n.content.gridSize) || 3;
+  var ok = JSON.stringify(tiles) === JSON.stringify(solvedTileOrder(size));
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+function pv_action_submitMultiPartAnswer(session, nodeId, partAnswers) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var parts = n.content.parts || [];
+  var ok = parts.length > 0 && parts.every(function (p) { return checkTextAnswer(p, (partAnswers || {})[p.id] || ""); });
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+function pv_action_submitLockCode(session, nodeId, code) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var normalize = function (s) {
+    s = String(s || "").trim();
+    return n.content.codeFormat === "alpha" ? s.toUpperCase().replace(/[^A-Z]/g, "") : s.replace(/\D/g, "");
+  };
+  var ok = normalize(code) === normalize(n.content.acceptedCode) && normalize(code).length > 0;
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+function pv_action_submitCrossReferenceAnswer(session, nodeId, text) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var ok = checkTextAnswer(n.content, text);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+
 function pv_action_revealHint(session, hintNodeId) {
   var cur = session.state.hintProgress[hintNodeId] || 0;
   var n = session.hunt.nodes.find(function (x) { return x.id === hintNodeId; });
@@ -789,7 +897,8 @@ function pv_action_revealHint(session, hintNodeId) {
    only ever queries inside its own root element, so several can be on
    screen at once without id clashes.
 --------------------------------------------------------------------- */
-var PLAYER_SCREEN_TYPES = ["scene", "choice", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending"];
+var PLAYER_SCREEN_TYPES = ["scene", "choice", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
+  "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "crossReferenceLookup"];
 
 function openLeadNodes(session) {
   var hunt = session.hunt, state = session.state;
@@ -915,6 +1024,79 @@ function renderPreviewNode(session, n, ctl) {
     if (fb3) html += '<div class="pv-feedback ' + fb3 + '">' + (fb3 === "correct" ? "✓ Correct matches." : "✗ Some pairs are wrong — try again.") + '</div>';
   } else if (n.type === "locationPlaceholder") {
     html += '<div class="pv-scene-body">' + esc(c.placeholderNote) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">Continue →</button>';
+  } else if (n.type === "cipher") {
+    html += '<div class="pv-mono-block">' + esc(c.ciphertext) + '</div>';
+    html += '<div class="pv-info-card">Cipher: ' + esc(c.cipherType || "cipher") + (c.key ? " · Key: " + esc(c.key) : "") + '</div>';
+    html += '<input type="text" class="pv-answer-input" id="pvCipherInput" placeholder="Type the decoded answer…" />';
+    html += '<button class="pv-choice-btn" id="pvSubmitCipher" style="max-width:160px">Submit</button>';
+    var fbCi = session.state.feedback[n.id];
+    if (fbCi) html += '<div class="pv-feedback ' + fbCi + '">' + (fbCi === "correct" ? "✓ Decoded correctly." : "✗ Not quite — try again.") + '</div>';
+  } else if (n.type === "mathLogic") {
+    html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += '<input type="text" inputmode="decimal" class="pv-answer-input" id="pvMathInput" placeholder="Enter a number' + (c.unit ? " (" + esc(c.unit) + ")" : "") + '…" />';
+    html += '<button class="pv-choice-btn" id="pvSubmitMath" style="max-width:160px">Submit</button>';
+    var fbMa = session.state.feedback[n.id];
+    if (fbMa) html += '<div class="pv-feedback ' + fbMa + '">' + (fbMa === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
+  } else if (n.type === "anagram") {
+    html += '<div class="pv-mono-block">' + esc((c.scrambled || "").toUpperCase().split("").join(" ")) + '</div>';
+    html += '<input type="text" class="pv-answer-input" id="pvAnagramInput" placeholder="Type the unscrambled word/phrase…" />';
+    html += '<button class="pv-choice-btn" id="pvSubmitAnagram" style="max-width:160px">Submit</button>';
+    var fbAn = session.state.feedback[n.id];
+    if (fbAn) html += '<div class="pv-feedback ' + fbAn + '">' + (fbAn === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
+  } else if (n.type === "sequencePattern") {
+    if (!ctl.sequenceDraft[n.id]) ctl.sequenceDraft[n.id] = [];
+    var seq = c.sequence || [];
+    var palette = seq.filter(function (v, i) { return seq.indexOf(v) === i; });
+    html += '<div class="pv-scene-body">Tap ▶ to watch the sequence, then repeat it by tapping the swatches in the same order.</div>';
+    html += '<button class="pv-choice-btn" id="pvPlaySequence" style="max-width:160px">▶ Play sequence</button>';
+    html += '<div class="pv-swatch-row" id="pvSeqSwatches">' + palette.map(function (v) {
+      return '<button class="pv-swatch" data-seqval="' + esc(v) + '" style="background:' + esc(v) + '" title="' + esc(v) + '"></button>';
+    }).join("") + '</div>';
+    html += '<div class="pv-scene-body" style="margin-top:10px;font-size:12.5px;color:var(--pv-text-dim)">Your input: ' +
+      (ctl.sequenceDraft[n.id].length ? ctl.sequenceDraft[n.id].map(esc).join(" → ") : "(nothing yet)") + '</div>';
+    html += '<button class="pv-choice-btn" id="pvClearSequence" style="max-width:160px">Clear</button>';
+    var fbSe = session.state.feedback[n.id];
+    if (fbSe) html += '<div class="pv-feedback ' + fbSe + '">' + (fbSe === "correct" ? "✓ Sequence matched." : "✗ Wrong order — try again.") + '</div>';
+  } else if (n.type === "slidingTile") {
+    var size = Number(c.gridSize) || 3;
+    if (!ctl.tileDraft[n.id]) ctl.tileDraft[n.id] = generateSolvableTiles(size);
+    var tiles = ctl.tileDraft[n.id];
+    html += '<div class="pv-scene-body">Slide the tiles (click one next to the empty space) to put them back in order, 1 through ' + (size * size - 1) + '.</div>';
+    html += '<div class="pv-tile-grid" style="grid-template-columns:repeat(' + size + ',1fr)">';
+    tiles.forEach(function (v, idx) {
+      html += v === 0 ? '<div class="pv-tile pv-tile-blank"></div>' : '<button class="pv-tile" data-tileidx="' + idx + '">' + v + '</button>';
+    });
+    html += '</div>';
+    html += '<button class="pv-choice-btn" id="pvShuffleTiles" style="max-width:160px;margin-top:10px">🔀 Shuffle again</button>';
+  } else if (n.type === "multiPartAnswer") {
+    if (!ctl.multiPartDraft[n.id]) {
+      ctl.multiPartDraft[n.id] = {};
+      (c.parts || []).forEach(function (p) { ctl.multiPartDraft[n.id][p.id] = ""; });
+    }
+    html += '<div class="pv-scene-body">Answer each part below, then submit them together.</div>';
+    (c.parts || []).forEach(function (p, i) {
+      html += '<div class="pv-part-block"><div class="pv-part-label">Part ' + (i + 1) + '</div>' +
+        '<div class="pv-scene-body" style="margin-bottom:8px;font-size:13.5px">' + esc(p.prompt) + '</div>' +
+        '<input type="text" class="pv-answer-input pvPartInput" data-partid="' + p.id + '" placeholder="Answer…" value="' + esc(ctl.multiPartDraft[n.id][p.id] || "") + '" /></div>';
+    });
+    html += '<button class="pv-choice-btn" id="pvSubmitMultiPart" style="max-width:160px">Submit all parts</button>';
+    var fbMp = session.state.feedback[n.id];
+    if (fbMp) html += '<div class="pv-feedback ' + fbMp + '">' + (fbMp === "correct" ? "✓ All parts correct." : "✗ One or more parts are wrong — try again.") + '</div>';
+  } else if (n.type === "physicalLockCode") {
+    html += '<div class="pv-scene-body">Enter the ' + (c.codeLength || 4) + '-character ' + (c.codeFormat === "alpha" ? "letter" : "numeric") + ' code from the lock.</div>';
+    html += '<input type="text" class="pv-answer-input pv-keypad-input" id="pvLockInput" maxlength="' + (c.codeLength || 4) +
+      '" placeholder="' + (c.codeFormat === "alpha" ? "ABCD" : "0000") + '" inputmode="' + (c.codeFormat === "alpha" ? "text" : "numeric") + '" />';
+    html += '<button class="pv-choice-btn" id="pvSubmitLock" style="max-width:160px">Unlock</button>';
+    var fbLo = session.state.feedback[n.id];
+    if (fbLo) html += '<div class="pv-feedback ' + fbLo + '">' + (fbLo === "correct" ? "✓ Unlocked." : "✗ Incorrect code — try again.") + '</div>';
+  } else if (n.type === "crossReferenceLookup") {
+    var srcTitles = (c.sourceNodeIds || []).map(function (id) { return nodeTitle(session.hunt, id); });
+    if (srcTitles.length) html += '<div class="pv-info-card">References: ' + esc(srcTitles.join(", ")) + '</div>';
+    html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += '<input type="text" class="pv-answer-input" id="pvCrossRefInput" placeholder="Type your answer…" />';
+    html += '<button class="pv-choice-btn" id="pvSubmitCrossRef" style="max-width:160px">Submit</button>';
+    var fbCr = session.state.feedback[n.id];
+    if (fbCr) html += '<div class="pv-feedback ' + fbCr + '">' + (fbCr === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
   }
   if (hints.length) {
     html += '<div style="margin-top:14px">';
@@ -927,6 +1109,24 @@ function renderPreviewNode(session, n, ctl) {
     html += '</div>';
   }
   return html;
+}
+
+// Shared wiring for the several puzzle types that are just "one text
+// input + one submit button" (Cipher, Math/Logic, Anagram, Physical Lock
+// Code, Cross-Reference Lookup) — Enter submits, success clears the
+// pinned/expanded view same as every other puzzle type. A no-op when
+// this node's markup doesn't include the given ids (i.e. it's some other
+// node type), same as the existing per-type `if (byId(...))` guards.
+function wireTextSubmitAction(root, ctl, session, n, inputId, btnId, submitFn) {
+  var byId = function (id) { return root.querySelector("#" + id); };
+  if (!byId(btnId) || !byId(inputId)) return;
+  var submit = function () {
+    var ok = submitFn(session, n.id, byId(inputId).value);
+    if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+    ctl.render();
+  };
+  byId(btnId).onclick = submit;
+  byId(inputId).onkeydown = function (e) { if (e.key === "Enter") submit(); };
 }
 
 function wirePreviewNodeInteractions(session, n, ctl) {
@@ -968,6 +1168,82 @@ function wirePreviewNodeInteractions(session, n, ctl) {
     if (session.state.feedback[n.id] === "correct") { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
     ctl.render();
   };
+
+  // Simple text-answer puzzle variants (Cipher, Math/Logic, Anagram,
+  // Physical Lock Code, Cross-Reference Lookup) — each a no-op unless its
+  // own markup is what's currently on screen.
+  wireTextSubmitAction(root, ctl, session, n, "pvCipherInput", "pvSubmitCipher", pv_action_submitCipherAnswer);
+  wireTextSubmitAction(root, ctl, session, n, "pvMathInput", "pvSubmitMath", pv_action_submitMathAnswer);
+  wireTextSubmitAction(root, ctl, session, n, "pvAnagramInput", "pvSubmitAnagram", pv_action_submitAnagramAnswer);
+  wireTextSubmitAction(root, ctl, session, n, "pvLockInput", "pvSubmitLock", pv_action_submitLockCode);
+  wireTextSubmitAction(root, ctl, session, n, "pvCrossRefInput", "pvSubmitCrossRef", pv_action_submitCrossReferenceAnswer);
+
+  // Sequence / Pattern — tap swatches in order; auto-validates once the
+  // attempt is as long as the target sequence, resetting on a miss.
+  if (byId("pvPlaySequence")) {
+    byId("pvPlaySequence").onclick = function () {
+      var seq = n.content.sequence || [];
+      var btns = root.querySelectorAll("#pvSeqSwatches [data-seqval]");
+      seq.forEach(function (val, i) {
+        setTimeout(function () {
+          var btn = Array.prototype.filter.call(btns, function (b) { return b.dataset.seqval === String(val); })[0];
+          if (!btn) return;
+          btn.classList.add("playing");
+          setTimeout(function () { btn.classList.remove("playing"); }, 350);
+        }, i * 550);
+      });
+    };
+  }
+  Array.prototype.forEach.call(root.querySelectorAll("#pvSeqSwatches [data-seqval]"), function (btn) {
+    btn.onclick = function () {
+      ctl.sequenceDraft[n.id] = ctl.sequenceDraft[n.id] || [];
+      ctl.sequenceDraft[n.id].push(btn.dataset.seqval);
+      var target = n.content.sequence || [];
+      if (ctl.sequenceDraft[n.id].length >= target.length) {
+        var ok = pv_action_submitSequence(session, n.id, ctl.sequenceDraft[n.id]);
+        if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+        else ctl.sequenceDraft[n.id] = [];
+      }
+      ctl.render();
+    };
+  });
+  if (byId("pvClearSequence")) byId("pvClearSequence").onclick = function () { ctl.sequenceDraft[n.id] = []; ctl.render(); };
+
+  // Sliding Tile — click a tile adjacent to the blank to slide it in;
+  // auto-validates after every move.
+  Array.prototype.forEach.call(root.querySelectorAll("[data-tileidx]"), function (btn) {
+    btn.onclick = function () {
+      var idx = +btn.dataset.tileidx;
+      var size = Number(n.content.gridSize) || 3;
+      var tiles = ctl.tileDraft[n.id];
+      if (!tiles) return;
+      var blank = tiles.indexOf(0);
+      if (tileNeighbors(blank, size).indexOf(idx) === -1) return;
+      tiles[blank] = tiles[idx]; tiles[idx] = 0;
+      var ok = pv_action_submitSlidingTile(session, n.id, tiles);
+      if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+      ctl.render();
+    };
+  });
+  if (byId("pvShuffleTiles")) byId("pvShuffleTiles").onclick = function () {
+    ctl.tileDraft[n.id] = generateSolvableTiles(Number(n.content.gridSize) || 3);
+    ctl.render();
+  };
+
+  // Multi-Part Answer — each part's input is tracked independently; submit
+  // checks every part at once.
+  Array.prototype.forEach.call(root.querySelectorAll(".pvPartInput"), function (inp) {
+    inp.oninput = function (e) {
+      ctl.multiPartDraft[n.id] = ctl.multiPartDraft[n.id] || {};
+      ctl.multiPartDraft[n.id][inp.dataset.partid] = e.target.value;
+    };
+  });
+  if (byId("pvSubmitMultiPart")) byId("pvSubmitMultiPart").onclick = function () {
+    var ok = pv_action_submitMultiPartAnswer(session, n.id, ctl.multiPartDraft[n.id]);
+    if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+    ctl.render();
+  };
+
   wireHintButtons(session, root, ctl);
 }
 
@@ -1001,6 +1277,7 @@ function createPreviewController(mainEl, sideEl) {
     mainEl: mainEl, sideEl: sideEl,
     session: null, expandedNodeId: null, showState: false,
     orderingDraft: {}, matchingDraft: {},
+    sequenceDraft: {}, tileDraft: {}, multiPartDraft: {},
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     laneListId: null, laneListSceneId: null, // set when a lane tab (Leads/Inventory/Hints) asks to show its scene-wide options list instead of a single node
     _activeIds: { expandedId: null, leadIds: [] },
@@ -1013,6 +1290,9 @@ function createPreviewController(mainEl, sideEl) {
     ctl.showState = false;
     ctl.orderingDraft = {};
     ctl.matchingDraft = {};
+    ctl.sequenceDraft = {};
+    ctl.tileDraft = {};
+    ctl.multiPartDraft = {};
     ctl.pinnedNodeId = null;
     ctl.laneListId = null;
     ctl.laneListSceneId = null;
@@ -1146,6 +1426,14 @@ return {
   pv_action_submitAnswer: pv_action_submitAnswer,
   pv_action_submitOrdering: pv_action_submitOrdering,
   pv_action_submitMatching: pv_action_submitMatching,
+  pv_action_submitCipherAnswer: pv_action_submitCipherAnswer,
+  pv_action_submitMathAnswer: pv_action_submitMathAnswer,
+  pv_action_submitAnagramAnswer: pv_action_submitAnagramAnswer,
+  pv_action_submitSequence: pv_action_submitSequence,
+  pv_action_submitSlidingTile: pv_action_submitSlidingTile,
+  pv_action_submitMultiPartAnswer: pv_action_submitMultiPartAnswer,
+  pv_action_submitLockCode: pv_action_submitLockCode,
+  pv_action_submitCrossReferenceAnswer: pv_action_submitCrossReferenceAnswer,
   pv_action_revealHint: pv_action_revealHint,
 
   PLAYER_SCREEN_TYPES: PLAYER_SCREEN_TYPES,

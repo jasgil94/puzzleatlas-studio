@@ -441,12 +441,35 @@ function nodeSize(node) {
   };
 }
 
-function getPortPos(node, isOutput) {
+function nodeCenter(node) {
   var sz = nodeSize(node);
-  return {
-    x: node.position.x + (isOutput ? sz.w : 0),
-    y: node.position.y + sz.h / 2
-  };
+  return { x: node.position.x + sz.w / 2, y: node.position.y + sz.h / 2 };
+}
+
+// Finds where the segment from a node's center toward (toX,toY) crosses the
+// node's rectangular boundary, and which side that crossing is on. This lets
+// a connection leave/enter a node from whichever side faces the other end
+// (top, bottom, left, or right) instead of always using fixed left/right ports.
+function edgeAnchor(node, toX, toY) {
+  var sz = nodeSize(node);
+  var c = nodeCenter(node);
+  var dx = toX - c.x, dy = toY - c.y;
+  var halfW = sz.w / 2, halfH = sz.h / 2;
+  if (dx === 0 && dy === 0) return { x: c.x + halfW, y: c.y, side: "right" };
+  var tX = dx !== 0 ? halfW / Math.abs(dx) : Infinity;
+  var tY = dy !== 0 ? halfH / Math.abs(dy) : Infinity;
+  var t = Math.min(tX, tY);
+  var side = t === tX ? (dx > 0 ? "right" : "left") : (dy > 0 ? "bottom" : "top");
+  return { x: c.x + dx * t, y: c.y + dy * t, side: side };
+}
+
+// Pushes a bezier control point outward from an anchor point, away from the
+// node, in the direction implied by which side the anchor sits on.
+function controlPoint(p, side, mag) {
+  if (side === "left") return { x: p.x - mag, y: p.y };
+  if (side === "bottom") return { x: p.x, y: p.y + mag };
+  if (side === "top") return { x: p.x, y: p.y - mag };
+  return { x: p.x + mag, y: p.y }; // "right" and fallback
 }
 
 var dom = {}; // cached DOM refs, populated in init()
@@ -473,14 +496,16 @@ function nodeIconSpan(type) {
    Lane x Scene grid — layout, rendering and scene-column management.
 
    The grid is the canonical arrangement of the canvas: 5 fixed lanes
-   (rows) crossed by creator-defined Scene columns. A node's pixel
-   position is *derived* from its (lane, sceneId) cell, never stored as
-   free-form truth — computeLayout() recomputes every node's
-   position.x/position.y from scratch on every render, stacking however
-   many nodes share a cell top-to-bottom, and growing that lane's height
-   / that column's width to fit. This keeps position.x/position.y valid
-   for all the existing edge/port/marquee/resize code, which never needs
-   to know the grid exists.
+   (rows) crossed by creator-defined Scene columns. Every node belongs to
+   exactly one (lane, sceneId) cell, and computeLayout() recomputes each
+   node's position.x/position.y from that cell on every render, growing
+   the lane's height / the column's width to fit whatever it contains.
+   Within a cell, a node either free-floats at its own dragged spot
+   (n.cellPos, clamped to the cell) or, lacking one, auto-stacks
+   top-to-bottom with its cellmates — see computeLayout()'s placement
+   loop and wireGridInteractions()'s "move" mouseup handler, below. This
+   keeps position.x/position.y valid for all the existing edge/port/
+   marquee/resize code, which never needs to know the grid exists.
 --------------------------------------------------------------------- */
 function getColumns() {
   var scenes = Store.hunt.scenes || [];
@@ -586,14 +611,28 @@ function computeLayout() {
   var laneY = [], runY = SCENE_HEADER_H;
   LANES.forEach(function (l, li) { laneY[li] = runY; runY += laneHeights[li]; });
 
-  // Place every node: left-aligned in its column, stacked top-down in its cell.
+  // Place every node: left-aligned in its column, stacked top-down in its
+  // cell — UNLESS the creator has freely dragged it somewhere else within
+  // that same cell (n.cellPos, set on drop — see the "move" drag handler
+  // in wireGridInteractions()'s mouseup below). A node keeps that manual
+  // spot, clamped to stay inside its lane×scene cell, instead of being
+  // snapped back into the rigid stack on every render; a node with no
+  // cellPos yet (freshly created, or never dragged) still auto-stacks as
+  // before. Crossing into a different cell just re-clamps the same
+  // cellPos into the new cell's bounds — see the mouseup handler, which
+  // recomputes cellPos relative to whichever cell the node was dropped in.
   LANES.forEach(function (l, li) {
     columns.forEach(function (_, ci) {
       var y = laneY[li] + CELL_PAD_TOP;
       buckets[li][ci].forEach(function (n) {
         var sz = nodeSize(n);
-        n.position.x = colX[ci] + CELL_PAD_SIDE;
-        n.position.y = y;
+        if (n.cellPos) {
+          n.position.x = colX[ci] + clamp(n.cellPos.x, 0, Math.max(0, colWidths[ci] - sz.w));
+          n.position.y = laneY[li] + clamp(n.cellPos.y, 0, Math.max(0, laneHeights[li] - sz.h));
+        } else {
+          n.position.x = colX[ci] + CELL_PAD_SIDE;
+          n.position.y = y;
+        }
         y += sz.h + STACK_GAP;
       });
     });
@@ -857,10 +896,11 @@ function markUnreachable() {
   renderValidationBadge(issues);
 }
 
-function edgePathD(p1, p2) {
-  var dx = Math.max(60, Math.abs(p2.x - p1.x) * 0.5);
-  var c1x = p1.x + dx, c1y = p1.y, c2x = p2.x - dx, c2y = p2.y;
-  return "M " + p1.x + " " + p1.y + " C " + c1x + " " + c1y + ", " + c2x + " " + c2y + ", " + p2.x + " " + p2.y;
+function edgePathD(p1, p2, side1, side2) {
+  var mag = Math.max(50, Math.hypot(p2.x - p1.x, p2.y - p1.y) * 0.5);
+  var c1 = controlPoint(p1, side1 || "right", mag);
+  var c2 = controlPoint(p2, side2 || "left", mag);
+  return "M " + p1.x + " " + p1.y + " C " + c1.x + " " + c1.y + ", " + c2.x + " " + c2.y + ", " + p2.x + " " + p2.y;
 }
 
 function conditionSummary(cond, hunt) {
@@ -885,10 +925,13 @@ function renderEdges() {
     if (!s || !t) return;
     var laneId = t.lane;
     var laneClass = laneId ? " lane-" + laneId : "";
-    var p1 = getPortPos(s, true), p2 = getPortPos(t, false);
+    var sCenter = nodeCenter(s), tCenter = nodeCenter(t);
+    var p1 = edgeAnchor(s, tCenter.x, tCenter.y), p2 = edgeAnchor(t, sCenter.x, sCenter.y);
     p1.x += EDGE_OFFSET; p1.y += EDGE_OFFSET; p2.x += EDGE_OFFSET; p2.y += EDGE_OFFSET;
     var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    var d = edgePathD(p1, p2);
+    var mag = Math.max(50, Math.hypot(p2.x - p1.x, p2.y - p1.y) * 0.5);
+    var c2 = controlPoint(p2, p2.side, mag);
+    var d = edgePathD(p1, p2, p1.side, p2.side);
     var hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
     hit.setAttribute("d", d); hit.setAttribute("class", "edge-hit"); hit.dataset.edgeId = c.id;
     var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -908,8 +951,9 @@ function renderEdges() {
       (c.label ? " — " + c.label : "") +
       (c.condition && c.condition.type !== "always" ? " · " + conditionSummary(c.condition, Store.hunt) : "");
     label.textContent = lbl;
-    // arrowhead
-    var angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+    // arrowhead — angled along the curve's approach direction (c2 -> p2) so it
+    // points correctly regardless of which side of the target it enters from
+    var angle = Math.atan2(p2.y - c2.y, p2.x - c2.x);
     var ax = p2.x - 9 * Math.cos(angle), ay = p2.y - 9 * Math.sin(angle);
     var arrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
     var a1 = [ax + 6 * Math.cos(angle + 2.5), ay + 6 * Math.sin(angle + 2.5)];
@@ -1082,10 +1126,15 @@ function initCanvasInteraction() {
     } else if (drag.kind === "move") {
       // Live drag: move the dragged node(s) directly via their DOM elements
       // and their in-memory position, without calling renderNodes() —
-      // renderNodes() runs computeLayout(), which would immediately snap
-      // the node back into its *current* lane/scene cell every frame.
-      // The real lane/scene reassignment (the "strict snap") happens once,
-      // on mouseup below, then a normal render() lays everything out fresh.
+      // renderNodes() runs computeLayout(), which would otherwise
+      // re-layout the node back into its *current* lane/scene cell every
+      // frame. The lane/scene reassignment happens once, on mouseup below
+      // (which also records exactly where it was dropped as n.cellPos —
+      // see computeLayout()), then a normal render() lays everything out.
+      // No grid-snap here: a node moves freely, unsnapped, pixel-for-pixel
+      // with the pointer, as long as it stays within a Lane and Scene —
+      // it's only reassigned to a different cell if actually dropped in
+      // one (see mouseup below), never snapped to a position grid.
       var world = screenToWorld(e.clientX, e.clientY);
       var dx = world.x - drag.startWorld.x, dy = world.y - drag.startWorld.y;
       if (Math.abs(dx) > 2 || Math.abs(dy) > 2) drag.moved = true;
@@ -1094,7 +1143,6 @@ function initCanvasInteraction() {
         var n = Store.getNode(nid);
         if (!n) return;
         var nx = drag.starts[nid].x + dx, ny = drag.starts[nid].y + dy;
-        if (Store.snapEnabled) { nx = snap(nx, GRID); ny = snap(ny, GRID); }
         n.position.x = nx; n.position.y = ny;
         var el = dom.nodeLayer.querySelector('[data-node-id="' + nid + '"]');
         if (el) { el.style.left = nx + "px"; el.style.top = ny + "px"; }
@@ -1153,8 +1201,14 @@ function initCanvasInteraction() {
     if (!drag) return;
     if (drag.kind === "move") {
       if (drag.moved) {
-        // Strict snap: whichever lane row / scene column each dropped
-        // node's centre now falls in becomes its new home cell.
+        // Whichever lane row / scene column each dropped node's centre now
+        // falls in becomes its new home cell — this membership assignment
+        // still happens on every drop (a node always belongs to *some*
+        // Lane and Scene). What no longer happens is snapping its pixel
+        // position back to a rigid stack slot: cellPos records exactly
+        // where it was dropped, relative to that cell's top-left corner,
+        // so computeLayout() (see above) renders it right where it was
+        // let go, clamped only to stay inside that cell.
         Object.keys(drag.starts).forEach(function (nid) {
           var n = Store.getNode(nid);
           if (!n) return;
@@ -1164,6 +1218,7 @@ function initCanvasInteraction() {
           n.lane = LANES[li].id;
           var col = lastLayout.columns[ci];
           n.sceneId = col.unassigned ? null : col.id;
+          n.cellPos = { x: n.position.x - lastLayout.colX[ci], y: n.position.y - lastLayout.laneY[li] };
         });
         Store.pushHistory();
       }
@@ -1247,11 +1302,15 @@ function renderTempEdge(hoverNodeEl) {
   clearTempEdge();
   var s = Store.getNode(drag.sourceId);
   if (!s) return;
-  var p1 = getPortPos(s, true);
-  var p2 = drag.cur;
-  p1.x += EDGE_OFFSET; p1.y += EDGE_OFFSET; p2 = { x: p2.x + EDGE_OFFSET, y: p2.y + EDGE_OFFSET };
+  var cur = drag.cur;
+  var hoverNode = hoverNodeEl && Store.getNode(hoverNodeEl.dataset.nodeId);
+  var p1 = edgeAnchor(s, cur.x, cur.y);
+  // If hovering a candidate target node, snap the endpoint to that node's
+  // boundary on whichever side faces the source, same as a committed edge.
+  var p2 = hoverNode ? edgeAnchor(hoverNode, p1.x, p1.y) : { x: cur.x, y: cur.y, side: (Math.abs(cur.x - p1.x) >= Math.abs(cur.y - p1.y)) ? (cur.x >= p1.x ? "left" : "right") : (cur.y >= p1.y ? "top" : "bottom") };
+  p1.x += EDGE_OFFSET; p1.y += EDGE_OFFSET; p2 = { x: p2.x + EDGE_OFFSET, y: p2.y + EDGE_OFFSET, side: p2.side };
   var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", edgePathD(p1, p2));
+  path.setAttribute("d", edgePathD(p1, p2, p1.side, p2.side));
   path.setAttribute("class", "edge-path temp");
   path.id = "tempEdge";
   dom.edgeLayer.appendChild(path);

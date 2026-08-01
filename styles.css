@@ -299,4 +299,25 @@ button{font-family:inherit;cursor:pointer;}
 .pv-info-card{background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text-dim);padding:10px 12px;border-radius:var(--pv-radius);margin-bottom:8px;font-size:13px;font-family:var(--pv-font-body);}
 .pv-image{border-radius:var(--pv-radius);filter:var(--pv-image-filter);max-width:100%;display:block;}
 
+/* Node Type Expansion — simple functioning player UI for the new
+   puzzle-family node types (Cipher, Math/Logic, Anagram, Sequence/
+   Pattern, Sliding Tile, Multi-Part Answer, Physical Lock Code,
+   Cross-Reference Lookup). Reuses the .pv-* tokens above so it follows
+   whichever style pack is active, same as every other player screen. */
+.pv-mono-block{background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text);padding:14px 12px;border-radius:var(--pv-radius);margin-bottom:12px;font-family:var(--pv-font-mono);font-size:15px;letter-spacing:.06em;line-height:1.6;word-break:break-word;}
+.pv-keypad-input{text-align:center;letter-spacing:.3em;font-size:18px;}
+
+.pv-swatch-row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
+.pv-swatch{width:44px;height:44px;border-radius:var(--pv-radius);border:var(--pv-border-width) var(--pv-border-style) var(--line);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease;}
+.pv-swatch:hover{border-color:var(--pv-accent);}
+.pv-swatch.playing{transform:scale(1.12);box-shadow:0 0 0 3px var(--pv-accent);}
+
+.pv-tile-grid{display:grid;gap:6px;max-width:280px;margin:10px 0;}
+.pv-tile{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text);border-radius:var(--pv-radius);font-family:var(--pv-font-mono);font-size:17px;cursor:pointer;}
+.pv-tile:hover{border-color:var(--pv-accent);}
+.pv-tile-blank{aspect-ratio:1/1;background:transparent;border:1px dashed var(--pv-text-dim);opacity:.35;border-radius:var(--pv-radius);}
+
+.pv-part-block{border:var(--pv-border-width) var(--pv-border-style) var(--line);border-radius:var(--pv-radius);padding:10px 12px;margin-bottom:10px;background:var(--pv-surface);}
+.pv-part-label{font-weight:700;color:var(--pv-text-dim);text-transform:uppercase;font-size:10.5px;letter-spacing:.05em;margin-bottom:4px;}
+
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}
