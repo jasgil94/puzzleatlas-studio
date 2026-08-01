@@ -2429,30 +2429,23 @@ function currentPreviewNode(ctl) {
 function currentSceneIdForCtl(ctl) {
   var node = currentPreviewNode(ctl);
   if (node) return node.sceneId || null;
+  if (ctl.laneListId) return ctl.laneListSceneId || null; // a lane-list tap doesn't pin a node, but shouldn't lose the scene it was opened from
   var scenes = (ctl.session && ctl.session.hunt.scenes) || [];
   return scenes.length ? scenes[0].id : null;
 }
 
-// Pick the node a lane tap should open: prefer whatever's currently an
-// open (available, not yet completed) lead in that lane+scene; failing
-// that, the most recently completed one; failing that, just the first
-// node placed there. Hints are matched to whatever puzzle is currently
-// on screen instead, since hint nodes are never "available" themselves.
+// Pick the node a Story/Map lane tap should jump straight into: prefer
+// whatever's currently an open (available, not yet completed) node in
+// that lane+scene; failing that, the most recently completed one;
+// failing that, just the first node placed there. (Leads/Inventory/Hints
+// taps go through ctl.showLaneList instead — see LANE_LIST_TABS below —
+// since those lanes can hold several available options at once.)
 function nodeForLane(ctl, laneId) {
   if (!ctl.session) return null;
   var hunt = ctl.session.hunt, state = ctl.session.state;
   var sceneId = currentSceneIdForCtl(ctl);
   var inScene = hunt.nodes.filter(function (n) { return n.lane === laneId && (n.sceneId || null) === sceneId; });
   if (!inScene.length) return null;
-
-  if (laneId === "hints") {
-    var current = currentPreviewNode(ctl);
-    if (current) {
-      var attached = inScene.find(function (n) { return n.content && n.content.forNodeId === current.id; });
-      if (attached) return attached;
-    }
-    return inScene[0];
-  }
 
   var open = inScene.find(function (n) { return state.available[n.id] && !state.completed[n.id]; });
   if (open) return open;
@@ -2462,10 +2455,16 @@ function nodeForLane(ctl, laneId) {
   return inScene[0];
 }
 
+// Lane tabs that show a scene-wide "everything currently available here"
+// list (per laneOptionsForScene in engine.js) rather than jumping into a
+// single node — Story and Map stay single-node jumps since they're
+// linear/geographic, not a set of parallel options to choose among.
+var LANE_LIST_TABS = { leads: true, inventory: true, hints: true };
+
 function renderPlayerTabBar(ctl, tabBarEl) {
   if (!tabBarEl || !ctl.session) return;
   var current = currentPreviewNode(ctl);
-  var activeLane = current ? current.lane : null;
+  var activeLane = ctl.laneListId || (current ? current.lane : null);
 
   tabBarEl.innerHTML = LANES.map(function (l) {
     var active = l.id === activeLane;
@@ -2477,6 +2476,7 @@ function renderPlayerTabBar(ctl, tabBarEl) {
   Array.prototype.forEach.call(tabBarEl.querySelectorAll(".player-tab"), function (btn) {
     btn.onclick = function () {
       var laneId = btn.dataset.lane;
+      if (LANE_LIST_TABS[laneId]) { ctl.showLaneList(laneId, currentSceneIdForCtl(ctl)); return; }
       var node = nodeForLane(ctl, laneId);
       if (node) ctl.showNode(node.id);
       else toast("No " + LANE_BY_ID[laneId].label.toLowerCase() + " content in this scene yet.");

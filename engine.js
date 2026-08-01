@@ -632,6 +632,80 @@ function hintsForNode(hunt, nodeId) {
   return hunt.nodes.filter(function (n) { return n.type === "hint" && n.content.forNodeId === nodeId; });
 }
 
+// Which nodes placed in a given lane+scene cell of the canvas are
+// currently player-facing "options" — the same availability rules that
+// already drive the Open Leads list and the canvas's player-here/
+// player-open highlighting, just scoped to one lane×scene cell instead
+// of the whole graph. Interactive types (puzzles, choices) count while
+// still open (available, not yet completed) — an already-solved one
+// isn't something to pursue anymore. Auto types (award item, score, set
+// variable, branch, convergence) resolve the instant they're reached, so
+// they're counted once they've fired at least once — for the Inventory
+// lane this reads as "what this scene has unlocked so far". Hint nodes
+// are counted when the puzzle they're attached to is currently open,
+// wherever in the lane grid the hint itself happens to be placed.
+function laneOptionsForScene(session, laneId, sceneId) {
+  var hunt = session.hunt, state = session.state;
+  var inScene = hunt.nodes.filter(function (n) {
+    return n.lane === laneId && (n.sceneId || null) === (sceneId || null);
+  });
+  return inScene.filter(function (n) {
+    if (n.type === "hint") {
+      var target = n.content && n.content.forNodeId;
+      return !!target && !!state.available[target] && !state.completed[target];
+    }
+    if (isAutoType(n.type)) return !!state.available[n.id];
+    return !!state.available[n.id] && !state.completed[n.id];
+  });
+}
+
+var LANE_LIST_TITLES = { leads: "Open leads", inventory: "Evidence & discoveries", hints: "Hints" };
+
+// Renders the list markup for a lane tab tap: leads are clickable
+// (data-lead, same mechanism as the Open Leads list) since they're
+// live player screens; inventory entries are read-only summaries of
+// what's fired in this scene's Inventory lane so far; hints are
+// rendered as their normal progressive reveal control, labelled with
+// which puzzle each one belongs to since more than one can be open at
+// once. Caller is responsible for wiring [data-lead]/[data-hint] after
+// inserting this into the DOM (see ctl.render / wireHintButtons).
+function renderLaneOptionsList(session, laneId, nodes) {
+  var hunt = session.hunt, state = session.state;
+  var title = LANE_LIST_TITLES[laneId] || "Options";
+  var html = '<p class="pv-side-title">' + esc(title) + (nodes.length ? " (" + nodes.length + ")" : "") + '</p>';
+  if (!nodes.length) {
+    html += '<div class="pv-empty" style="padding-top:20px">Nothing available here yet in this scene.</div>';
+    return html;
+  }
+  if (laneId === "hints") {
+    nodes.forEach(function (h) {
+      var shown = state.hintProgress[h.id] || 0;
+      html += '<div style="margin-bottom:16px"><div style="color:var(--pv-text-dim);font-size:11.5px;margin-bottom:4px">For: ' + esc(nodeTitle(hunt, h.content.forNodeId)) + '</div>';
+      html += '<button class="pv-hint-btn" data-hint="' + h.id + '" ' + (shown >= h.content.stages.length ? "disabled" : "") + '>💡 Reveal hint (' + shown + "/" + h.content.stages.length + ')</button>';
+      for (var i = 0; i < shown; i++) html += '<div class="pv-hint-text">' + esc(h.content.stages[i].text) + '</div>';
+      html += '</div>';
+    });
+  } else if (laneId === "inventory") {
+    nodes.forEach(function (n) {
+      html += '<div class="pv-info-card">' + NODE_TYPES[n.type].icon + " " + esc(NODE_TYPES[n.type].summary(n.content, hunt)) + '</div>';
+    });
+  } else {
+    nodes.forEach(function (n) {
+      html += '<div class="pv-choice-btn" data-lead="' + n.id + '">' + NODE_TYPES[n.type].icon + " " + esc(n.title) + '</div>';
+    });
+  }
+  return html;
+}
+
+// Shared by wirePreviewNodeInteractions (hints attached to whatever
+// node is on screen) and the lane-list view (hints across a whole
+// scene at once) — doesn't depend on which node is "current".
+function wireHintButtons(session, root, ctl) {
+  Array.prototype.forEach.call(root.querySelectorAll("[data-hint]"), function (btn) {
+    btn.onclick = function () { pv_action_revealHint(session, btn.dataset.hint); ctl.render(); };
+  });
+}
+
 function renderPreviewNode(session, n, ctl) {
   var c = n.content, html = "";
   var hints = hintsForNode(session.hunt, n.id);
@@ -724,9 +798,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
     if (session.state.feedback[n.id] === "correct") { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
     ctl.render();
   };
-  Array.prototype.forEach.call(root.querySelectorAll("[data-hint]"), function (btn) {
-    btn.onclick = function () { pv_action_revealHint(session, btn.dataset.hint); ctl.render(); };
-  });
+  wireHintButtons(session, root, ctl);
 }
 
 // Renders whatever node was pinned via ctl.showNode() (e.g. a Studio
@@ -760,6 +832,7 @@ function createPreviewController(mainEl, sideEl) {
     session: null, expandedNodeId: null, showState: false,
     orderingDraft: {}, matchingDraft: {},
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
+    laneListId: null, laneListSceneId: null, // set when a lane tab (Leads/Inventory/Hints) asks to show its scene-wide options list instead of a single node
     _activeIds: { expandedId: null, leadIds: [] },
     onRender: null
   };
@@ -771,6 +844,8 @@ function createPreviewController(mainEl, sideEl) {
     ctl.orderingDraft = {};
     ctl.matchingDraft = {};
     ctl.pinnedNodeId = null;
+    ctl.laneListId = null;
+    ctl.laneListSceneId = null;
     ctl.render();
   };
 
@@ -778,8 +853,12 @@ function createPreviewController(mainEl, sideEl) {
 
   // Force the view to show a specific node regardless of the normal
   // "current open leads" flow — used when a node is selected on canvas.
-  ctl.showNode = function (nodeId) { ctl.pinnedNodeId = nodeId; ctl.render(); };
-  ctl.clearPin = function () { if (ctl.pinnedNodeId) { ctl.pinnedNodeId = null; ctl.render(); } };
+  ctl.showNode = function (nodeId) { ctl.pinnedNodeId = nodeId; ctl.laneListId = null; ctl.render(); };
+  // Force the view to show every currently-available option in one lane
+  // × scene cell (Leads/Inventory/Hints tab bar taps) instead of jumping
+  // straight into a single node.
+  ctl.showLaneList = function (laneId, sceneId) { ctl.laneListId = laneId; ctl.laneListSceneId = sceneId || null; ctl.pinnedNodeId = null; ctl.render(); };
+  ctl.clearPin = function () { if (ctl.pinnedNodeId || ctl.laneListId) { ctl.pinnedNodeId = null; ctl.laneListId = null; ctl.render(); } };
 
   ctl.render = function () {
     var session = ctl.session;
@@ -792,6 +871,14 @@ function createPreviewController(mainEl, sideEl) {
 
     if (pinnedNode) {
       renderPinnedNode(session, pinnedNode, ctl);
+    } else if (ctl.laneListId && !state.endingReached) {
+      var laneNodes = laneOptionsForScene(session, ctl.laneListId, ctl.laneListSceneId);
+      main.innerHTML = renderLaneOptionsList(session, ctl.laneListId, laneNodes);
+      wireHintButtons(session, main, ctl);
+      Array.prototype.forEach.call(main.querySelectorAll("[data-lead]"), function (el) {
+        el.onclick = function () { ctl.showNode(el.dataset.lead); };
+      });
+      ctl._activeIds = { expandedId: null, leadIds: laneNodes.map(function (n) { return n.id; }) };
     } else if (state.endingReached) {
       var en = hunt.nodes.find(function (n) { return n.id === state.endingReached; });
       main.innerHTML = en ?
@@ -894,6 +981,9 @@ return {
   PLAYER_SCREEN_TYPES: PLAYER_SCREEN_TYPES,
   openLeadNodes: openLeadNodes,
   hintsForNode: hintsForNode,
+  laneOptionsForScene: laneOptionsForScene,
+  renderLaneOptionsList: renderLaneOptionsList,
+  wireHintButtons: wireHintButtons,
   renderPreviewNode: renderPreviewNode,
   wirePreviewNodeInteractions: wirePreviewNodeInteractions,
   renderPinnedNode: renderPinnedNode,

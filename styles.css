@@ -268,6 +268,7 @@ button{font-family:inherit;cursor:pointer;}
 .pv-side-title{font-weight:700;color:var(--pv-text-dim);text-transform:uppercase;font-size:10.5px;letter-spacing:.05em;margin:10px 0 4px;}
 .pv-side-title:first-child{margin-top:0;}
 .pv-empty{color:var(--pv-text-dim);text-align:center;padding-top:60px;}
+.pv-info-card{background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text-dim);padding:10px 12px;border-radius:var(--pv-radius);margin-bottom:8px;font-size:13px;font-family:var(--pv-font-body);}
 .pv-image{border-radius:var(--pv-radius);filter:var(--pv-image-filter);max-width:100%;display:block;}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}
