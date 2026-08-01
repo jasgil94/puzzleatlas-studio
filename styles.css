@@ -176,11 +176,26 @@ button{font-family:inherit;cursor:pointer;}
 
 /* edges */
 .edge-path{fill:none;stroke:#6a7180;stroke-width:2;pointer-events:stroke;cursor:pointer;}
+/* Arrow colour is derived from the target node's lane (see
+   connectionLaneId() in app.js) — Advance Story/Open Lead/Grant
+   Item/Reveal Hint/Map Update each get their lane's colour so the kind
+   of consequence an arrow represents is readable at a glance. These
+   come before :hover/.selected below so interaction states still win. */
+.edge-path.lane-story{stroke:var(--lane-story);}
+.edge-path.lane-leads{stroke:var(--lane-leads);}
+.edge-path.lane-map{stroke:var(--lane-map);}
+.edge-path.lane-inventory{stroke:var(--lane-inventory);}
+.edge-path.lane-hints{stroke:var(--lane-hints);}
 .edge-path:hover{stroke:var(--accent);}
 .edge-path.selected{stroke:var(--accent);stroke-width:3;}
 .edge-path.temp{stroke:var(--accent2);stroke-dasharray:5 4;}
 .edge-label{font-size:10px;fill:var(--text-dim);pointer-events:none;}
 .edge-arrow{fill:#6a7180;}
+.edge-arrow.lane-story{fill:var(--lane-story);}
+.edge-arrow.lane-leads{fill:var(--lane-leads);}
+.edge-arrow.lane-map{fill:var(--lane-map);}
+.edge-arrow.lane-inventory{fill:var(--lane-inventory);}
+.edge-arrow.lane-hints{fill:var(--lane-hints);}
 .edge-hit{fill:none;stroke:transparent;stroke-width:14;pointer-events:stroke;cursor:pointer;}
 
 /* inspector */

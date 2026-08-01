@@ -377,6 +377,26 @@ var LANES = [
 var LANE_INDEX = {}, LANE_BY_ID = {};
 LANES.forEach(function (l, i) { LANE_INDEX[l.id] = i; LANE_BY_ID[l.id] = l; });
 
+// A connection's "kind" is never stored on the connection itself — it's
+// derived live from whichever lane its target node currently sits in.
+// This keeps arrow semantics automatic and always in sync: dragging a
+// node into a different lane instantly reclassifies (and recolours)
+// every arrow pointing at it, with no separate field to fall out of date.
+var CONNECTION_KIND_LABELS = {
+  story: "Advance Story",
+  leads: "Open Lead",
+  inventory: "Grant Item",
+  hints: "Reveal Hint",
+  map: "Map Update"
+};
+function connectionLaneId(c) {
+  var t = Store.getNode(c.targetId);
+  return t ? t.lane : null;
+}
+function connectionKindLabel(laneId) {
+  return CONNECTION_KIND_LABELS[laneId] || "Connection";
+}
+
 // The lane each node type is normally authored into. Dragging a node into
 // a different lane is allowed (lane is a manual, per-node placement) but
 // is flagged as a soft validation warning — see studioIssues().
@@ -863,6 +883,8 @@ function renderEdges() {
   Store.hunt.connections.forEach(function (c) {
     var s = Store.getNode(c.sourceId), t = Store.getNode(c.targetId);
     if (!s || !t) return;
+    var laneId = t.lane;
+    var laneClass = laneId ? " lane-" + laneId : "";
     var p1 = getPortPos(s, true), p2 = getPortPos(t, false);
     p1.x += EDGE_OFFSET; p1.y += EDGE_OFFSET; p2.x += EDGE_OFFSET; p2.y += EDGE_OFFSET;
     var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -871,14 +893,20 @@ function renderEdges() {
     hit.setAttribute("d", d); hit.setAttribute("class", "edge-hit"); hit.dataset.edgeId = c.id;
     var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", d);
-    path.setAttribute("class", "edge-path" + (Store.selection.type === "edge" && Store.selection.id === c.id ? " selected" : ""));
+    path.setAttribute("class", "edge-path" + laneClass + (Store.selection.type === "edge" && Store.selection.id === c.id ? " selected" : ""));
     path.dataset.edgeId = c.id;
     var midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
     var label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("x", midX); label.setAttribute("y", midY - 6);
     label.setAttribute("text-anchor", "middle");
     label.setAttribute("class", "edge-label");
-    var lbl = (c.label ? c.label + " · " : "") + conditionSummary(c.condition, Store.hunt);
+    // Kind (Advance Story / Open Lead / Grant Item / Reveal Hint / Map
+    // Update) is always shown first since it's derived automatically from
+    // the target's lane; the creator's own label and any real condition
+    // (anything other than "always") are appended for extra detail.
+    var lbl = connectionKindLabel(laneId) +
+      (c.label ? " — " + c.label : "") +
+      (c.condition && c.condition.type !== "always" ? " · " + conditionSummary(c.condition, Store.hunt) : "");
     label.textContent = lbl;
     // arrowhead
     var angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
@@ -887,7 +915,7 @@ function renderEdges() {
     var a1 = [ax + 6 * Math.cos(angle + 2.5), ay + 6 * Math.sin(angle + 2.5)];
     var a2 = [ax + 6 * Math.cos(angle - 2.5), ay + 6 * Math.sin(angle - 2.5)];
     arrow.setAttribute("points", p2.x + "," + p2.y + " " + a1[0] + "," + a1[1] + " " + a2[0] + "," + a2[1]);
-    arrow.setAttribute("class", "edge-arrow");
+    arrow.setAttribute("class", "edge-arrow" + laneClass);
     g.appendChild(path); g.appendChild(arrow); g.appendChild(label); g.appendChild(hit);
     svg.appendChild(g);
   });
@@ -1470,7 +1498,10 @@ function renderInspector() {
   if (sel.type === "edge") {
     var c = Store.getConnection(sel.id);
     if (!c) { title.textContent = "Nothing selected"; body.innerHTML = ""; return; }
-    title.textContent = "🔀 Connection Rule";
+    var laneId = connectionLaneId(c);
+    title.innerHTML = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;' +
+      'background:var(--lane-' + (laneId || "story") + ');margin-right:7px;vertical-align:middle;"></span>' +
+      esc(connectionKindLabel(laneId));
     body.innerHTML = buildEdgeInspector(c);
     wireEdgeInspector(c);
     return;
