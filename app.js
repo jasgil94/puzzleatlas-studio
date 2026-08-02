@@ -22,6 +22,9 @@ var FAMILIES = PAEngine.FAMILIES;
 var NODE_TYPES = PAEngine.NODE_TYPES;
 var CONDITION_TYPES = PAEngine.CONDITION_TYPES;
 var EFFECT_TYPES = PAEngine.EFFECT_TYPES;
+var IMAGE_ASPECT_RATIOS = PAEngine.IMAGE_ASPECT_RATIOS;
+var IMAGE_FRAME_STYLES = PAEngine.IMAGE_FRAME_STYLES;
+var renderImageRevealBlock = PAEngine.renderImageRevealBlock;
 
 var STYLE_PACK_SCHEMA_VERSION = PAEngine.STYLE_PACK_SCHEMA_VERSION;
 var STYLE_PACKS = PAEngine.STYLE_PACKS;
@@ -1674,11 +1677,54 @@ function buildTypeSpecificFields(n) {
     case "locationPlaceholder":
       html += '<p style="font-size:12px;color:var(--text-dim)">' + esc(c.placeholderNote) + '</p>';
       break;
+    case "imageReveal":
+      html += buildImageRevealFields(c);
+      break;
     default:
       html += buildGenericContentFields(n);
       break;
   }
   html += buildMediaFields(c);
+  return html;
+}
+
+/* Image Reveal — bespoke inspector: upload the image the player will see,
+   choose how it's framed (aspect ratio + crop/pan/zoom) and presented
+   (polaroid / gallery frame / none), and a caption. This is the node's own
+   "revealed" image (c.imageAsset), kept separate from the shared
+   background-media fields (buildMediaFields, appended after this by
+   buildTypeSpecificFields) which show full-bleed behind everything —
+   so the background always plays outside this frame, never inside it. */
+function buildImageRevealFields(c) {
+  var html = '<div class="field"><label>Revealed image</label>' +
+    '<input type="file" id="fImageAsset" accept="image/*" style="display:none" />' +
+    '<button class="small-btn" id="btnImageAssetUpload">⬆ Upload image</button>' +
+    (c.imageAsset ? ' <button class="small-btn" id="btnImageAssetClear" style="color:var(--danger)">✕ Remove image</button>' : '') +
+    '</div>';
+
+  html += fieldWrap("Aspect ratio", '<select id="fImageAspect">' +
+    Object.keys(IMAGE_ASPECT_RATIOS).map(function (key) {
+      return '<option value="' + key + '"' + ((c.aspectRatio || "original") === key ? " selected" : "") + '>' + esc(IMAGE_ASPECT_RATIOS[key].label) + '</option>';
+    }).join("") + '</select>');
+
+  html += fieldWrap("Frame", '<select id="fImageFrame">' +
+    Object.keys(IMAGE_FRAME_STYLES).map(function (key) {
+      return '<option value="' + key + '"' + ((c.frameStyle || "none") === key ? " selected" : "") + '>' + esc(IMAGE_FRAME_STYLES[key].label) + '</option>';
+    }).join("") + '</select>');
+
+  if (c.imageAsset) {
+    var ratio = c.aspectRatio || "original";
+    html += '<div class="field"><label>Crop &amp; position preview' + (ratio === "original" ? "" : ' — click/drag on the image to reposition it in the frame') + '</label>' +
+      '<div id="imageCropPreview" style="max-width:260px">' + renderImageRevealBlock(c) + '</div></div>';
+    if (ratio !== "original") {
+      html += fieldWrap("Zoom / scale", '<input type="range" id="fImageZoom" min="100" max="300" step="1" value="' + Math.round((Number(c.cropZoom) || 1) * 100) + '" />');
+    }
+  } else {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Upload an image above to set its crop, position and frame.</p>';
+  }
+
+  html += fieldWrap("Caption (optional)", '<input type="text" id="fImageCaption" value="' + esc(c.caption || "") + '" />');
+  html += fieldWrap("Let player zoom the image", '<select id="fImageZoomable"><option value="1"' + (c.zoomable !== false ? " selected" : "") + '>Yes</option><option value="0"' + (c.zoomable === false ? " selected" : "") + '>No</option></select>');
   return html;
 }
 
@@ -1732,6 +1778,80 @@ function wireMediaFields(c) {
   if (byId("btnMediaClear")) byId("btnMediaClear").onclick = function () {
     c.mediaUrl = ""; afterEdit(); renderInspector();
   };
+}
+
+function wireImageRevealFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+  if (byId("btnImageAssetUpload")) byId("btnImageAssetUpload").onclick = function () { byId("fImageAsset").click(); };
+  if (byId("fImageAsset")) byId("fImageAsset").onchange = function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      c.imageAsset = reader.result;
+      afterEdit(); renderInspector();
+      toast("Image attached.");
+    };
+    reader.readAsDataURL(file);
+  };
+  if (byId("btnImageAssetClear")) byId("btnImageAssetClear").onclick = function () {
+    c.imageAsset = ""; afterEdit(); renderInspector();
+  };
+
+  if (byId("fImageAspect")) byId("fImageAspect").onchange = function (e) { c.aspectRatio = e.target.value; afterEdit(); renderInspector(); };
+  if (byId("fImageFrame")) byId("fImageFrame").onchange = function (e) { c.frameStyle = e.target.value; afterEdit(); renderInspector(); };
+
+  if (byId("fImageCaption")) {
+    byId("fImageCaption").oninput = function (e) { c.caption = e.target.value; };
+    byId("fImageCaption").onblur = function () { afterEdit(); };
+  }
+  if (byId("fImageZoomable")) byId("fImageZoomable").onchange = function (e) { c.zoomable = e.target.value === "1"; afterEdit(); };
+
+  // Zoom/scale slider and click-drag panning both act on the same child
+  // <img class="pv-image-frame-img"> that renderImageRevealBlock renders
+  // (object-fit: cover + object-position + transform: scale) — so the
+  // inspector preview uses the exact same crop math as the real player
+  // screen, just manipulated live instead of rebuilt from scratch on
+  // every input event.
+  var zoomEl = byId("fImageZoom");
+  var previewBox = byId("imageCropPreview");
+  var frameEl = previewBox ? previewBox.querySelector(".pv-image-frame") : null;
+  var imgEl = frameEl ? frameEl.querySelector(".pv-image-frame-img") : null;
+
+  if (zoomEl && imgEl) {
+    zoomEl.oninput = function (e) {
+      c.cropZoom = Number(e.target.value) / 100;
+      imgEl.style.transform = "scale(" + c.cropZoom + ")";
+    };
+    zoomEl.onchange = function () { afterEdit(false); };
+  }
+
+  // Click/drag directly on the crop preview to move the image within the
+  // frame — sets the focal point under the cursor, then pans live as the
+  // mouse moves.
+  if (imgEl && c.aspectRatio && c.aspectRatio !== "original") {
+    frameEl.style.cursor = "move";
+    frameEl.onmousedown = function (e) {
+      e.preventDefault();
+      var rect = frameEl.getBoundingClientRect();
+      function setFromEvent(ev) {
+        var x = Math.min(Math.max((ev.clientX - rect.left) / rect.width, 0), 1);
+        var y = Math.min(Math.max((ev.clientY - rect.top) / rect.height, 0), 1);
+        c.focalX = Math.round(x * 100);
+        c.focalY = Math.round(y * 100);
+        imgEl.style.objectPosition = c.focalX + "% " + c.focalY + "%";
+      }
+      setFromEvent(e);
+      function move(ev) { setFromEvent(ev); }
+      function up() {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        afterEdit(false);
+      }
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    };
+  }
 }
 
 /* Generic content editor for node types without a bespoke inspector layout
@@ -1934,6 +2054,9 @@ function wireNodeInspector(n) {
         btn.onclick = function () { c.stages = c.stages.filter(function (s) { return s.id !== btn.dataset.hid; }); afterEdit(false); renderInspector(); };
       });
       if (byId("btnAddHintStage")) byId("btnAddHintStage").onclick = function () { c.stages.push({ id: uid("hs"), text: "Another hint stage." }); afterEdit(false); renderInspector(); };
+      break;
+    case "imageReveal":
+      wireImageRevealFields(c);
       break;
     default:
       wireGenericContentFields(n);

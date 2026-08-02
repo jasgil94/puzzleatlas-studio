@@ -270,7 +270,18 @@ var NODE_TYPES = {
   imageReveal: {
     family: "media", label: "Image Reveal", icon: "🖼️",
     defaultTitle: "New Image Reveal",
-    defaultContent: function () { return { imageAsset: "", caption: "", zoomable: true }; },
+    // imageAsset: the uploaded/revealed image itself (data URI or URL) — distinct
+    // from the shared mediaUrl/mediaType background-media fields (buildMediaFields
+    // in app.js), which show a separate full-bleed backdrop behind this content.
+    // aspectRatio "original" fits the whole image to the screen (no crop); every
+    // other value crops the image to that ratio, framed by cropZoom/focalX/focalY.
+    defaultContent: function () {
+      return {
+        imageAsset: "", caption: "", zoomable: true,
+        aspectRatio: "original", frameStyle: "none",
+        cropZoom: 1, focalX: 50, focalY: 50
+      };
+    },
     summary: function (c) { return c.caption || "Image reveal"; }
   },
   audioReveal: {
@@ -350,6 +361,25 @@ var EFFECT_TYPES = {
   awardItem:    { label: "Award item" },
   setVariable:  { label: "Set variable" },
   addScore:     { label: "Add to score" }
+};
+
+/* Image Reveal — aspect-ratio and frame options. "original" fits the whole
+   uploaded image to the screen (no cropping); every other entry crops the
+   image to that ratio, with the crop controlled by cropZoom/focalX/focalY. */
+var IMAGE_ASPECT_RATIOS = {
+  original: { label: "Original size (fit to screen)", ratio: null },
+  square:   { label: "Square (1:1)", ratio: "1 / 1" },
+  "4x3":    { label: "Standard (4:3)", ratio: "4 / 3" },
+  "3x4":    { label: "Portrait (3:4)", ratio: "3 / 4" },
+  "16x9":   { label: "Widescreen (16:9)", ratio: "16 / 9" },
+  "9x16":   { label: "Tall / Story (9:16)", ratio: "9 / 16" },
+  "3x2":    { label: "Classic photo (3:2)", ratio: "3 / 2" },
+  "2x3":    { label: "Classic portrait (2:3)", ratio: "2 / 3" }
+};
+var IMAGE_FRAME_STYLES = {
+  none:     { label: "None" },
+  polaroid: { label: "Polaroid" },
+  gallery:  { label: "Gallery frame" }
 };
 
 /* ---------------------------------------------------------------------
@@ -902,7 +932,8 @@ function pv_action_revealHint(session, hintNodeId) {
    screen at once without id clashes.
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
-  "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "crossReferenceLookup"];
+  "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "crossReferenceLookup",
+  "imageReveal"];
 
 function openLeadNodes(session) {
   var hunt = session.hunt, state = session.state;
@@ -1003,6 +1034,39 @@ function wrapWithMedia(c, innerHtml) {
   return '<div class="pv-scene-media-wrap">' + mediaTag + '<div class="pv-scene-textpane">' + innerHtml + '</div></div>';
 }
 
+// Builds the framed/cropped markup for an Image Reveal node's own uploaded
+// image (c.imageAsset) — separate from the shared background-media system
+// above (c.mediaUrl/mediaType). Used both for the real player screen and
+// for the Studio inspector's live crop/frame preview, so the two always
+// match. "original" aspect ratio renders a plain <img> that fits the whole
+// picture to the screen (object-fit: contain, no cropping). Every other
+// ratio renders a fixed-ratio box (overflow hidden) containing an <img>
+// with object-fit: cover — object-position (focalX/focalY) picks which
+// part of the image is visible, and transform: scale (cropZoom) zooms in
+// further from that cover baseline, same technique as standard photo-crop
+// UIs so the image always fully fills the frame with no letterboxing.
+function renderImageRevealBlock(c) {
+  c = c || {};
+  var ratio = IMAGE_ASPECT_RATIOS[c.aspectRatio] ? c.aspectRatio : "original";
+  var frame = IMAGE_FRAME_STYLES[c.frameStyle] ? c.frameStyle : "none";
+  var arClass = "pv-ar-" + ratio;
+  var html = '<div class="pv-image-reveal pv-frame-' + frame + '">';
+  if (!c.imageAsset) {
+    html += '<div class="pv-image-frame ' + arClass + ' pv-image-empty">No image uploaded</div>';
+  } else if (ratio === "original") {
+    html += '<img class="pv-image-frame ' + arClass + '" src="' + esc(c.imageAsset) + '" alt="" />';
+  } else {
+    var scale = Math.max(1, Number(c.cropZoom) || 1);
+    var fx = Math.min(100, Math.max(0, Number(c.focalX != null ? c.focalX : 50)));
+    var fy = Math.min(100, Math.max(0, Number(c.focalY != null ? c.focalY : 50)));
+    html += '<div class="pv-image-frame ' + arClass + '"><img class="pv-image-frame-img" src="' + esc(c.imageAsset) +
+      '" alt="" style="object-position:' + fx + '% ' + fy + '%;transform:scale(' + scale + ')" /></div>';
+  }
+  if (c.caption) html += '<div class="pv-image-caption">' + esc(c.caption) + '</div>';
+  html += '</div>';
+  return html;
+}
+
 function renderPreviewNode(session, n, ctl) {
   var c = n.content, html = "";
   var hints = hintsForNode(session.hunt, n.id);
@@ -1040,6 +1104,9 @@ function renderPreviewNode(session, n, ctl) {
     html += '<button class="pv-choice-btn" id="pvSubmitMatching" style="max-width:160px;margin-top:10px">Submit matches</button>';
     var fb3 = session.state.feedback[n.id];
     if (fb3) html += '<div class="pv-feedback ' + fb3 + '">' + (fb3 === "correct" ? "✓ Correct matches." : "✗ Some pairs are wrong — try again.") + '</div>';
+  } else if (n.type === "imageReveal") {
+    html += renderImageRevealBlock(c);
+    html += '<button class="pv-choice-btn" id="pvContinue" style="max-width:200px">Continue →</button>';
   } else if (n.type === "locationPlaceholder") {
     html += '<div class="pv-scene-body">' + esc(c.placeholderNote) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">Continue →</button>';
   } else if (n.type === "cipher") {
@@ -1406,6 +1473,8 @@ return {
   NODE_TYPES: NODE_TYPES,
   CONDITION_TYPES: CONDITION_TYPES,
   EFFECT_TYPES: EFFECT_TYPES,
+  IMAGE_ASPECT_RATIOS: IMAGE_ASPECT_RATIOS,
+  IMAGE_FRAME_STYLES: IMAGE_FRAME_STYLES,
 
   STYLE_PACK_SCHEMA_VERSION: STYLE_PACK_SCHEMA_VERSION,
   STYLE_PACKS: STYLE_PACKS,
@@ -1458,6 +1527,7 @@ return {
   renderLaneOptionsList: renderLaneOptionsList,
   wireHintButtons: wireHintButtons,
   wrapWithMedia: wrapWithMedia,
+  renderImageRevealBlock: renderImageRevealBlock,
   renderPreviewNode: renderPreviewNode,
   wirePreviewNodeInteractions: wirePreviewNodeInteractions,
   renderPinnedNode: renderPinnedNode,
