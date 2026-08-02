@@ -1596,6 +1596,21 @@ function buildTypeSpecificFields(n) {
   switch (n.type) {
     case "scene":
       html += fieldWrap("Body text (player-visible)", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
+      html += '<div class="section-title">Background media (optional)</div>';
+      html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Attach an image, GIF or video and it plays full-screen behind the text — the text pane moves to the bottom third of the screen and sits over the media.</p>';
+      html += fieldWrap("Media type", '<select id="fMediaType">' +
+        [["image", "Image"], ["gif", "GIF"], ["video", "Video"]].map(function (t) {
+          return '<option value="' + t[0] + '"' + ((c.mediaType || "image") === t[0] ? " selected" : "") + '>' + t[1] + '</option>';
+        }).join("") + '</select>');
+      html += fieldWrap("Media URL", '<input type="text" id="fMediaUrl" placeholder="https://… or upload a file below" value="' + esc(c.mediaUrl || "") + '" />');
+      html += '<div class="field"><input type="file" id="fMediaUpload" accept="image/*,video/*" style="display:none" />' +
+        '<button class="small-btn" id="btnMediaUpload">⬆ Upload file</button>' +
+        (c.mediaUrl ? ' <button class="small-btn" id="btnMediaClear" style="color:var(--danger)">✕ Remove media</button>' : '') + '</div>';
+      if (c.mediaUrl) {
+        html += c.mediaType === "video"
+          ? '<video src="' + esc(c.mediaUrl) + '" class="pv-image" style="max-height:140px;width:100%;object-fit:cover" muted controls></video>'
+          : '<img src="' + esc(c.mediaUrl) + '" class="pv-image" style="max-height:140px;width:100%;object-fit:cover" />';
+      }
       break;
     case "choice":
       html += fieldWrap("Prompt text", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
@@ -1782,6 +1797,30 @@ function wireNodeInspector(n) {
     case "scene": case "ending":
       bindText("fBody", "body");
       if (n.type === "ending") bindText("fResultName", "resultName");
+      if (n.type === "scene") {
+        if (byId("fMediaType")) byId("fMediaType").onchange = function (e) { c.mediaType = e.target.value; afterEdit(); renderInspector(); };
+        bindText("fMediaUrl", "mediaUrl");
+        if (byId("fMediaUrl")) byId("fMediaUrl").onblur = function () { afterEdit(); renderInspector(); };
+        if (byId("btnMediaUpload")) byId("btnMediaUpload").onclick = function () { byId("fMediaUpload").click(); };
+        if (byId("fMediaUpload")) byId("fMediaUpload").onchange = function (e) {
+          var file = e.target.files && e.target.files[0];
+          if (!file) return;
+          if (!c.mediaType || c.mediaType === "image") {
+            if (/^video\//.test(file.type)) c.mediaType = "video";
+            else if (file.type === "image/gif") c.mediaType = "gif";
+          }
+          var reader = new FileReader();
+          reader.onload = function () {
+            c.mediaUrl = reader.result;
+            afterEdit(); renderInspector();
+            toast("Media attached.");
+          };
+          reader.readAsDataURL(file);
+        };
+        if (byId("btnMediaClear")) byId("btnMediaClear").onclick = function () {
+          c.mediaUrl = ""; afterEdit(); renderInspector();
+        };
+      }
       break;
     case "choice":
       bindText("fBody", "body");

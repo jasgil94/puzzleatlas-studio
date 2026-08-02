@@ -60,7 +60,10 @@ var NODE_TYPES = {
   scene: {
     family: "narrative", label: "Scene / Text Reveal", icon: "📜",
     defaultTitle: "New Scene",
-    defaultContent: function () { return { body: "Write the narrative text the player sees here." }; },
+    // mediaUrl/mediaType are optional — when set, the player screen shows
+    // the media full-bleed in the background with the text pane pinned to
+    // the bottom third on top of it (see renderPreviewNode below).
+    defaultContent: function () { return { body: "Write the narrative text the player sees here.", mediaUrl: "", mediaType: "image" }; },
     summary: function (c) { return c.body ? c.body.slice(0, 60) : ""; }
   },
   choice: {
@@ -989,7 +992,16 @@ function renderPreviewNode(session, n, ctl) {
   var c = n.content, html = "";
   var hints = hintsForNode(session.hunt, n.id);
   if (n.type === "scene") {
-    html += '<div class="pv-scene-body">' + esc(c.body) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">Continue →</button>';
+    if (c.mediaUrl) {
+      var sceneMediaTag = c.mediaType === "video"
+        ? '<video class="pv-scene-media" src="' + esc(c.mediaUrl) + '" autoplay loop muted playsinline></video>'
+        : '<img class="pv-scene-media" src="' + esc(c.mediaUrl) + '" alt="" />';
+      html += '<div class="pv-scene-media-wrap">' + sceneMediaTag +
+        '<div class="pv-scene-textpane"><div class="pv-scene-body">' + esc(c.body) + '</div>' +
+        '<button class="pv-choice-btn" id="pvContinue" style="max-width:200px">Continue →</button></div></div>';
+    } else {
+      html += '<div class="pv-scene-body">' + esc(c.body) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">Continue →</button>';
+    }
   } else if (n.type === "choice") {
     html += '<div class="pv-scene-body">' + esc(c.body) + '</div>';
     c.options.forEach(function (o) { html += '<button class="pv-option-btn" data-opt="' + o.id + '">' + esc(o.label) + '</button>'; });
