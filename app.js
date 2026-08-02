@@ -1587,6 +1587,7 @@ function buildNodeInspector(n) {
   html += buildEffectsEditor(n);
   html += '<div class="section-title">Creator-only notes (never shown to player)</div>';
   html += '<div class="creator-note-box">' + fieldWrap("Notes / solution reasoning", '<textarea id="fNotes">' + esc(n.creatorNotes) + '</textarea>') + '</div>';
+  html += '<div class="section-title"></div><button class="small-btn" id="btnDeleteNode" style="color:var(--danger)">Delete this node</button>';
   return html;
 }
 
@@ -1904,6 +1905,14 @@ function wireNodeInspector(n) {
     byId("fNotes").oninput = function (e) { n.creatorNotes = e.target.value; };
     byId("fNotes").onblur = function () { afterEdit(false); };
   }
+
+  if (byId("btnDeleteNode")) byId("btnDeleteNode").onclick = function () {
+    if (!confirm('Delete "' + (n.title || "this node") + '"? Its connections will also be removed.')) return;
+    Store.removeNode(n.id);
+    Store.clearSelection();
+    render();
+    toast("Node deleted.");
+  };
 }
 
 function buildEdgeInspector(c) {
