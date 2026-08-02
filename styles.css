@@ -245,7 +245,8 @@ button{font-family:inherit;cursor:pointer;}
 .phone-screen{width:236px;height:440px;background:var(--pv-bg);color:var(--pv-text);border-radius:20px;overflow:hidden;display:flex;flex-direction:column;font-family:var(--pv-font-body);}
 .phone-scroll{flex:1;overflow-y:auto;padding:16px 14px;}
 .phone-main{font-size:13px;}
-.phone-side{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);font-size:11px;}
+.phone-side{flex-shrink:0;padding:10px 14px;border-top:1px solid var(--line);font-size:11px;max-height:35%;overflow-y:auto;}
+.phone-side:empty{display:none;padding:0;border:none;}
 .phone-home{width:80px;height:4px;background:#000;border-radius:3px;margin:9px auto 0;}
 .mock-panel-hint{font-size:10.5px;color:var(--text-dim);margin-top:12px;line-height:1.4;text-align:center;}
 
@@ -281,7 +282,8 @@ button{font-family:inherit;cursor:pointer;}
 .preview-header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--pv-surface);font-family:var(--pv-font-heading);}
 .preview-body{flex:1;display:flex;min-height:0;}
 .preview-main{flex:1;padding:22px 26px;overflow-y:auto;font-family:var(--pv-font-body);}
-.preview-side{width:230px;border-left:1px solid var(--line);padding:14px;overflow-y:auto;font-size:12px;background:var(--pv-surface);color:var(--pv-text);}
+.preview-side{flex-shrink:0;border-top:1px solid var(--line);padding:12px 16px;overflow-y:auto;font-size:12px;background:var(--pv-surface);color:var(--pv-text);max-height:35%;}
+.preview-side:empty{display:none;padding:0;border:none;}
 .pv-scene-body{font-size:15px;line-height:1.6;margin-bottom:18px;white-space:pre-wrap;}
 .pv-choice-btn, .pv-option-btn{display:block;width:100%;text-align:left;background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text);padding:10px 12px;border-radius:var(--pv-radius);margin-bottom:8px;font-size:13.5px;font-family:var(--pv-font-body);cursor:pointer;}
 .pv-choice-btn:hover, .pv-option-btn:hover{border-color:var(--pv-accent);}
