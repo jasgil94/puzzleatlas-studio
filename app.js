@@ -1596,21 +1596,6 @@ function buildTypeSpecificFields(n) {
   switch (n.type) {
     case "scene":
       html += fieldWrap("Body text (player-visible)", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
-      html += '<div class="section-title">Background media (optional)</div>';
-      html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Attach an image, GIF or video and it plays full-screen behind the text — the text pane moves to the bottom third of the screen and sits over the media.</p>';
-      html += fieldWrap("Media type", '<select id="fMediaType">' +
-        [["image", "Image"], ["gif", "GIF"], ["video", "Video"]].map(function (t) {
-          return '<option value="' + t[0] + '"' + ((c.mediaType || "image") === t[0] ? " selected" : "") + '>' + t[1] + '</option>';
-        }).join("") + '</select>');
-      html += fieldWrap("Media URL", '<input type="text" id="fMediaUrl" placeholder="https://… or upload a file below" value="' + esc(c.mediaUrl || "") + '" />');
-      html += '<div class="field"><input type="file" id="fMediaUpload" accept="image/*,video/*" style="display:none" />' +
-        '<button class="small-btn" id="btnMediaUpload">⬆ Upload file</button>' +
-        (c.mediaUrl ? ' <button class="small-btn" id="btnMediaClear" style="color:var(--danger)">✕ Remove media</button>' : '') + '</div>';
-      if (c.mediaUrl) {
-        html += c.mediaType === "video"
-          ? '<video src="' + esc(c.mediaUrl) + '" class="pv-image" style="max-height:140px;width:100%;object-fit:cover" muted controls></video>'
-          : '<img src="' + esc(c.mediaUrl) + '" class="pv-image" style="max-height:140px;width:100%;object-fit:cover" />';
-      }
       break;
     case "choice":
       html += fieldWrap("Prompt text", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
@@ -1693,7 +1678,60 @@ function buildTypeSpecificFields(n) {
       html += buildGenericContentFields(n);
       break;
   }
+  html += buildMediaFields(c);
   return html;
+}
+
+/* Background media — standard on every node type. When set, the node's
+   player screen plays the image/GIF/video full-bleed behind whatever that
+   node type normally shows, with the content pinned to the bottom third
+   on top (see wrapWithMedia in engine.js). Shared by buildTypeSpecificFields
+   so every type gets the same fields without repeating this block. */
+function buildMediaFields(c) {
+  var html = '<div class="section-title">Background media (optional)</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Attach an image, GIF or video and it plays full-screen behind this node’s content — the content pane moves to the bottom third of the screen and sits over the media.</p>';
+  html += fieldWrap("Media type", '<select id="fMediaType">' +
+    [["image", "Image"], ["gif", "GIF"], ["video", "Video"]].map(function (t) {
+      return '<option value="' + t[0] + '"' + ((c.mediaType || "image") === t[0] ? " selected" : "") + '>' + t[1] + '</option>';
+    }).join("") + '</select>');
+  html += fieldWrap("Media URL", '<input type="text" id="fMediaUrl" placeholder="https://… or upload a file below" value="' + esc(c.mediaUrl || "") + '" />');
+  html += '<div class="field"><input type="file" id="fMediaUpload" accept="image/*,video/*" style="display:none" />' +
+    '<button class="small-btn" id="btnMediaUpload">⬆ Upload file</button>' +
+    (c.mediaUrl ? ' <button class="small-btn" id="btnMediaClear" style="color:var(--danger)">✕ Remove media</button>' : '') + '</div>';
+  if (c.mediaUrl) {
+    html += c.mediaType === "video"
+      ? '<video src="' + esc(c.mediaUrl) + '" class="pv-image" style="max-height:140px;width:100%;object-fit:cover" muted controls></video>'
+      : '<img src="' + esc(c.mediaUrl) + '" class="pv-image" style="max-height:140px;width:100%;object-fit:cover" />';
+  }
+  return html;
+}
+
+function wireMediaFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+  if (byId("fMediaType")) byId("fMediaType").onchange = function (e) { c.mediaType = e.target.value; afterEdit(); renderInspector(); };
+  if (byId("fMediaUrl")) {
+    byId("fMediaUrl").oninput = function (e) { c.mediaUrl = e.target.value; };
+    byId("fMediaUrl").onblur = function () { afterEdit(); renderInspector(); };
+  }
+  if (byId("btnMediaUpload")) byId("btnMediaUpload").onclick = function () { byId("fMediaUpload").click(); };
+  if (byId("fMediaUpload")) byId("fMediaUpload").onchange = function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (!c.mediaType || c.mediaType === "image") {
+      if (/^video\//.test(file.type)) c.mediaType = "video";
+      else if (file.type === "image/gif") c.mediaType = "gif";
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      c.mediaUrl = reader.result;
+      afterEdit(); renderInspector();
+      toast("Media attached.");
+    };
+    reader.readAsDataURL(file);
+  };
+  if (byId("btnMediaClear")) byId("btnMediaClear").onclick = function () {
+    c.mediaUrl = ""; afterEdit(); renderInspector();
+  };
 }
 
 /* Generic content editor for node types without a bespoke inspector layout
@@ -1708,7 +1746,9 @@ function genericFieldLabel(key) {
 }
 function buildGenericContentFields(n) {
   var c = n.content || {}, html = "";
-  Object.keys(c).forEach(function (key) {
+  // mediaUrl/mediaType are handled by the shared buildMediaFields section
+  // (appended after this) rather than shown again generically here.
+  Object.keys(c).filter(function (key) { return key !== "mediaUrl" && key !== "mediaType"; }).forEach(function (key) {
     var v = c[key], label = genericFieldLabel(key);
     if (typeof v === "string") {
       var longField = v.length > 60 || /body|prompt|instruction|note|final/i.test(key);
@@ -1797,30 +1837,6 @@ function wireNodeInspector(n) {
     case "scene": case "ending":
       bindText("fBody", "body");
       if (n.type === "ending") bindText("fResultName", "resultName");
-      if (n.type === "scene") {
-        if (byId("fMediaType")) byId("fMediaType").onchange = function (e) { c.mediaType = e.target.value; afterEdit(); renderInspector(); };
-        bindText("fMediaUrl", "mediaUrl");
-        if (byId("fMediaUrl")) byId("fMediaUrl").onblur = function () { afterEdit(); renderInspector(); };
-        if (byId("btnMediaUpload")) byId("btnMediaUpload").onclick = function () { byId("fMediaUpload").click(); };
-        if (byId("fMediaUpload")) byId("fMediaUpload").onchange = function (e) {
-          var file = e.target.files && e.target.files[0];
-          if (!file) return;
-          if (!c.mediaType || c.mediaType === "image") {
-            if (/^video\//.test(file.type)) c.mediaType = "video";
-            else if (file.type === "image/gif") c.mediaType = "gif";
-          }
-          var reader = new FileReader();
-          reader.onload = function () {
-            c.mediaUrl = reader.result;
-            afterEdit(); renderInspector();
-            toast("Media attached.");
-          };
-          reader.readAsDataURL(file);
-        };
-        if (byId("btnMediaClear")) byId("btnMediaClear").onclick = function () {
-          c.mediaUrl = ""; afterEdit(); renderInspector();
-        };
-      }
       break;
     case "choice":
       bindText("fBody", "body");
@@ -1923,6 +1939,9 @@ function wireNodeInspector(n) {
       wireGenericContentFields(n);
       break;
   }
+
+  // background media (shared across all node types)
+  wireMediaFields(c);
 
   // effects editor (shared across all node types)
   Array.prototype.forEach.call(document.querySelectorAll(".effTypeSelect"), function (sel) {

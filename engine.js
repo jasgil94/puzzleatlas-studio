@@ -60,9 +60,10 @@ var NODE_TYPES = {
   scene: {
     family: "narrative", label: "Scene / Text Reveal", icon: "📜",
     defaultTitle: "New Scene",
-    // mediaUrl/mediaType are optional — when set, the player screen shows
-    // the media full-bleed in the background with the text pane pinned to
-    // the bottom third on top of it (see renderPreviewNode below).
+    // mediaUrl/mediaType are optional on every node type's content (see
+    // wrapWithMedia below) — when set, the player screen shows the media
+    // full-bleed in the background with the node's content pinned to the
+    // bottom third on top of it.
     defaultContent: function () { return { body: "Write the narrative text the player sees here.", mediaUrl: "", mediaType: "image" }; },
     summary: function (c) { return c.body ? c.body.slice(0, 60) : ""; }
   },
@@ -988,20 +989,25 @@ function wireHintButtons(session, root, ctl) {
   });
 }
 
+// If content declares a mediaUrl, wraps innerHtml so the media plays
+// full-bleed behind it with innerHtml pinned to the bottom third on top
+// (via .pv-scene-media-wrap / .pv-scene-textpane) — shared by every node
+// type's player screen and by the ending screen, so background media is a
+// standard option regardless of node type. Returns innerHtml unchanged
+// when no media is set.
+function wrapWithMedia(c, innerHtml) {
+  if (!c || !c.mediaUrl) return innerHtml;
+  var mediaTag = c.mediaType === "video"
+    ? '<video class="pv-scene-media" src="' + esc(c.mediaUrl) + '" autoplay loop muted playsinline></video>'
+    : '<img class="pv-scene-media" src="' + esc(c.mediaUrl) + '" alt="" />';
+  return '<div class="pv-scene-media-wrap">' + mediaTag + '<div class="pv-scene-textpane">' + innerHtml + '</div></div>';
+}
+
 function renderPreviewNode(session, n, ctl) {
   var c = n.content, html = "";
   var hints = hintsForNode(session.hunt, n.id);
   if (n.type === "scene") {
-    if (c.mediaUrl) {
-      var sceneMediaTag = c.mediaType === "video"
-        ? '<video class="pv-scene-media" src="' + esc(c.mediaUrl) + '" autoplay loop muted playsinline></video>'
-        : '<img class="pv-scene-media" src="' + esc(c.mediaUrl) + '" alt="" />';
-      html += '<div class="pv-scene-media-wrap">' + sceneMediaTag +
-        '<div class="pv-scene-textpane"><div class="pv-scene-body">' + esc(c.body) + '</div>' +
-        '<button class="pv-choice-btn" id="pvContinue" style="max-width:200px">Continue →</button></div></div>';
-    } else {
-      html += '<div class="pv-scene-body">' + esc(c.body) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">Continue →</button>';
-    }
+    html += '<div class="pv-scene-body">' + esc(c.body) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">Continue →</button>';
   } else if (n.type === "choice") {
     html += '<div class="pv-scene-body">' + esc(c.body) + '</div>';
     c.options.forEach(function (o) { html += '<button class="pv-option-btn" data-opt="' + o.id + '">' + esc(o.label) + '</button>'; });
@@ -1120,7 +1126,7 @@ function renderPreviewNode(session, n, ctl) {
     });
     html += '</div>';
   }
-  return html;
+  return wrapWithMedia(c, html);
 }
 
 // Shared wiring for the several puzzle types that are just "one text
@@ -1267,7 +1273,7 @@ function renderPinnedNode(session, n, ctl) {
   var state = session.state;
 
   if (n.type === "ending") {
-    ctl.mainEl.innerHTML = '<div class="pv-ending"><h2>🏁 ' + esc(n.content.resultName) + '</h2><p class="pv-scene-body">' + esc(n.content.body) + '</p></div>';
+    ctl.mainEl.innerHTML = wrapWithMedia(n.content, '<div class="pv-ending"><h2>🏁 ' + esc(n.content.resultName) + '</h2><p class="pv-scene-body">' + esc(n.content.body) + '</p></div>');
     ctl._activeIds = { expandedId: n.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
     return;
   }
@@ -1344,7 +1350,7 @@ function createPreviewController(mainEl, sideEl) {
     } else if (state.endingReached) {
       var en = hunt.nodes.find(function (n) { return n.id === state.endingReached; });
       main.innerHTML = en ?
-        ('<div class="pv-ending"><h2>🏁 ' + esc(en.content.resultName) + '</h2><p class="pv-scene-body">' + esc(en.content.body) + '</p>' +
+        wrapWithMedia(en.content, '<div class="pv-ending"><h2>🏁 ' + esc(en.content.resultName) + '</h2><p class="pv-scene-body">' + esc(en.content.body) + '</p>' +
         '<p style="color:var(--pv-text-dim);font-size:12px">Hunt complete. ' + Object.keys(state.completed).length + " nodes visited · Score " + state.score + '</p></div>')
         : '<div class="pv-empty">The reached ending was removed from the hunt.</div>';
       ctl._activeIds = { expandedId: null, leadIds: [] };
@@ -1451,6 +1457,7 @@ return {
   laneOptionsForScene: laneOptionsForScene,
   renderLaneOptionsList: renderLaneOptionsList,
   wireHintButtons: wireHintButtons,
+  wrapWithMedia: wrapWithMedia,
   renderPreviewNode: renderPreviewNode,
   wirePreviewNodeInteractions: wirePreviewNodeInteractions,
   renderPinnedNode: renderPinnedNode,
