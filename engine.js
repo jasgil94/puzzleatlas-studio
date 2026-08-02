@@ -1377,10 +1377,7 @@ function createPreviewController(mainEl, sideEl) {
     }
 
     if (side) {
-      var sideHtml = '<div class="pv-side-title">Score</div><div>' + state.score + '</div>';
-      sideHtml += '<div class="pv-side-title">Items</div><div>' + (Object.keys(state.items).length ? Object.keys(state.items).map(function (id) { return '<span class="chip">' + esc(itemName(hunt, id)) + '</span>'; }).join("") : '<span style="color:var(--pv-text-dim)">none</span>') + '</div>';
-      sideHtml += '<div class="pv-side-title">Variables</div><div>' + (hunt.variables.length ? hunt.variables.map(function (v) { return '<div>' + esc(v.name) + " = " + esc(String(state.variables[v.id])) + '</div>'; }).join("") : '<span style="color:var(--pv-text-dim)">none</span>') + '</div>';
-      sideHtml += '<div class="pv-side-title">Progress</div><div>' + Object.keys(state.completed).length + " / " + hunt.nodes.length + ' nodes complete</div>';
+      var sideHtml = "";
       if (ctl.showState) {
         sideHtml += '<div class="pv-side-title">Event history</div>' + state.history.slice().reverse().slice(0, 12).map(function (h) { return '<div style="font-size:11px;color:var(--pv-text-dim)">' + esc(h.title) + '</div>'; }).join("");
         sideHtml += '<div class="pv-side-title">Available (not yet done)</div>' + Object.keys(state.available).filter(function (id) { return !state.completed[id]; }).map(function (id) { return '<div style="font-size:11px;color:var(--pv-text-dim)">' + esc(nodeTitle(hunt, id)) + '</div>'; }).join("");
