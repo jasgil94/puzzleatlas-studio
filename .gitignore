@@ -10,3 +10,6 @@ demo-hunt.json
 test-hunt-broken.json
 testlock.lock
 PuzzleAtlas-Studio.html
+
+# Pitch deck and other private business docs — never publish to the repo
+*.pptx
