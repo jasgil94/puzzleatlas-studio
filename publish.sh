@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pushes the current state of the PuzzleAtlas folder to GitHub.
+# Pushes the current state of the ClueAtlas folder to GitHub.
 # Cloudflare Pages is watching the repo and will auto-build/deploy
 # within about a minute of every push.
 #

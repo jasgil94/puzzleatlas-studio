@@ -1,5 +1,5 @@
 /* =========================================================================
-   PuzzleAtlas Studio — Phase 1 Local Prototype
+   ClueAtlas Studio — Phase 1 Local Prototype
    Single-file, zero-dependency, offline vanilla-JS implementation.
    No backend, no accounts. The canvas is a view over one canonical JSON
    "hunt model" (schema v0). Export/import/preview all read that same model.
@@ -2520,7 +2520,7 @@ function importHuntFile(file) {
   reader.onload = function () {
     try {
       var hunt = JSON.parse(reader.result);
-      if (!hunt.schemaVersion || !hunt.nodes || !hunt.connections) throw new Error("File does not look like a PuzzleAtlas hunt export.");
+      if (!hunt.schemaVersion || !hunt.nodes || !hunt.connections) throw new Error("File does not look like a ClueAtlas hunt export.");
       Store.replaceHunt(hunt);
       saveCurrentHuntToLibrary(true);
       toast("Imported \"" + hunt.title + "\".");
@@ -2535,7 +2535,7 @@ function importHuntFileToLibrary(file) {
   reader.onload = function () {
     try {
       var hunt = JSON.parse(reader.result);
-      if (!hunt.schemaVersion || !hunt.nodes || !hunt.connections) throw new Error("File does not look like a PuzzleAtlas hunt export.");
+      if (!hunt.schemaVersion || !hunt.nodes || !hunt.connections) throw new Error("File does not look like a ClueAtlas hunt export.");
       if (!hunt.id) hunt.id = uid("hunt");
       upsertHuntInLibrary(hunt);
       renderLibrary();
@@ -3487,7 +3487,7 @@ function init() {
   // reads it via getLibraryHunts(); see initLibraryStorage() above.
   initLibraryStorage().then(function () {
     showLibraryScreen();
-    toast("Welcome to PuzzleAtlas Studio. Open a hunt from your library, or start a new one.", 4000);
+    toast("Welcome to ClueAtlas Studio. Open a hunt from your library, or start a new one.", 4000);
   });
 }
 

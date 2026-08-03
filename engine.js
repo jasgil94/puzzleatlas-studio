@@ -1,5 +1,5 @@
 /* =========================================================================
-   PuzzleAtlas Engine — shared hunt schema, validation, style-pack renderer
+   ClueAtlas Engine — shared hunt schema, validation, style-pack renderer
    and player interpreter.
 
    This is the single source of truth for "what a hunt is and what it does
@@ -8,8 +8,8 @@
    elements it's explicitly told about, and no-ops outside a browser) it
    has no DOM dependency either — it can run under Node for testing.
 
-   PuzzleAtlas Studio loads this file to drive its docked live Player
-   mockup and its full-screen Preview overlay. The standalone PuzzleAtlas
+   ClueAtlas Studio loads this file to drive its docked live Player
+   mockup and its full-screen Preview overlay. The standalone ClueAtlas
    Player app loads this exact same file to drive real play. Two shells,
    one interpreter — that's what guarantees a hunt looks and behaves
    identically in Studio's preview and in the real Player app.
@@ -395,7 +395,7 @@ var IMAGE_FRAME_STYLES = {
 /* ---------------------------------------------------------------------
    Style packs — pluggable, standalone documents that set the
    player-facing visual/tonal norms for a hunt (fonts, colours, imagery
-   treatment, pacing). See docs/PuzzleAtlas_Style_Packs.md and
+   treatment, pacing). See docs/ClueAtlas_Style_Packs.md and
    style-packs/schema/style-pack.schema.json for the full format.
    These built-ins are embedded so they work with zero network access;
    "studio-default" reproduces the original look exactly, so hunts with
