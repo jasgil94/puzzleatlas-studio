@@ -256,11 +256,16 @@ button{font-family:inherit;cursor:pointer;}
    lane for whatever scene is currently on screen (see renderPlayerTabBar
    in app.js). Styled with --pv-* so it follows the active style pack. */
 .player-tabbar{display:flex;flex-shrink:0;border-top:var(--pv-border-width) var(--pv-border-style) var(--line);background:var(--pv-surface);}
-.player-tab{flex:1;display:flex;align-items:center;justify-content:center;background:none;border:none;border-top:2px solid transparent;color:var(--pv-text-dim);padding:10px 2px;cursor:pointer;}
+.player-tab{position:relative;flex:1;display:flex;align-items:center;justify-content:center;background:none;border:none;border-top:2px solid transparent;color:var(--pv-text-dim);padding:10px 2px;cursor:pointer;}
 .player-tab:hover{color:var(--pv-accent);}
 .player-tab.active{color:var(--pv-accent);border-top-color:var(--pv-accent);}
 .player-tab-icon{width:20px;height:20px;line-height:0;}
 .player-tab-icon svg{width:100%;height:100%;display:block;}
+/* Notification badge — new content became available in this lane while
+   the player was elsewhere (see laneBadgeCount/dismissLane in app.js).
+   Pinned to the tab's top-left corner per spec; clears the instant the
+   player opens that tab. */
+.player-tab-badge{position:absolute;top:4px;left:calc(50% - 18px);min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--danger);color:#fff;font-size:10px;line-height:16px;text-align:center;font-weight:700;pointer-events:none;}
 .phone-screen .player-tabbar{border-bottom-left-radius:20px;border-bottom-right-radius:20px;}
 
 /* validation drawer */

@@ -63,8 +63,11 @@ var pv_action_submitMatching = PAEngine.pv_action_submitMatching;
 var pv_action_revealHint = PAEngine.pv_action_revealHint;
 
 var PLAYER_SCREEN_TYPES = PAEngine.PLAYER_SCREEN_TYPES;
+var DEFAULT_BUTTON_LABEL = PAEngine.DEFAULT_BUTTON_LABEL;
+var BUTTON_LABEL_TYPES = PAEngine.BUTTON_LABEL_TYPES;
 var openLeadNodes = PAEngine.openLeadNodes;
 var hintsForNode = PAEngine.hintsForNode;
+var laneOptionsForScene = PAEngine.laneOptionsForScene;
 var renderPreviewNode = PAEngine.renderPreviewNode;
 var wirePreviewNodeInteractions = PAEngine.wirePreviewNodeInteractions;
 var renderPinnedNode = PAEngine.renderPinnedNode;
@@ -89,6 +92,48 @@ function download(filename, text) {
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+// Downscales/recompresses an uploaded image file via canvas before it's
+// stored as a data URI on the hunt, so a multi-megabyte phone photo doesn't
+// blow past the browser's ~5-10MB localStorage quota — which otherwise
+// breaks Save with no visible error (see persistLibrary below). Used by
+// every "upload an image and stash it as a data URI" field (Image Reveal's
+// own image, Background media). Skips anything that isn't a plain static
+// raster image — GIFs and videos are passed through untouched so animation/
+// playback survive — and falls back to the untouched original if decoding
+// or canvas export fails for any reason (e.g. an unsupported format).
+function readImageFileCompressed(file, cb) {
+  var MAX_DIM = 1600, QUALITY = 0.82;
+  if (!file || !/^image\//.test(file.type) || file.type === "image/gif") {
+    var rawReader = new FileReader();
+    rawReader.onload = function () { cb(rawReader.result); };
+    rawReader.onerror = function () { cb(null); };
+    rawReader.readAsDataURL(file);
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function () {
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
+        var cw = Math.max(1, Math.round(img.width * scale));
+        var ch = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = cw; canvas.height = ch;
+        canvas.getContext("2d").drawImage(img, 0, 0, cw, ch);
+        var outType = file.type === "image/png" ? "image/png" : "image/jpeg";
+        cb(canvas.toDataURL(outType, QUALITY));
+      } catch (e) {
+        cb(reader.result);
+      }
+    };
+    img.onerror = function () { cb(reader.result); };
+    img.src = reader.result;
+  };
+  reader.onerror = function () { cb(null); };
+  reader.readAsDataURL(file);
 }
 
 /* ---------------------------------------------------------------------
@@ -212,7 +257,9 @@ function newNode(type, x, y, lane, sceneId) {
     creatorNotes: "",
     effects: [],
     lane: lane || SUGGESTED_LANE[type] || "story",
-    sceneId: sceneId !== undefined ? sceneId : null
+    sceneId: sceneId !== undefined ? sceneId : null,
+    buttonLabel: "", // overrides DEFAULT_BUTTON_LABEL[type] when set — see buildCompletionEditor
+    completionOverride: { enabled: false, condition: { type: "always" } } // replaces the node's built-in completion trigger with a condition when enabled — see nodeCompletionOk in engine.js
   };
 }
 
@@ -826,6 +873,14 @@ function allIssues(hunt) {
 function migrateHuntForLanes(hunt) {
   if (!hunt.scenes) hunt.scenes = [];
   if (!hunt.laneHeights) hunt.laneHeights = {}; // older saves predate manual lane/column sizing
+  // Backfill fields from the completion-condition/button-label feature —
+  // independent of the lane migration below (a hunt may already have
+  // `lane` but predate these), so this always runs, not just when
+  // needsMigration is true.
+  hunt.nodes.forEach(function (n) {
+    if (n.buttonLabel === undefined) n.buttonLabel = "";
+    if (!n.completionOverride) n.completionOverride = { enabled: false, condition: { type: "always" } };
+  });
   var needsMigration = hunt.nodes.some(function (n) { return !n.lane; });
   if (!needsMigration) return hunt;
 
@@ -1586,6 +1641,7 @@ function buildNodeInspector(n) {
     html += '<p class="lane-warn-note">⚠ ' + esc(NODE_TYPES[n.type].label) + ' nodes are usually placed in the <b>' + esc(LANE_BY_ID[SUGGESTED_LANE[n.type]].label) + '</b> lane.</p>';
   }
   html += buildTypeSpecificFields(n);
+  if (n.type !== "hint") html += buildCompletionEditor(n);
   html += '<div class="section-title">Effects (applied when node completes)</div>';
   html += buildEffectsEditor(n);
   html += '<div class="section-title">Creator-only notes (never shown to player)</div>';
@@ -1767,13 +1823,12 @@ function wireMediaFields(c) {
       if (/^video\//.test(file.type)) c.mediaType = "video";
       else if (file.type === "image/gif") c.mediaType = "gif";
     }
-    var reader = new FileReader();
-    reader.onload = function () {
-      c.mediaUrl = reader.result;
+    readImageFileCompressed(file, function (dataUrl) {
+      if (!dataUrl) { toast("Couldn't read that file."); return; }
+      c.mediaUrl = dataUrl;
       afterEdit(); renderInspector();
       toast("Media attached.");
-    };
-    reader.readAsDataURL(file);
+    });
   };
   if (byId("btnMediaClear")) byId("btnMediaClear").onclick = function () {
     c.mediaUrl = ""; afterEdit(); renderInspector();
@@ -1786,13 +1841,12 @@ function wireImageRevealFields(c) {
   if (byId("fImageAsset")) byId("fImageAsset").onchange = function (e) {
     var file = e.target.files && e.target.files[0];
     if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function () {
-      c.imageAsset = reader.result;
+    readImageFileCompressed(file, function (dataUrl) {
+      if (!dataUrl) { toast("Couldn't read that image file."); return; }
+      c.imageAsset = dataUrl;
       afterEdit(); renderInspector();
       toast("Image attached.");
-    };
-    reader.readAsDataURL(file);
+    });
   };
   if (byId("btnImageAssetClear")) byId("btnImageAssetClear").onclick = function () {
     c.imageAsset = ""; afterEdit(); renderInspector();
@@ -1941,6 +1995,7 @@ function wireNodeInspector(n) {
   }
   if (byId("fLane")) byId("fLane").onchange = function (e) { n.lane = e.target.value; afterEdit(); renderInspector(); };
   if (byId("fSceneId")) byId("fSceneId").onchange = function (e) { n.sceneId = e.target.value || null; afterEdit(); renderInspector(); };
+  if (n.type !== "hint") wireCompletionEditor(n);
   var c = n.content;
 
   function bindText(elId, prop, onCommit) {
@@ -2096,8 +2151,133 @@ function wireNodeInspector(n) {
   };
 }
 
+// Shared condition-type editor — the same field set/behavior backs both a
+// connection's "when does this open" rule (buildEdgeInspector) and a
+// node's completion-override condition (buildCompletionEditor). `prefix`
+// namespaces the DOM ids/classes so the two never collide (they can't
+// actually be on screen at once — inspector only ever shows one selected
+// thing — but distinct prefixes keep each block's ids self-describing).
+function buildConditionFields(cond, prefix) {
+  var hunt = Store.hunt, allNodes = hunt.nodes;
+  var html = fieldWrap("Condition type", '<select id="' + prefix + 'CondType">' +
+    Object.keys(CONDITION_TYPES).map(function (k) { return '<option value="' + k + '"' + (cond.type === k ? " selected" : "") + '>' + CONDITION_TYPES[k].label + '</option>'; }).join("") +
+    '</select>');
+
+  if (cond.type === "nodeComplete") {
+    html += fieldWrap("Node", '<select id="' + prefix + 'CondNode">' + selectOptions(allNodes, "id", "title", cond.nodeId, "— choose node —") + '</select>');
+  } else if (cond.type === "allComplete" || cond.type === "anyNComplete") {
+    html += '<div class="field"><label>Nodes (check all that apply)</label>' +
+      allNodes.map(function (nd) {
+        var checked = (cond.nodeIds || []).indexOf(nd.id) !== -1;
+        return '<div class="list-item"><label style="display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" class="' + prefix + 'CondNodeChk" value="' + nd.id + '"' + (checked ? " checked" : "") + ' /> ' + esc(nd.title) + '</label></div>';
+      }).join("") + '</div>';
+    if (cond.type === "anyNComplete") html += fieldWrap("N required", '<input type="number" id="' + prefix + 'CondN" min="1" value="' + (cond.n || 1) + '" />');
+  } else if (cond.type === "choiceSelected") {
+    var choiceNodes = allNodes.filter(function (nd) { return nd.type === "choice"; });
+    html += fieldWrap("Choice node", '<select id="' + prefix + 'CondNode">' + selectOptions(choiceNodes, "id", "title", cond.nodeId, "— choose choice node —") + '</select>');
+    var chosen = choiceNodes.find(function (nd) { return nd.id === cond.nodeId; });
+    var opts = chosen ? chosen.content.options : [];
+    html += fieldWrap("Option", '<select id="' + prefix + 'CondOption">' + selectOptions(opts, "id", "label", cond.optionId, "— choose option —") + '</select>');
+  } else if (cond.type === "variableEquals" || cond.type === "variableAtLeast") {
+    html += fieldWrap("Variable", '<select id="' + prefix + 'CondVar">' + selectOptions(hunt.variables, "id", "name", cond.variableId, "— choose variable —") + '</select>');
+    html += fieldWrap("Value", '<input type="text" id="' + prefix + 'CondValue" value="' + esc(cond.value !== undefined ? cond.value : "") + '" />');
+  } else if (cond.type === "itemHeld") {
+    html += fieldWrap("Item", '<select id="' + prefix + 'CondItem">' + selectOptions(hunt.items, "id", "name", cond.itemId, "— choose item —") + '</select>');
+  } else {
+    html += '<p style="font-size:12px;color:var(--text-dim)">Always true — treated as immediately satisfied.</p>';
+  }
+  return html;
+}
+
+function conditionForType(t) {
+  if (t === "nodeComplete") return { type: t, nodeId: "" };
+  if (t === "allComplete") return { type: t, nodeIds: [] };
+  if (t === "anyNComplete") return { type: t, nodeIds: [], n: 1 };
+  if (t === "choiceSelected") return { type: t, nodeId: "", optionId: "" };
+  if (t === "variableEquals" || t === "variableAtLeast") return { type: t, variableId: "", value: "" };
+  if (t === "itemHeld") return { type: t, itemId: "" };
+  return { type: t }; // "always"
+}
+
+// setCondition(newCond): called on a condition-*type* change, replaces the
+// whole condition object — caller decides where it's stored.
+// onChange(needsRerender): called after an in-place field edit on the
+// existing condition (nodeId/value/etc.) — caller persists + optionally
+// re-renders (needed when picking a Choice node, to refresh its Option list).
+function wireConditionFields(cond, prefix, setCondition, onChange) {
+  var byId = function (id) { return document.getElementById(id); };
+  byId(prefix + "CondType").onchange = function (e) { setCondition(conditionForType(e.target.value)); };
+  if (byId(prefix + "CondNode")) byId(prefix + "CondNode").onchange = function (e) { cond.nodeId = e.target.value; onChange(cond.type === "choiceSelected"); };
+  if (byId(prefix + "CondOption")) byId(prefix + "CondOption").onchange = function (e) { cond.optionId = e.target.value; onChange(false); };
+  if (byId(prefix + "CondN")) { byId(prefix + "CondN").oninput = function (e) { cond.n = Number(e.target.value); }; byId(prefix + "CondN").onblur = function () { onChange(false); }; }
+  Array.prototype.forEach.call(document.querySelectorAll("." + prefix + "CondNodeChk"), function (chk) {
+    chk.onchange = function () {
+      var ids = Array.prototype.filter.call(document.querySelectorAll("." + prefix + "CondNodeChk"), function (x) { return x.checked; }).map(function (x) { return x.value; });
+      cond.nodeIds = ids;
+      onChange(false);
+    };
+  });
+  if (byId(prefix + "CondVar")) byId(prefix + "CondVar").onchange = function (e) { cond.variableId = e.target.value; onChange(false); };
+  if (byId(prefix + "CondValue")) { byId(prefix + "CondValue").oninput = function (e) { cond.value = e.target.value; }; byId(prefix + "CondValue").onblur = function () { onChange(false); }; }
+  if (byId(prefix + "CondItem")) byId(prefix + "CondItem").onchange = function (e) { cond.itemId = e.target.value; onChange(false); };
+}
+
+// A concise description of what completes a node today, shown as the
+// "Default" option's label in the Completion Rule picker below — so a
+// creator can see what they're overriding before they do it.
+function defaultCompletionSummary(n) {
+  if (n.type === "convergence") return "its incoming branches converge (fires automatically)";
+  if (isAutoType(n.type)) return "it becomes available (fires automatically)";
+  if (n.type === "choice") return "the player picks an option";
+  if (BUTTON_LABEL_TYPES[n.type] && (n.type === "scene" || n.type === "imageReveal" || n.type === "locationPlaceholder")) return "the player presses the button";
+  return "the player submits a correct answer/solution";
+}
+
+// Generic, all-node-types completion controls: a custom button label
+// (where the node type has one clear action button) and a completion
+// override that replaces the node's built-in trigger with a condition —
+// see nodeCompletionOk in engine.js for the runtime side. Not shown for
+// Hint nodes, which have no completion concept (see buildNodeInspector).
+function buildCompletionEditor(n) {
+  var html = '<div class="section-title">Completion</div>';
+  if (BUTTON_LABEL_TYPES[n.type]) {
+    html += fieldWrap('Button label (blank = default "' + esc(DEFAULT_BUTTON_LABEL[n.type]) + '")',
+      '<input type="text" id="fButtonLabel" placeholder="' + esc(DEFAULT_BUTTON_LABEL[n.type]) + '" value="' + esc(n.buttonLabel || "") + '" />');
+  }
+  var ov = n.completionOverride || (n.completionOverride = { enabled: false, condition: { type: "always" } });
+  html += fieldWrap("This node is complete when…", '<select id="fCompletionMode">' +
+    '<option value="0"' + (!ov.enabled ? " selected" : "") + '>Default — ' + esc(defaultCompletionSummary(n)) + '</option>' +
+    '<option value="1"' + (ov.enabled ? " selected" : "") + '>A custom condition is met</option>' +
+    '</select>');
+  if (ov.enabled) {
+    html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">While this is set, the node’s own answer/interaction no longer decides completion — it’s marked complete (and its outgoing connections can fire) only once this condition is true.</p>';
+    html += buildConditionFields(ov.condition, "fNode");
+  }
+  return html;
+}
+
+function wireCompletionEditor(n) {
+  var byId = function (id) { return document.getElementById(id); };
+  if (byId("fButtonLabel")) {
+    byId("fButtonLabel").oninput = function (e) { n.buttonLabel = e.target.value; };
+    byId("fButtonLabel").onblur = function () { afterEdit(false); };
+  }
+  if (byId("fCompletionMode")) {
+    byId("fCompletionMode").onchange = function (e) {
+      n.completionOverride.enabled = e.target.value === "1";
+      afterEdit(false);
+      renderInspector();
+    };
+  }
+  var ov = n.completionOverride;
+  if (ov && ov.enabled) {
+    wireConditionFields(ov.condition, "fNode",
+      function (newCond) { ov.condition = newCond; afterEdit(false); renderInspector(); },
+      function (needsRerender) { afterEdit(false); if (needsRerender) renderInspector(); });
+  }
+}
+
 function buildEdgeInspector(c) {
-  var hunt = Store.hunt;
   var s = Store.getNode(c.sourceId), t = Store.getNode(c.targetId);
   var html = '<div class="section-title">Route</div>';
   html += '<p style="font-size:12px;color:var(--text-dim)">' + esc(s ? s.title : "?") + " → " + esc(t ? t.title : "?") + '</p>';
@@ -2105,34 +2285,7 @@ function buildEdgeInspector(c) {
   html += fieldWrap("Priority (lower = evaluated first)", '<input type="number" id="fPriority" value="' + c.priority + '" />');
 
   html += '<div class="section-title">Condition — when does this connection open?</div>';
-  html += fieldWrap("Condition type", '<select id="fCondType">' +
-    Object.keys(CONDITION_TYPES).map(function (k) { return '<option value="' + k + '"' + (c.condition.type === k ? " selected" : "") + '>' + CONDITION_TYPES[k].label + '</option>'; }).join("") +
-    '</select>');
-
-  var cond = c.condition, allNodes = hunt.nodes;
-  if (cond.type === "nodeComplete") {
-    html += fieldWrap("Node", '<select id="fCondNode">' + selectOptions(allNodes, "id", "title", cond.nodeId, "— choose node —") + '</select>');
-  } else if (cond.type === "allComplete" || cond.type === "anyNComplete") {
-    html += '<div class="field"><label>Nodes (check all that apply)</label>' +
-      allNodes.map(function (nd) {
-        var checked = (cond.nodeIds || []).indexOf(nd.id) !== -1;
-        return '<div class="list-item"><label style="display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" class="condNodeChk" value="' + nd.id + '"' + (checked ? " checked" : "") + ' /> ' + esc(nd.title) + '</label></div>';
-      }).join("") + '</div>';
-    if (cond.type === "anyNComplete") html += fieldWrap("N required", '<input type="number" id="fCondN" min="1" value="' + (cond.n || 1) + '" />');
-  } else if (cond.type === "choiceSelected") {
-    var choiceNodes = allNodes.filter(function (nd) { return nd.type === "choice"; });
-    html += fieldWrap("Choice node", '<select id="fCondNode">' + selectOptions(choiceNodes, "id", "title", cond.nodeId, "— choose choice node —") + '</select>');
-    var chosen = choiceNodes.find(function (nd) { return nd.id === cond.nodeId; });
-    var opts = chosen ? chosen.content.options : [];
-    html += fieldWrap("Option", '<select id="fCondOption">' + selectOptions(opts, "id", "label", cond.optionId, "— choose option —") + '</select>');
-  } else if (cond.type === "variableEquals" || cond.type === "variableAtLeast") {
-    html += fieldWrap("Variable", '<select id="fCondVar">' + selectOptions(hunt.variables, "id", "name", cond.variableId, "— choose variable —") + '</select>');
-    html += fieldWrap("Value", '<input type="text" id="fCondValue" value="' + esc(cond.value !== undefined ? cond.value : "") + '" />');
-  } else if (cond.type === "itemHeld") {
-    html += fieldWrap("Item", '<select id="fCondItem">' + selectOptions(hunt.items, "id", "name", cond.itemId, "— choose item —") + '</select>');
-  } else {
-    html += '<p style="font-size:12px;color:var(--text-dim)">This connection is always open once its source node is reachable.</p>';
-  }
+  html += buildConditionFields(c.condition, "f");
   html += '<div class="section-title"></div><button class="small-btn" id="btnDeleteEdge" style="color:var(--danger)">Delete this connection</button>';
   return html;
 }
@@ -2144,32 +2297,9 @@ function wireEdgeInspector(c) {
   byId("fPriority").oninput = function (e) { c.priority = Number(e.target.value); };
   byId("fPriority").onblur = function () { afterEdit(false); };
 
-  byId("fCondType").onchange = function (e) {
-    var t = e.target.value;
-    if (t === "always") c.condition = { type: t };
-    else if (t === "nodeComplete") c.condition = { type: t, nodeId: "" };
-    else if (t === "allComplete") c.condition = { type: t, nodeIds: [] };
-    else if (t === "anyNComplete") c.condition = { type: t, nodeIds: [], n: 1 };
-    else if (t === "choiceSelected") c.condition = { type: t, nodeId: "", optionId: "" };
-    else if (t === "variableEquals" || t === "variableAtLeast") c.condition = { type: t, variableId: "", value: "" };
-    else if (t === "itemHeld") c.condition = { type: t, itemId: "" };
-    afterEdit();
-    renderInspector();
-  };
-
-  if (byId("fCondNode")) byId("fCondNode").onchange = function (e) { c.condition.nodeId = e.target.value; afterEdit(); if (c.condition.type === "choiceSelected") renderInspector(); };
-  if (byId("fCondOption")) byId("fCondOption").onchange = function (e) { c.condition.optionId = e.target.value; afterEdit(); };
-  if (byId("fCondN")) { byId("fCondN").oninput = function (e) { c.condition.n = Number(e.target.value); }; byId("fCondN").onblur = function () { afterEdit(); }; }
-  Array.prototype.forEach.call(document.querySelectorAll(".condNodeChk"), function (chk) {
-    chk.onchange = function () {
-      var ids = Array.prototype.filter.call(document.querySelectorAll(".condNodeChk"), function (x) { return x.checked; }).map(function (x) { return x.value; });
-      c.condition.nodeIds = ids;
-      afterEdit();
-    };
-  });
-  if (byId("fCondVar")) byId("fCondVar").onchange = function (e) { c.condition.variableId = e.target.value; afterEdit(); };
-  if (byId("fCondValue")) { byId("fCondValue").oninput = function (e) { c.condition.value = e.target.value; }; byId("fCondValue").onblur = function () { afterEdit(); }; }
-  if (byId("fCondItem")) byId("fCondItem").onchange = function (e) { c.condition.itemId = e.target.value; afterEdit(); };
+  wireConditionFields(c.condition, "f",
+    function (newCond) { c.condition = newCond; afterEdit(); renderInspector(); },
+    function (needsRerender) { afterEdit(); if (needsRerender) renderInspector(); });
 
   byId("btnDeleteEdge").onclick = function () { Store.removeConnection(c.id); Store.clearSelection(); render(); };
 }
@@ -2227,8 +2357,20 @@ function loadLibraryRaw() {
   }
   return [];
 }
+// Returns true/false rather than throwing, and — critically — surfaces a
+// clear toast on failure. Previously this let a QuotaExceededError (e.g.
+// from a large attached image/video pushing the hunt past the browser's
+// ~5-10MB localStorage quota) propagate straight up to an unhandled
+// exception in the Save button's click handler: Save silently did nothing,
+// with no error visible anywhere in the UI.
 function persistLibrary(hunts) {
-  localStorage.setItem(LIBRARY_KEY, JSON.stringify({ hunts: hunts }));
+  try {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify({ hunts: hunts }));
+    return true;
+  } catch (e) {
+    toast("Save failed — your hunt library is too large for browser storage, most likely from an attached image or video. Try a smaller image, remove an unused attachment, or use “Export JSON” to keep a copy of your work.", 7000);
+    return false;
+  }
 }
 function getLibraryHunts() {
   return loadLibraryRaw().slice().sort(function (a, b) {
@@ -2245,14 +2387,15 @@ function upsertHuntInLibrary(hunt) {
   var idx = hunts.findIndex(function (h) { return h.id === hunt.id; });
   var copy = clone(hunt);
   if (idx === -1) hunts.push(copy); else hunts[idx] = copy;
-  persistLibrary(hunts);
+  return persistLibrary(hunts);
 }
 function deleteHuntFromLibrary(id) {
   persistLibrary(loadLibraryRaw().filter(function (h) { return h.id !== id; }));
 }
 function saveCurrentHuntToLibrary(quiet) {
-  upsertHuntInLibrary(Store.hunt);
-  if (!quiet) toast("Saved “" + Store.hunt.title + "” to your hunt library.");
+  var ok = upsertHuntInLibrary(Store.hunt);
+  if (ok && !quiet) toast("Saved “" + Store.hunt.title + "” to your hunt library.");
+  return ok;
 }
 
 function exportHuntObj(hunt) {
@@ -2862,21 +3005,51 @@ function nodeForLane(ctl, laneId) {
 // linear/geographic, not a set of parallel options to choose among.
 var LANE_LIST_TABS = { leads: true, inventory: true, hints: true };
 
+// Notification badges — a connection that unlocks content in a lane other
+// than the one the player is currently viewing doesn't jump the main panel
+// there (see ctl.render()'s currentLane filtering in engine.js); instead
+// the affected tab picks up a small count badge so the player knows
+// something is waiting without losing their place. "New" = currently an
+// option in laneOptionsForScene (same eligibility rule the Leads/
+// Inventory/Hints list views already use) that the player hasn't yet
+// dismissed by visiting that lane. Dismissal state lives in
+// session.state.seenAvailable so it resets naturally with the session.
+function laneBadgeCount(ctl, laneId) {
+  if (!ctl.session) return 0;
+  var nodes = laneOptionsForScene(ctl.session, laneId, currentSceneIdForCtl(ctl));
+  var seen = ctl.session.state.seenAvailable || {};
+  return nodes.filter(function (n) { return !seen[n.id]; }).length;
+}
+function dismissLane(ctl, laneId, sceneId) {
+  if (!ctl.session) return;
+  var nodes = laneOptionsForScene(ctl.session, laneId, sceneId !== undefined ? sceneId : currentSceneIdForCtl(ctl));
+  var seen = ctl.session.state.seenAvailable || (ctl.session.state.seenAvailable = {});
+  nodes.forEach(function (n) { seen[n.id] = true; });
+}
+
 function renderPlayerTabBar(ctl, tabBarEl) {
   if (!tabBarEl || !ctl.session) return;
   var current = currentPreviewNode(ctl);
   var activeLane = ctl.laneListId || (current ? current.lane : null);
+  // Whatever lane the player is already looking at reads as "seen" on
+  // every render, so its own badge never lights up just because it's the
+  // lane something new landed in — only other lanes accumulate a count.
+  if (activeLane) dismissLane(ctl, activeLane, currentSceneIdForCtl(ctl));
 
   tabBarEl.innerHTML = LANES.map(function (l) {
     var active = l.id === activeLane;
+    var count = active ? 0 : laneBadgeCount(ctl, l.id);
     return '<button class="player-tab' + (active ? " active" : "") + '" data-lane="' + l.id + '"' +
       ' title="' + esc(l.label) + '" aria-label="' + esc(l.label) + '">' +
-      '<span class="player-tab-icon">' + l.icon + '</span></button>';
+      '<span class="player-tab-icon">' + l.icon + '</span>' +
+      (count > 0 ? '<span class="player-tab-badge">' + (count > 9 ? "9+" : count) + '</span>' : '') +
+      '</button>';
   }).join("");
 
   Array.prototype.forEach.call(tabBarEl.querySelectorAll(".player-tab"), function (btn) {
     btn.onclick = function () {
       var laneId = btn.dataset.lane;
+      dismissLane(ctl, laneId, currentSceneIdForCtl(ctl));
       if (LANE_LIST_TABS[laneId]) { ctl.showLaneList(laneId, currentSceneIdForCtl(ctl)); return; }
       var node = nodeForLane(ctl, laneId);
       if (node) ctl.showNode(node.id);
