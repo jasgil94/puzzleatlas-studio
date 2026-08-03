@@ -2337,60 +2337,165 @@ function focusOnNode(nodeId) {
 }
 
 /* ---------------------------------------------------------------------
-   Hunt library (multi-project localStorage) + per-hunt Save + Export / Import
+   Hunt library (per-hunt IndexedDB records) + per-hunt Save / Export / Import
+   -----------------------------------------------------------------------
+   Each hunt is its own IndexedDB record now, not one shared JSON blob in
+   localStorage. That fixes the two problems the old blob approach had:
+     1. Quota — localStorage tops out around 5-10MB *total*, shared across
+        every hunt in the library, so one image-heavy hunt could block
+        saving any hunt. IndexedDB's quota scales with free disk space
+        (typically hundreds of MB to several GB).
+     2. Write cost — saving one hunt used to mean re-serializing and
+        rewriting the entire library every time. Now it's a single-record
+        write, so unrelated hunts can't interfere with each other's saves.
+   A small in-memory cache (LibraryCache) mirrors IndexedDB so the rest of
+   the app keeps reading the library synchronously, same as before — only
+   initLibraryStorage() (called once from init()) is actually async.
+   Falls back to the old localStorage-blob behavior if IndexedDB isn't
+   available at all (very old browsers, some locked-down private modes).
 --------------------------------------------------------------------- */
-var LEGACY_STORAGE_KEY = "puzzleatlas_studio_hunt_v0"; // Phase 1 single-slot save, migrated below
-var LIBRARY_KEY = "puzzleatlas_studio_library_v1";
+var LEGACY_STORAGE_KEY = "puzzleatlas_studio_hunt_v0";     // Phase 1 single-slot save
+var LEGACY_LIBRARY_KEY = "puzzleatlas_studio_library_v1";  // Phase 2 single-blob library, migrated below
+var IDB_NAME = "puzzleatlas_studio_db";
+var IDB_VERSION = 1;
+var IDB_STORE = "hunts";
+var IDB_SUPPORTED = typeof indexedDB !== "undefined";
 
-function loadLibraryRaw() {
-  var raw = localStorage.getItem(LIBRARY_KEY);
+var LibraryCache = [];  // in-memory mirror of every hunt in the library
+var _idbHandle = null;  // cached open IDBDatabase connection
+
+function openIdb() {
+  if (_idbHandle) return Promise.resolve(_idbHandle);
+  return new Promise(function (resolve, reject) {
+    var req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = function () {
+      var db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, { keyPath: "id" });
+    };
+    req.onsuccess = function () { _idbHandle = req.result; resolve(_idbHandle); };
+    req.onerror = function () { reject(req.error || new Error("Couldn't open IndexedDB.")); };
+  });
+}
+function idbGetAll() {
+  return openIdb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var req = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).getAll();
+      req.onsuccess = function () { resolve(req.result || []); };
+      req.onerror = function () { reject(req.error || new Error("Couldn't read hunt library.")); };
+    });
+  });
+}
+function idbPut(hunt) {
+  return openIdb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(hunt);
+      tx.oncomplete = function () { resolve(); };
+      tx.onerror = function () { reject(tx.error || new Error("Couldn't save hunt.")); };
+      tx.onabort = function () { reject(tx.error || new Error("Couldn't save hunt.")); };
+    });
+  });
+}
+function idbDelete(id) {
+  return openIdb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).delete(id);
+      tx.oncomplete = function () { resolve(); };
+      tx.onerror = function () { reject(tx.error || new Error("Couldn't delete hunt.")); };
+    });
+  });
+}
+
+// One-time migration from the old localStorage-blob library (and, before
+// that, the even older single-slot save) into IndexedDB. Only runs when
+// IndexedDB has no records yet, so it can never clobber newer IDB data.
+function migrateLegacyLibraryIntoIdb() {
+  var hunts = [];
+  var raw = localStorage.getItem(LEGACY_LIBRARY_KEY);
   if (raw) {
-    try { return JSON.parse(raw).hunts || []; } catch (e) { return []; }
+    try { hunts = JSON.parse(raw).hunts || []; } catch (e) { hunts = []; }
+  } else {
+    var legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy) {
+      try { var h = JSON.parse(legacy); if (h && h.id) hunts = [h]; } catch (e) { /* ignore corrupted legacy save */ }
+    }
   }
-  // First run after this update: migrate a Phase 1 single-slot save, if any.
+  if (!hunts.length) return Promise.resolve([]);
+  return Promise.all(hunts.map(function (h) { return idbPut(h).catch(function () { /* best-effort */ }); }))
+    .then(function () {
+      // Free up the localStorage quota now that these live in IndexedDB.
+      try { localStorage.removeItem(LEGACY_LIBRARY_KEY); localStorage.removeItem(LEGACY_STORAGE_KEY); } catch (e) { /* ignore */ }
+      return hunts;
+    });
+}
+
+// Fallback path for the rare case IndexedDB isn't available at all: behave
+// like the old Phase 2 single-blob library, quota limits and all.
+function loadLibraryFallback() {
+  var raw = localStorage.getItem(LEGACY_LIBRARY_KEY);
+  if (raw) { try { return JSON.parse(raw).hunts || []; } catch (e) { return []; } }
   var legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-  if (legacy) {
-    try {
-      var h = JSON.parse(legacy);
-      if (h && h.id) { persistLibrary([h]); return [h]; }
-    } catch (e) { /* ignore corrupted legacy save */ }
-  }
+  if (legacy) { try { var h = JSON.parse(legacy); if (h && h.id) return [h]; } catch (e) { /* ignore corrupted legacy save */ } }
   return [];
 }
-// Returns true/false rather than throwing, and — critically — surfaces a
-// clear toast on failure. Previously this let a QuotaExceededError (e.g.
-// from a large attached image/video pushing the hunt past the browser's
-// ~5-10MB localStorage quota) propagate straight up to an unhandled
-// exception in the Save button's click handler: Save silently did nothing,
-// with no error visible anywhere in the UI.
-function persistLibrary(hunts) {
+function persistLibraryFallback() {
   try {
-    localStorage.setItem(LIBRARY_KEY, JSON.stringify({ hunts: hunts }));
+    localStorage.setItem(LEGACY_LIBRARY_KEY, JSON.stringify({ hunts: LibraryCache }));
     return true;
   } catch (e) {
     toast("Save failed — your hunt library is too large for browser storage, most likely from an attached image or video. Try a smaller image, remove an unused attachment, or use “Export JSON” to keep a copy of your work.", 7000);
     return false;
   }
 }
+
+// Loads the library into LibraryCache once at startup. Must resolve before
+// the Library screen first renders — called from init(). Returns a promise.
+function initLibraryStorage() {
+  if (!IDB_SUPPORTED) { LibraryCache = loadLibraryFallback(); return Promise.resolve(); }
+  return idbGetAll().then(function (hunts) {
+    if (hunts.length) { LibraryCache = hunts; return; }
+    return migrateLegacyLibraryIntoIdb().then(function (migrated) { LibraryCache = migrated; });
+  }).catch(function (err) {
+    console.error("IndexedDB unavailable, falling back to localStorage:", err);
+    IDB_SUPPORTED = false;
+    LibraryCache = loadLibraryFallback();
+  });
+}
+
 function getLibraryHunts() {
-  return loadLibraryRaw().slice().sort(function (a, b) {
+  return LibraryCache.slice().sort(function (a, b) {
     return new Date((b.metadata || {}).updatedAt || 0) - new Date((a.metadata || {}).updatedAt || 0);
   });
 }
 function getHuntFromLibrary(id) {
-  return loadLibraryRaw().find(function (h) { return h.id === id; });
+  return LibraryCache.find(function (h) { return h.id === id; });
 }
+// Writes synchronously to the in-memory cache (so the rest of the UI sees
+// the change immediately, same as before) and persists to IndexedDB in the
+// background. Returns true/false for the cache write; a failed background
+// persist surfaces its own toast rather than blocking or reverting the UI.
 function upsertHuntInLibrary(hunt) {
   hunt.metadata = hunt.metadata || {};
   hunt.metadata.updatedAt = new Date().toISOString();
-  var hunts = loadLibraryRaw();
-  var idx = hunts.findIndex(function (h) { return h.id === hunt.id; });
   var copy = clone(hunt);
-  if (idx === -1) hunts.push(copy); else hunts[idx] = copy;
-  return persistLibrary(hunts);
+  var idx = LibraryCache.findIndex(function (h) { return h.id === copy.id; });
+  if (idx === -1) LibraryCache.push(copy); else LibraryCache[idx] = copy;
+
+  if (!IDB_SUPPORTED) return persistLibraryFallback();
+  idbPut(copy).catch(function (err) {
+    console.error(err);
+    toast("Save failed — couldn't write “" + (copy.title || "this hunt") + "” to browser storage: " + err.message, 7000);
+  });
+  return true;
 }
 function deleteHuntFromLibrary(id) {
-  persistLibrary(loadLibraryRaw().filter(function (h) { return h.id !== id; }));
+  LibraryCache = LibraryCache.filter(function (h) { return h.id !== id; });
+  if (!IDB_SUPPORTED) { persistLibraryFallback(); return; }
+  idbDelete(id).catch(function (err) {
+    console.error(err);
+    toast("Couldn't delete that hunt from browser storage: " + err.message, 7000);
+  });
 }
 function saveCurrentHuntToLibrary(quiet) {
   var ok = upsertHuntInLibrary(Store.hunt);
@@ -3374,8 +3479,12 @@ function init() {
   };
 
   syncLiveMock();
-  showLibraryScreen();
-  toast("Welcome to PuzzleAtlas Studio. Open a hunt from your library, or start a new one.", 4000);
+  // Library must be loaded from IndexedDB (async) before the Library screen
+  // reads it via getLibraryHunts(); see initLibraryStorage() above.
+  initLibraryStorage().then(function () {
+    showLibraryScreen();
+    toast("Welcome to PuzzleAtlas Studio. Open a hunt from your library, or start a new one.", 4000);
+  });
 }
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
