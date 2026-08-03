@@ -400,15 +400,15 @@ var IMAGE_FRAME_STYLES = {
    player above the code input); the accepted-code check itself is unaffected
    by which style is chosen. */
 var LOCK_STYLES = {
-  classicBrass: { label: "Classic Brass", icon: "🔒", playerLabel: "classic brass lock" },
-  modernSilver: { label: "Modern Silver", icon: "🔐", playerLabel: "modern silver lock" },
-  rusted:       { label: "Rusted", icon: "🗝️", playerLabel: "old, rusted lock" }
+  classicBrass: { label: "Classic Brass", icon: "🔒", playerLabel: "classic brass lock", brand: "Heritage Lock Co." },
+  modernSilver: { label: "Modern Silver", icon: "🔐", playerLabel: "modern silver lock", brand: "Secure-Tech" },
+  rusted:       { label: "Rusted", icon: "🗝️", playerLabel: "old, rusted lock", brand: "Salvage Hardware" }
 };
 // Layout constants for the combination-lock number wheels (shared between
 // the render branch that lays out each wheel's track and wireLockDials,
 // which drags it — must stay in sync, hence pulled out as one source of
 // truth rather than duplicated literals in both places.
-var LOCK_ROW_H = 32;       // px height of one digit/letter row in a wheel's window
+var LOCK_ROW_H = 50;       // px height of one digit/letter row in a wheel's window — must match .pv-lock-wheel-window/.pv-lock-wheel-row height in styles.css
 var LOCK_REPEATS = 5;      // how many copies of the alphabet are stacked in the track, to give a drag headroom of +/-2 full wheel turns before hitting the end
 var LOCK_CENTER_COPY = 2;  // which copy (0-based) each drag gesture re-centers on
 
@@ -1268,6 +1268,7 @@ function renderPreviewNode(session, n, ctl) {
     var dialState = ctl.lockDialDraft[n.id];
     while (dialState.length < dialCount) dialState.push(0);
     dialState.length = dialCount;
+    var fbLo = session.state.feedback[n.id];
 
     // Each wheel's track is several stacked copies of the full alphabet so a
     // drag can spin a couple of full turns before running out of rows to
@@ -1277,28 +1278,33 @@ function renderPreviewNode(session, n, ctl) {
     for (var rep = 0; rep < LOCK_REPEATS; rep++) {
       trackRowsHtml += wheelValues.map(function (ch) { return '<div class="pv-lock-wheel-row">' + ch + '</div>'; }).join('');
     }
+    var upArrowSvg = '<svg viewBox="0 0 24 24"><path d="M12 6l8 10H4z"/></svg>';
+    var downArrowSvg = '<svg viewBox="0 0 24 24"><path d="M4 8h16l-8 10z"/></svg>';
 
-    html += '<div class="pv-info-card">' + lockStyle.icon + ' ' + esc(lockStyle.label) + ' lock</div>';
-    html += '<div class="pv-scene-body">Drag each wheel up or down to bring the ' + (isAlphaLock ? "letter" : "number") + ' from the ' + esc(lockStyle.playerLabel) + ' into the window, then unlock it.</div>';
+    html += '<div class="pv-scene-body">Drag a wheel, scroll it, or use the arrow buttons to line up the ' + (isAlphaLock ? "letter" : "number") + ' from the ' + esc(lockStyle.playerLabel) + ', then try the combination.</div>';
 
-    html += '<div class="pv-lock pv-lock-style-' + lockStyleKey + '">';
+    html += '<div class="pv-lock-wrap pv-lock-style-' + lockStyleKey + (isAlphaLock ? ' pv-lock-alpha' : '') + (fbLo === "correct" ? ' pv-lock-open' : '') + '">';
+    html += '<div class="pv-lock-shackle"></div>';
+    html += '<div class="pv-lock-body">';
+    html += '<div class="pv-lock-brand">' + esc(lockStyle.brand) + '</div>';
+    html += '<div class="pv-lock-dials">';
     for (var wi = 0; wi < dialCount; wi++) {
       var centerRow = LOCK_CENTER_COPY * wheelN + dialState[wi];
-      var trackY = -(centerRow - 1) * LOCK_ROW_H; // -1: centers the row in a 3-row-tall window
+      var trackY = -centerRow * LOCK_ROW_H;
       html += '<div class="pv-lock-wheel" data-lockidx="' + wi + '">' +
-        '<div class="pv-lock-wheel-grip pv-lock-wheel-grip-top"></div>' +
+        '<button type="button" class="pv-lock-arrow" data-lockidx="' + wi + '" data-lockdir="1" aria-label="Next">' + upArrowSvg + '</button>' +
         '<div class="pv-lock-wheel-window">' +
           '<div class="pv-lock-wheel-track" style="transform:translateY(' + trackY + 'px)">' + trackRowsHtml + '</div>' +
-          '<div class="pv-lock-wheel-highlight"></div>' +
         '</div>' +
-        '<div class="pv-lock-wheel-grip pv-lock-wheel-grip-bottom"></div>' +
+        '<button type="button" class="pv-lock-arrow" data-lockidx="' + wi + '" data-lockdir="-1" aria-label="Previous">' + downArrowSvg + '</button>' +
       '</div>';
     }
-    html += '</div>';
+    html += '</div>'; // .pv-lock-dials
     html += '<div class="pv-lock-readout" id="pvLockReadout">' + dialState.map(function (i) { return wheelValues[i]; }).join(" ") + '</div>';
+    html += '</div>'; // .pv-lock-body
+    html += '</div>'; // .pv-lock-wrap
     html += '<input type="hidden" id="pvLockInput" value="' + esc(dialState.map(function (i) { return wheelValues[i]; }).join("")) + '" />';
-    html += '<button class="pv-choice-btn" id="pvSubmitLock" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
-    var fbLo = session.state.feedback[n.id];
+    html += '<button class="pv-choice-btn" id="pvSubmitLock" style="max-width:200px">' + esc(buttonLabelFor(n)) + '</button>';
     if (fbLo) html += '<div class="pv-feedback ' + fbLo + '">' + (fbLo === "correct" ? "✓ Unlocked." : "✗ Incorrect code — try again.") + '</div>';
   } else if (n.type === "crossReferenceLookup") {
     var srcTitles = (c.sourceNodeIds || []).map(function (id) { return nodeTitle(session.hunt, id); });
@@ -1371,15 +1377,29 @@ function wireLockDials(root, ctl, session, n) {
   Array.prototype.forEach.call(wheels, function (wheelEl) {
     var idx = +wheelEl.dataset.lockidx;
     var track = wheelEl.querySelector(".pv-lock-wheel-track");
+    var win = wheelEl.querySelector(".pv-lock-wheel-window");
     if (!track || dialState[idx] === undefined) return;
 
     var dragging = false, startY = 0, startOffsetRows = 0, liveOffsetRows = 0;
 
     function applyTransform(offsetRows) {
-      track.style.transform = "translateY(" + (-(offsetRows - 1) * LOCK_ROW_H) + "px)";
+      track.style.transform = "translateY(" + (-offsetRows * LOCK_ROW_H) + "px)";
+    }
+
+    // Arrow buttons / scroll wheel — a single-step nudge that always resets
+    // onto the middle copy of the stacked alphabet, same re-centering idea
+    // as a drag gesture's start (see below), so repeated clicks/scrolls
+    // never drift toward the copy-array's edges.
+    function step(delta) {
+      var newIndex = ((dialState[idx] + delta) % wheelN + wheelN) % wheelN;
+      dialState[idx] = newIndex;
+      track.style.transition = "transform .18s cubic-bezier(.2,.8,.3,1)";
+      applyTransform(LOCK_CENTER_COPY * wheelN + newIndex);
+      syncOutputs();
     }
 
     wheelEl.onpointerdown = function (e) {
+      if (e.target.closest && e.target.closest(".pv-lock-arrow")) return; // let the arrow's own click handler fire
       e.preventDefault();
       dragging = true;
       startY = e.clientY;
@@ -1419,6 +1439,15 @@ function wireLockDials(root, ctl, session, n) {
     }
     wheelEl.onpointerup = finish;
     wheelEl.onpointercancel = finish;
+
+    if (win) win.onwheel = function (e) {
+      e.preventDefault();
+      step(e.deltaY > 0 ? -1 : 1);
+    };
+
+    Array.prototype.forEach.call(wheelEl.querySelectorAll(".pv-lock-arrow"), function (btn) {
+      btn.onclick = function () { step(+btn.dataset.lockdir); };
+    });
   });
 
   syncOutputs();
