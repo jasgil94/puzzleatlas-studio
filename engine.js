@@ -404,6 +404,13 @@ var LOCK_STYLES = {
   modernSilver: { label: "Modern Silver", icon: "🔐", playerLabel: "modern silver lock" },
   rusted:       { label: "Rusted", icon: "🗝️", playerLabel: "old, rusted lock" }
 };
+// Layout constants for the combination-lock number wheels (shared between
+// the render branch that lays out each wheel's track and wireLockDials,
+// which drags it — must stay in sync, hence pulled out as one source of
+// truth rather than duplicated literals in both places.
+var LOCK_ROW_H = 32;       // px height of one digit/letter row in a wheel's window
+var LOCK_REPEATS = 5;      // how many copies of the alphabet are stacked in the track, to give a drag headroom of +/-2 full wheel turns before hitting the end
+var LOCK_CENTER_COPY = 2;  // which copy (0-based) each drag gesture re-centers on
 
 /* ---------------------------------------------------------------------
    Style packs — pluggable, standalone documents that set the
@@ -1255,30 +1262,36 @@ function renderPreviewNode(session, n, ctl) {
     var lockStyle = LOCK_STYLES[lockStyleKey];
     var isAlphaLock = c.codeFormat === "alpha";
     var wheelValues = isAlphaLock ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") : "0123456789".split("");
-    var lockStep = 360 / wheelValues.length;
+    var wheelN = wheelValues.length;
     var dialCount = c.codeLength || 4;
     if (!ctl.lockDialDraft[n.id]) ctl.lockDialDraft[n.id] = [];
     var dialState = ctl.lockDialDraft[n.id];
     while (dialState.length < dialCount) dialState.push(0);
     dialState.length = dialCount;
 
-    html += '<div class="pv-info-card">' + lockStyle.icon + ' ' + esc(lockStyle.label) + ' lock</div>';
-    html += '<div class="pv-scene-body">Drag each dial to line up the ' + (isAlphaLock ? "letter" : "number") + ' from the ' + esc(lockStyle.playerLabel) + ' under the pointer, then unlock it.</div>';
+    // Each wheel's track is several stacked copies of the full alphabet so a
+    // drag can spin a couple of full turns before running out of rows to
+    // reveal (see LOCK_REPEATS) — same trick a real combination lock doesn't
+    // need, but a scroll-based DOM one does.
+    var trackRowsHtml = "";
+    for (var rep = 0; rep < LOCK_REPEATS; rep++) {
+      trackRowsHtml += wheelValues.map(function (ch) { return '<div class="pv-lock-wheel-row">' + ch + '</div>'; }).join('');
+    }
 
-    html += '<div class="pv-lock pv-lock-style-' + lockStyleKey + (isAlphaLock ? ' pv-lock-alpha' : '') + '">';
-    for (var dialIdx = 0; dialIdx < dialCount; dialIdx++) {
-      var faceAngle = -dialState[dialIdx] * lockStep;
-      var labelsHtml = wheelValues.map(function (ch, vi) {
-        var rad = vi * lockStep * Math.PI / 180;
-        var x = 50 + 38 * Math.sin(rad);
-        var y = 50 - 38 * Math.cos(rad);
-        return '<span class="pv-lock-dial-label" style="left:' + x.toFixed(2) + '%;top:' + y.toFixed(2) + '%">' + ch + '</span>';
-      }).join('');
-      html += '<div class="pv-lock-dial" data-lockidx="' + dialIdx + '">' +
-        '<div class="pv-lock-dial-bezel">' +
-          '<div class="pv-lock-dial-face" style="transform:rotate(' + faceAngle + 'deg)">' + labelsHtml + '</div>' +
-          '<div class="pv-lock-dial-pointer"></div>' +
+    html += '<div class="pv-info-card">' + lockStyle.icon + ' ' + esc(lockStyle.label) + ' lock</div>';
+    html += '<div class="pv-scene-body">Drag each wheel up or down to bring the ' + (isAlphaLock ? "letter" : "number") + ' from the ' + esc(lockStyle.playerLabel) + ' into the window, then unlock it.</div>';
+
+    html += '<div class="pv-lock pv-lock-style-' + lockStyleKey + '">';
+    for (var wi = 0; wi < dialCount; wi++) {
+      var centerRow = LOCK_CENTER_COPY * wheelN + dialState[wi];
+      var trackY = -(centerRow - 1) * LOCK_ROW_H; // -1: centers the row in a 3-row-tall window
+      html += '<div class="pv-lock-wheel" data-lockidx="' + wi + '">' +
+        '<div class="pv-lock-wheel-grip pv-lock-wheel-grip-top"></div>' +
+        '<div class="pv-lock-wheel-window">' +
+          '<div class="pv-lock-wheel-track" style="transform:translateY(' + trackY + 'px)">' + trackRowsHtml + '</div>' +
+          '<div class="pv-lock-wheel-highlight"></div>' +
         '</div>' +
+        '<div class="pv-lock-wheel-grip pv-lock-wheel-grip-bottom"></div>' +
       '</div>';
     }
     html += '</div>';
@@ -1327,22 +1340,23 @@ function wireTextSubmitAction(root, ctl, session, n, inputId, btnId, submitFn) {
   byId(inputId).onkeydown = function (e) { if (e.key === "Enter") submit(); };
 }
 
-// Physical Lock Code Entry — draggable rotary combination dials. Each dial
-// is a disc printed with every value in the code's alphabet (digits or
-// letters); dragging it with mouse or finger spins the disc under a fixed
-// pointer notch, and whichever value lands at the notch is that dial's
-// current character. Purely a presentation layer: this function only ever
-// keeps the hidden #pvLockInput (and the #pvLockReadout text) in sync with
-// ctl.lockDialDraft[n.id], so the existing wireTextSubmitAction/
-// pv_action_submitLockCode plumbing (wired against that same input a few
-// lines below) never needs to know dials exist. No-op if this node's
-// markup isn't on screen (same guard convention as every other wire* fn).
+// Physical Lock Code Entry — draggable combination-lock number wheels, like
+// a real bike/luggage lock: each wheel is a vertical reel of every value in
+// the code's alphabet (digits or letters), dragged up/down with mouse or
+// finger to scroll the next value into the window. Purely a presentation
+// layer: this function only ever keeps the hidden #pvLockInput (and the
+// #pvLockReadout text) in sync with ctl.lockDialDraft[n.id], so the existing
+// wireTextSubmitAction/pv_action_submitLockCode plumbing (wired against that
+// same input a few lines below) never needs to know wheels exist. No-op if
+// this node's markup isn't on screen (same guard convention as every other
+// wire* fn).
 function wireLockDials(root, ctl, session, n) {
-  var dials = root.querySelectorAll(".pv-lock-dial");
-  if (!dials.length) return;
+  var wheels = root.querySelectorAll(".pv-lock-wheel");
+  if (!wheels.length) return;
   var c = n.content;
   var wheelValues = c.codeFormat === "alpha" ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") : "0123456789".split("");
-  var step = 360 / wheelValues.length;
+  var wheelN = wheelValues.length;
+  var maxOffsetRows = LOCK_REPEATS * wheelN - 1;
   var dialState = ctl.lockDialDraft[n.id];
   var readoutEl = root.querySelector("#pvLockReadout");
   var hiddenInput = root.querySelector("#pvLockInput");
@@ -1354,64 +1368,57 @@ function wireLockDials(root, ctl, session, n) {
     if (hiddenInput) hiddenInput.value = code;
   }
 
-  Array.prototype.forEach.call(dials, function (dialEl) {
-    var idx = +dialEl.dataset.lockidx;
-    var bezel = dialEl.querySelector(".pv-lock-dial-bezel");
-    var face = dialEl.querySelector(".pv-lock-dial-face");
-    if (!bezel || !face || dialState[idx] === undefined) return;
+  Array.prototype.forEach.call(wheels, function (wheelEl) {
+    var idx = +wheelEl.dataset.lockidx;
+    var track = wheelEl.querySelector(".pv-lock-wheel-track");
+    if (!track || dialState[idx] === undefined) return;
 
-    var dragging = false, cx = 0, cy = 0, lastAngle = 0, liveAngle = -dialState[idx] * step;
+    var dragging = false, startY = 0, startOffsetRows = 0, liveOffsetRows = 0;
 
-    function pointerAngle(e) {
-      var dx = e.clientX - cx, dy = e.clientY - cy;
-      return Math.atan2(dx, -dy) * 180 / Math.PI; // 0deg = top, clockwise-positive
+    function applyTransform(offsetRows) {
+      track.style.transform = "translateY(" + (-(offsetRows - 1) * LOCK_ROW_H) + "px)";
     }
 
-    bezel.onpointerdown = function (e) {
+    wheelEl.onpointerdown = function (e) {
       e.preventDefault();
-      var rect = bezel.getBoundingClientRect();
-      cx = rect.left + rect.width / 2;
-      cy = rect.top + rect.height / 2;
       dragging = true;
-      liveAngle = -dialState[idx] * step;
-      lastAngle = pointerAngle(e);
-      face.style.transition = "none";
-      try { bezel.setPointerCapture(e.pointerId); } catch (err) { /* older browsers: drag still tracks via direct listeners */ }
+      startY = e.clientY;
+      // Every drag gesture re-centers on the middle copy of the stacked
+      // alphabet (see LOCK_REPEATS) — that's what gives each individual
+      // drag its own +/-2-turn headroom without needing true infinite-
+      // scroll wraparound bookkeeping across separate gestures.
+      startOffsetRows = LOCK_CENTER_COPY * wheelN + dialState[idx];
+      liveOffsetRows = startOffsetRows;
+      track.style.transition = "none";
+      try { wheelEl.setPointerCapture(e.pointerId); } catch (err) { /* older browsers: drag still tracks via direct listeners */ }
     };
-    bezel.onpointermove = function (e) {
+    wheelEl.onpointermove = function (e) {
       if (!dragging) return;
-      var cur = pointerAngle(e);
-      // Incremental step-to-step delta (normalized to the short way round)
-      // rather than a one-shot "current minus start" — that's what lets a
-      // drag spin the dial through multiple full turns without the angle
-      // wrapping/jumping at the +/-180 seam.
-      var delta = cur - lastAngle;
-      delta = ((delta + 180) % 360 + 360) % 360 - 180;
-      liveAngle += delta;
-      lastAngle = cur;
-      face.style.transform = "rotate(" + liveAngle + "deg)";
-      var liveIndex = Math.round(-liveAngle / step);
-      liveIndex = ((liveIndex % wheelValues.length) + wheelValues.length) % wheelValues.length;
+      var dy = e.clientY - startY; // drag down = reveal the previous (smaller) value, like a real picker wheel
+      liveOffsetRows = startOffsetRows - dy / LOCK_ROW_H;
+      if (liveOffsetRows < 0) liveOffsetRows = 0;
+      if (liveOffsetRows > maxOffsetRows) liveOffsetRows = maxOffsetRows;
+      applyTransform(liveOffsetRows);
+      var liveIndex = Math.round(liveOffsetRows);
+      liveIndex = ((liveIndex % wheelN) + wheelN) % wheelN;
       if (readoutEl) {
         var vals = dialState.slice(); vals[idx] = liveIndex;
         readoutEl.textContent = vals.map(function (i) { return wheelValues[i]; }).join(" ");
       }
     };
-    function finish(e) {
+    function finish() {
       if (!dragging) return;
       dragging = false;
-      // Snap to the nearest step from wherever the drag left off (not back
-      // to a canonical 0-360 angle) so the disc settles in place instead of
-      // visibly unwinding several turns.
-      var snapped = Math.round(liveAngle / step) * step;
-      var rawIndex = Math.round(-snapped / step);
-      dialState[idx] = ((rawIndex % wheelValues.length) + wheelValues.length) % wheelValues.length;
-      face.style.transition = "transform .18s cubic-bezier(.2,.8,.3,1)";
-      face.style.transform = "rotate(" + snapped + "deg)";
+      var snapped = Math.round(liveOffsetRows);
+      if (snapped < 0) snapped = 0;
+      if (snapped > maxOffsetRows) snapped = maxOffsetRows;
+      dialState[idx] = ((snapped % wheelN) + wheelN) % wheelN;
+      track.style.transition = "transform .18s cubic-bezier(.2,.8,.3,1)";
+      applyTransform(snapped);
       syncOutputs();
     }
-    bezel.onpointerup = finish;
-    bezel.onpointercancel = finish;
+    wheelEl.onpointerup = finish;
+    wheelEl.onpointercancel = finish;
   });
 
   syncOutputs();
