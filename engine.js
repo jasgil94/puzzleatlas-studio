@@ -81,8 +81,18 @@ var NODE_TYPES = {
   answerEntry: {
     family: "puzzle", label: "Answer Entry (text match)", icon: "🔑",
     defaultTitle: "New Puzzle",
+    // imageAsset/caption/zoomable/aspectRatio/frameStyle/cropZoom/focalX/focalY
+    // are the same optional "image reveal" fields Image Reveal nodes use (see
+    // renderImageRevealBlock) — when imageAsset is set, the puzzle screen
+    // shows the framed/cropped image above the prompt, same crop math and
+    // Studio inspector as a dedicated Image Reveal node.
     defaultContent: function () {
-      return { prompt: "Describe the puzzle prompt.", acceptedAnswers: ["ANSWER"], caseSensitive: false };
+      return {
+        prompt: "Describe the puzzle prompt.", acceptedAnswers: ["ANSWER"], caseSensitive: false,
+        imageAsset: "", caption: "", zoomable: true,
+        aspectRatio: "original", frameStyle: "none",
+        cropZoom: 1, focalX: 50, focalY: 50
+      };
     },
     summary: function (c) { return "Answer: " + (c.acceptedAnswers || []).join(", "); }
   },
@@ -1131,6 +1141,7 @@ function renderPreviewNode(session, n, ctl) {
     var fbCh = session.state.feedback[n.id];
     if (fbCh === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "answerEntry") {
+    if (c.imageAsset) html += renderImageRevealBlock(c);
     html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
     html += '<input type="text" class="pv-answer-input" id="pvAnswerInput" placeholder="Type your answer…" />';
     html += '<button class="pv-choice-btn" id="pvSubmitAnswer" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';

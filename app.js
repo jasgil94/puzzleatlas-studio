@@ -1671,6 +1671,9 @@ function buildTypeSpecificFields(n) {
           return '<div class="list-item"><input type="text" value="' + esc(a) + '" data-idx="' + i + '" class="ansInput" /><button class="small-btn" data-idx="' + i + '">✕</button></div>';
         }).join("") + '</div><button class="small-btn" id="btnAddAnswer">+ Add accepted variant</button></div>';
       html += fieldWrap("Case sensitive?", '<select id="fCaseSensitive"><option value="0"' + (!c.caseSensitive ? " selected" : "") + '>No</option><option value="1"' + (c.caseSensitive ? " selected" : "") + '>Yes</option></select>');
+      html += '<div class="section-title">Image reveal (optional)</div>';
+      html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Attach an image (a clue, a photo, a found document) to show above the prompt — same crop, frame and caption options as an Image Reveal node.</p>';
+      html += buildImageRevealFields(c);
       break;
     case "ordering":
       html += fieldWrap("Prompt", '<textarea id="fPrompt">' + esc(c.prompt) + '</textarea>');
@@ -2040,6 +2043,7 @@ function wireNodeInspector(n) {
       });
       if (byId("btnAddAnswer")) byId("btnAddAnswer").onclick = function () { c.acceptedAnswers.push("new answer"); afterEdit(false); renderInspector(); };
       bindChange("fCaseSensitive", function (v) { c.caseSensitive = v === "1"; });
+      wireImageRevealFields(c);
       break;
     case "ordering":
       bindText("fPrompt", "prompt");
