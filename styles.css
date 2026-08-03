@@ -327,6 +327,55 @@ button{font-family:inherit;cursor:pointer;}
 .pv-mono-block{background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text);padding:14px 12px;border-radius:var(--pv-radius);margin-bottom:12px;font-family:var(--pv-font-mono);font-size:15px;letter-spacing:.06em;line-height:1.6;word-break:break-word;}
 .pv-keypad-input{text-align:center;letter-spacing:.3em;font-size:18px;}
 
+/* Physical Lock Code Entry — draggable rotary combination dials. Structure
+   (layout/sizing/interaction affordances) is shared by all three lock
+   designs; each .pv-lock-style-* modifier below only swaps the bezel's
+   material look (gradients standing in for brass/chrome/rust — no image
+   assets, so it still works fully offline) and the label/pointer contrast
+   colour needed to stay legible against that material. */
+.pv-lock{display:flex;flex-wrap:wrap;gap:16px;justify-content:center;margin:16px 0 8px;}
+.pv-lock-dial{display:flex;}
+.pv-lock-dial-bezel{position:relative;width:64px;height:64px;border-radius:50%;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;}
+.pv-lock-dial-bezel:active{cursor:grabbing;}
+.pv-lock.pv-lock-alpha .pv-lock-dial-bezel{width:96px;height:96px;}
+.pv-lock-dial-face{position:absolute;inset:6px;border-radius:50%;pointer-events:none;}
+.pv-lock-dial-label{position:absolute;transform:translate(-50%,-50%);font-family:var(--pv-font-mono);font-size:15px;font-weight:700;line-height:1;}
+.pv-lock.pv-lock-alpha .pv-lock-dial-label{font-size:9px;}
+.pv-lock-dial-pointer{position:absolute;top:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid var(--pv-text);pointer-events:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4));}
+.pv-lock-readout{text-align:center;font-family:var(--pv-font-mono);font-size:20px;letter-spacing:.35em;font-weight:700;color:var(--pv-text);margin:6px 0 14px;}
+
+/* Classic Brass — warm gold gradient with a knurled ridge ring. */
+.pv-lock-style-classicBrass .pv-lock-dial-bezel{
+  background:
+    repeating-conic-gradient(from 0deg, rgba(0,0,0,.16) 0deg 3deg, rgba(255,255,255,.10) 3deg 6deg),
+    radial-gradient(circle at 35% 30%, #f5da8e, #caa354 45%, #8a6b2d 80%, #6b4f1c 100%);
+  border:2px solid #5c431a;
+  box-shadow:inset 0 2px 4px rgba(255,255,255,.35), inset 0 -3px 6px rgba(0,0,0,.4), 0 2px 5px rgba(0,0,0,.3);
+}
+.pv-lock-style-classicBrass .pv-lock-dial-label{color:#3b2a0d;text-shadow:0 1px 0 rgba(255,255,255,.4);}
+.pv-lock-style-classicBrass .pv-lock-dial-pointer{border-top-color:#3b2a0d;}
+
+/* Modern Silver — cool chrome linear sheen. */
+.pv-lock-style-modernSilver .pv-lock-dial-bezel{
+  background:linear-gradient(155deg, #f5f7f9 0%, #c9ced3 26%, #888e94 50%, #cfd4d8 70%, #f0f2f4 100%);
+  border:2px solid #6b7075;
+  box-shadow:inset 0 2px 3px rgba(255,255,255,.6), inset 0 -3px 6px rgba(0,0,0,.35), 0 2px 5px rgba(0,0,0,.25);
+}
+.pv-lock-style-modernSilver .pv-lock-dial-label{color:#20242a;}
+.pv-lock-style-modernSilver .pv-lock-dial-pointer{border-top-color:#20242a;}
+
+/* Rusted — mottled brown/orange corrosion patches over a dark vignette. */
+.pv-lock-style-rusted .pv-lock-dial-bezel{
+  background:
+    radial-gradient(circle at 70% 75%, rgba(70,35,15,.55) 0%, transparent 40%),
+    radial-gradient(circle at 25% 20%, rgba(130,65,25,.5) 0%, transparent 45%),
+    radial-gradient(circle at 50% 50%, #9c5a30, #6e3c1d 60%, #4a2812 100%);
+  border:2px solid #3a2010;
+  box-shadow:inset 0 2px 4px rgba(255,220,180,.15), inset 0 -3px 8px rgba(0,0,0,.55), 0 2px 5px rgba(0,0,0,.35);
+}
+.pv-lock-style-rusted .pv-lock-dial-label{color:#f0dcc0;text-shadow:0 1px 1px rgba(0,0,0,.6);}
+.pv-lock-style-rusted .pv-lock-dial-pointer{border-top-color:#f0dcc0;}
+
 .pv-swatch-row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
 .pv-swatch{width:44px;height:44px;border-radius:var(--pv-radius);border:var(--pv-border-width) var(--pv-border-style) var(--line);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease;}
 .pv-swatch:hover{border-color:var(--pv-accent);}

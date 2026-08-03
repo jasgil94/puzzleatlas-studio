@@ -1251,11 +1251,39 @@ function renderPreviewNode(session, n, ctl) {
     var fbMp = session.state.feedback[n.id];
     if (fbMp) html += '<div class="pv-feedback ' + fbMp + '">' + (fbMp === "correct" ? "✓ All parts correct." : "✗ One or more parts are wrong — try again.") + '</div>';
   } else if (n.type === "physicalLockCode") {
-    var lockStyle = LOCK_STYLES[c.lockStyle] || LOCK_STYLES.classicBrass;
+    var lockStyleKey = LOCK_STYLES[c.lockStyle] ? c.lockStyle : "classicBrass";
+    var lockStyle = LOCK_STYLES[lockStyleKey];
+    var isAlphaLock = c.codeFormat === "alpha";
+    var wheelValues = isAlphaLock ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") : "0123456789".split("");
+    var lockStep = 360 / wheelValues.length;
+    var dialCount = c.codeLength || 4;
+    if (!ctl.lockDialDraft[n.id]) ctl.lockDialDraft[n.id] = [];
+    var dialState = ctl.lockDialDraft[n.id];
+    while (dialState.length < dialCount) dialState.push(0);
+    dialState.length = dialCount;
+
     html += '<div class="pv-info-card">' + lockStyle.icon + ' ' + esc(lockStyle.label) + ' lock</div>';
-    html += '<div class="pv-scene-body">Enter the ' + (c.codeLength || 4) + '-character ' + (c.codeFormat === "alpha" ? "letter" : "numeric") + ' code from the ' + esc(lockStyle.playerLabel) + '.</div>';
-    html += '<input type="text" class="pv-answer-input pv-keypad-input" id="pvLockInput" maxlength="' + (c.codeLength || 4) +
-      '" placeholder="' + (c.codeFormat === "alpha" ? "ABCD" : "0000") + '" inputmode="' + (c.codeFormat === "alpha" ? "text" : "numeric") + '" />';
+    html += '<div class="pv-scene-body">Drag each dial to line up the ' + (isAlphaLock ? "letter" : "number") + ' from the ' + esc(lockStyle.playerLabel) + ' under the pointer, then unlock it.</div>';
+
+    html += '<div class="pv-lock pv-lock-style-' + lockStyleKey + (isAlphaLock ? ' pv-lock-alpha' : '') + '">';
+    for (var dialIdx = 0; dialIdx < dialCount; dialIdx++) {
+      var faceAngle = -dialState[dialIdx] * lockStep;
+      var labelsHtml = wheelValues.map(function (ch, vi) {
+        var rad = vi * lockStep * Math.PI / 180;
+        var x = 50 + 38 * Math.sin(rad);
+        var y = 50 - 38 * Math.cos(rad);
+        return '<span class="pv-lock-dial-label" style="left:' + x.toFixed(2) + '%;top:' + y.toFixed(2) + '%">' + ch + '</span>';
+      }).join('');
+      html += '<div class="pv-lock-dial" data-lockidx="' + dialIdx + '">' +
+        '<div class="pv-lock-dial-bezel">' +
+          '<div class="pv-lock-dial-face" style="transform:rotate(' + faceAngle + 'deg)">' + labelsHtml + '</div>' +
+          '<div class="pv-lock-dial-pointer"></div>' +
+        '</div>' +
+      '</div>';
+    }
+    html += '</div>';
+    html += '<div class="pv-lock-readout" id="pvLockReadout">' + dialState.map(function (i) { return wheelValues[i]; }).join(" ") + '</div>';
+    html += '<input type="hidden" id="pvLockInput" value="' + esc(dialState.map(function (i) { return wheelValues[i]; }).join("")) + '" />';
     html += '<button class="pv-choice-btn" id="pvSubmitLock" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
     var fbLo = session.state.feedback[n.id];
     if (fbLo) html += '<div class="pv-feedback ' + fbLo + '">' + (fbLo === "correct" ? "✓ Unlocked." : "✗ Incorrect code — try again.") + '</div>';
@@ -1297,6 +1325,96 @@ function wireTextSubmitAction(root, ctl, session, n, inputId, btnId, submitFn) {
   };
   byId(btnId).onclick = submit;
   byId(inputId).onkeydown = function (e) { if (e.key === "Enter") submit(); };
+}
+
+// Physical Lock Code Entry — draggable rotary combination dials. Each dial
+// is a disc printed with every value in the code's alphabet (digits or
+// letters); dragging it with mouse or finger spins the disc under a fixed
+// pointer notch, and whichever value lands at the notch is that dial's
+// current character. Purely a presentation layer: this function only ever
+// keeps the hidden #pvLockInput (and the #pvLockReadout text) in sync with
+// ctl.lockDialDraft[n.id], so the existing wireTextSubmitAction/
+// pv_action_submitLockCode plumbing (wired against that same input a few
+// lines below) never needs to know dials exist. No-op if this node's
+// markup isn't on screen (same guard convention as every other wire* fn).
+function wireLockDials(root, ctl, session, n) {
+  var dials = root.querySelectorAll(".pv-lock-dial");
+  if (!dials.length) return;
+  var c = n.content;
+  var wheelValues = c.codeFormat === "alpha" ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") : "0123456789".split("");
+  var step = 360 / wheelValues.length;
+  var dialState = ctl.lockDialDraft[n.id];
+  var readoutEl = root.querySelector("#pvLockReadout");
+  var hiddenInput = root.querySelector("#pvLockInput");
+  if (!dialState) return;
+
+  function syncOutputs() {
+    var code = dialState.map(function (idx) { return wheelValues[idx]; }).join("");
+    if (readoutEl) readoutEl.textContent = code.split("").join(" ");
+    if (hiddenInput) hiddenInput.value = code;
+  }
+
+  Array.prototype.forEach.call(dials, function (dialEl) {
+    var idx = +dialEl.dataset.lockidx;
+    var bezel = dialEl.querySelector(".pv-lock-dial-bezel");
+    var face = dialEl.querySelector(".pv-lock-dial-face");
+    if (!bezel || !face || dialState[idx] === undefined) return;
+
+    var dragging = false, cx = 0, cy = 0, lastAngle = 0, liveAngle = -dialState[idx] * step;
+
+    function pointerAngle(e) {
+      var dx = e.clientX - cx, dy = e.clientY - cy;
+      return Math.atan2(dx, -dy) * 180 / Math.PI; // 0deg = top, clockwise-positive
+    }
+
+    bezel.onpointerdown = function (e) {
+      e.preventDefault();
+      var rect = bezel.getBoundingClientRect();
+      cx = rect.left + rect.width / 2;
+      cy = rect.top + rect.height / 2;
+      dragging = true;
+      liveAngle = -dialState[idx] * step;
+      lastAngle = pointerAngle(e);
+      face.style.transition = "none";
+      try { bezel.setPointerCapture(e.pointerId); } catch (err) { /* older browsers: drag still tracks via direct listeners */ }
+    };
+    bezel.onpointermove = function (e) {
+      if (!dragging) return;
+      var cur = pointerAngle(e);
+      // Incremental step-to-step delta (normalized to the short way round)
+      // rather than a one-shot "current minus start" — that's what lets a
+      // drag spin the dial through multiple full turns without the angle
+      // wrapping/jumping at the +/-180 seam.
+      var delta = cur - lastAngle;
+      delta = ((delta + 180) % 360 + 360) % 360 - 180;
+      liveAngle += delta;
+      lastAngle = cur;
+      face.style.transform = "rotate(" + liveAngle + "deg)";
+      var liveIndex = Math.round(-liveAngle / step);
+      liveIndex = ((liveIndex % wheelValues.length) + wheelValues.length) % wheelValues.length;
+      if (readoutEl) {
+        var vals = dialState.slice(); vals[idx] = liveIndex;
+        readoutEl.textContent = vals.map(function (i) { return wheelValues[i]; }).join(" ");
+      }
+    };
+    function finish(e) {
+      if (!dragging) return;
+      dragging = false;
+      // Snap to the nearest step from wherever the drag left off (not back
+      // to a canonical 0-360 angle) so the disc settles in place instead of
+      // visibly unwinding several turns.
+      var snapped = Math.round(liveAngle / step) * step;
+      var rawIndex = Math.round(-snapped / step);
+      dialState[idx] = ((rawIndex % wheelValues.length) + wheelValues.length) % wheelValues.length;
+      face.style.transition = "transform .18s cubic-bezier(.2,.8,.3,1)";
+      face.style.transform = "rotate(" + snapped + "deg)";
+      syncOutputs();
+    }
+    bezel.onpointerup = finish;
+    bezel.onpointercancel = finish;
+  });
+
+  syncOutputs();
 }
 
 function wirePreviewNodeInteractions(session, n, ctl) {
@@ -1354,6 +1472,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireTextSubmitAction(root, ctl, session, n, "pvMathInput", "pvSubmitMath", pv_action_submitMathAnswer);
   wireTextSubmitAction(root, ctl, session, n, "pvAnagramInput", "pvSubmitAnagram", pv_action_submitAnagramAnswer);
   wireTextSubmitAction(root, ctl, session, n, "pvLockInput", "pvSubmitLock", pv_action_submitLockCode);
+  wireLockDials(root, ctl, session, n);
   wireTextSubmitAction(root, ctl, session, n, "pvCrossRefInput", "pvSubmitCrossRef", pv_action_submitCrossReferenceAnswer);
 
   // Sequence / Pattern — tap swatches in order; auto-validates once the
@@ -1455,7 +1574,7 @@ function createPreviewController(mainEl, sideEl) {
     mainEl: mainEl, sideEl: sideEl,
     session: null, expandedNodeId: null, showState: false,
     orderingDraft: {}, matchingDraft: {},
-    sequenceDraft: {}, tileDraft: {}, multiPartDraft: {},
+    sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {},
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     laneListId: null, laneListSceneId: null, // set when a lane tab (Leads/Inventory/Hints) asks to show its scene-wide options list instead of a single node
     currentLane: "story", // which lane the main panel's default "open leads" view is scoped to — see ctl.render(); kept in sync by showNode/showLaneList (tab bar taps) so a connection into a different lane never silently jumps the view there
@@ -1472,6 +1591,7 @@ function createPreviewController(mainEl, sideEl) {
     ctl.sequenceDraft = {};
     ctl.tileDraft = {};
     ctl.multiPartDraft = {};
+    ctl.lockDialDraft = {};
     ctl.pinnedNodeId = null;
     ctl.laneListId = null;
     ctl.laneListSceneId = null;
