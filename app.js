@@ -24,6 +24,7 @@ var CONDITION_TYPES = PAEngine.CONDITION_TYPES;
 var EFFECT_TYPES = PAEngine.EFFECT_TYPES;
 var IMAGE_ASPECT_RATIOS = PAEngine.IMAGE_ASPECT_RATIOS;
 var IMAGE_FRAME_STYLES = PAEngine.IMAGE_FRAME_STYLES;
+var LOCK_STYLES = PAEngine.LOCK_STYLES;
 var renderImageRevealBlock = PAEngine.renderImageRevealBlock;
 
 var STYLE_PACK_SCHEMA_VERSION = PAEngine.STYLE_PACK_SCHEMA_VERSION;
@@ -1703,6 +1704,16 @@ function buildTypeSpecificFields(n) {
           '</select></div>';
       }).join("") + '</div>';
       break;
+    case "physicalLockCode":
+      html += fieldWrap("Lock appearance", '<select id="fLockStyle">' +
+        Object.keys(LOCK_STYLES).map(function (key) {
+          return '<option value="' + key + '"' + ((c.lockStyle || "classicBrass") === key ? " selected" : "") + '>' + LOCK_STYLES[key].icon + ' ' + esc(LOCK_STYLES[key].label) + '</option>';
+        }).join("") + '</select>');
+      html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Cosmetic only — describes the real-world prop to the player. Doesn\'t affect the accepted code.</p>';
+      html += fieldWrap("Code format", '<select id="fCodeFormat"><option value="numeric"' + (c.codeFormat !== "alpha" ? " selected" : "") + '>Numeric</option><option value="alpha"' + (c.codeFormat === "alpha" ? " selected" : "") + '>Letters</option></select>');
+      html += fieldWrap("Code length", '<input type="number" id="fCodeLength" min="1" value="' + (c.codeLength || 4) + '" />');
+      html += fieldWrap("Accepted code", '<input type="text" id="fAcceptedCode" value="' + esc(c.acceptedCode || "") + '" />');
+      break;
     case "awardItem":
       html += fieldWrap("Item to award", '<select id="fItemId">' + selectOptions(hunt.items, "id", "name", c.itemId, "— choose item —") + '</select>');
       break;
@@ -2085,6 +2096,12 @@ function wireNodeInspector(n) {
           afterEdit(false);
         };
       });
+      break;
+    case "physicalLockCode":
+      bindChange("fLockStyle", function (v) { c.lockStyle = v; });
+      bindChange("fCodeFormat", function (v) { c.codeFormat = v; });
+      if (byId("fCodeLength")) { byId("fCodeLength").oninput = function (e) { c.codeLength = Number(e.target.value); }; byId("fCodeLength").onblur = function () { afterEdit(false); }; }
+      bindText("fAcceptedCode", "acceptedCode");
       break;
     case "awardItem":
       bindChange("fItemId", function (v) { c.itemId = v; });

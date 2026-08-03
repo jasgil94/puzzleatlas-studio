@@ -166,8 +166,11 @@ var NODE_TYPES = {
   physicalLockCode: {
     family: "puzzle", label: "Physical Lock Code Entry", icon: "🔒",
     defaultTitle: "New Lock Code Entry",
-    defaultContent: function () { return { codeLength: 4, codeFormat: "numeric", acceptedCode: "1234" }; },
-    summary: function (c) { return c.codeFormat + " code, length " + c.codeLength; }
+    defaultContent: function () { return { codeLength: 4, codeFormat: "numeric", acceptedCode: "1234", lockStyle: "classicBrass" }; },
+    summary: function (c) {
+      var style = LOCK_STYLES[c.lockStyle] || LOCK_STYLES.classicBrass;
+      return style.label + " lock — " + c.codeFormat + " code, length " + c.codeLength;
+    }
   },
   crossReferenceLookup: {
     family: "puzzle", label: "Cross-Reference Lookup", icon: "🔍",
@@ -390,6 +393,16 @@ var IMAGE_FRAME_STYLES = {
   none:     { label: "None" },
   polaroid: { label: "Polaroid" },
   gallery:  { label: "Gallery frame" }
+};
+
+/* Physical Lock Code Entry — cosmetic appearance options for the real-world
+   prop the player is holding. Purely presentational (label shown to the
+   player above the code input); the accepted-code check itself is unaffected
+   by which style is chosen. */
+var LOCK_STYLES = {
+  classicBrass: { label: "Classic Brass", icon: "🔒", playerLabel: "classic brass lock" },
+  modernSilver: { label: "Modern Silver", icon: "🔐", playerLabel: "modern silver lock" },
+  rusted:       { label: "Rusted", icon: "🗝️", playerLabel: "old, rusted lock" }
 };
 
 /* ---------------------------------------------------------------------
@@ -1238,7 +1251,9 @@ function renderPreviewNode(session, n, ctl) {
     var fbMp = session.state.feedback[n.id];
     if (fbMp) html += '<div class="pv-feedback ' + fbMp + '">' + (fbMp === "correct" ? "✓ All parts correct." : "✗ One or more parts are wrong — try again.") + '</div>';
   } else if (n.type === "physicalLockCode") {
-    html += '<div class="pv-scene-body">Enter the ' + (c.codeLength || 4) + '-character ' + (c.codeFormat === "alpha" ? "letter" : "numeric") + ' code from the lock.</div>';
+    var lockStyle = LOCK_STYLES[c.lockStyle] || LOCK_STYLES.classicBrass;
+    html += '<div class="pv-info-card">' + lockStyle.icon + ' ' + esc(lockStyle.label) + ' lock</div>';
+    html += '<div class="pv-scene-body">Enter the ' + (c.codeLength || 4) + '-character ' + (c.codeFormat === "alpha" ? "letter" : "numeric") + ' code from the ' + esc(lockStyle.playerLabel) + '.</div>';
     html += '<input type="text" class="pv-answer-input pv-keypad-input" id="pvLockInput" maxlength="' + (c.codeLength || 4) +
       '" placeholder="' + (c.codeFormat === "alpha" ? "ABCD" : "0000") + '" inputmode="' + (c.codeFormat === "alpha" ? "text" : "numeric") + '" />';
     html += '<button class="pv-choice-btn" id="pvSubmitLock" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
@@ -1576,6 +1591,7 @@ return {
   EFFECT_TYPES: EFFECT_TYPES,
   IMAGE_ASPECT_RATIOS: IMAGE_ASPECT_RATIOS,
   IMAGE_FRAME_STYLES: IMAGE_FRAME_STYLES,
+  LOCK_STYLES: LOCK_STYLES,
 
   STYLE_PACK_SCHEMA_VERSION: STYLE_PACK_SCHEMA_VERSION,
   STYLE_PACKS: STYLE_PACKS,
