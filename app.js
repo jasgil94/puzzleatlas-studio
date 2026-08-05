@@ -463,7 +463,7 @@ var SUGGESTED_LANE = {
   // puzzles in Leads; state-family goes to Inventory; the new Support
   // type goes to Hints, same as the existing Hint node.
   cipher: "leads", mathLogic: "leads", anagram: "leads", sequencePattern: "leads", slidingTile: "leads",
-  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads",
+  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads",
   gate: "leads", randomizer: "leads", teamSplitMerge: "leads", metaPuzzleCombine: "leads",
   timer: "leads", attemptLimiter: "leads",
   combineCraftItem: "inventory", trade: "inventory",
@@ -1881,6 +1881,20 @@ function buildTypeSpecificFields(n) {
           return '<div class="list-item"><input type="text" value="' + esc(a) + '" data-idx="' + i + '" class="ansInput" maxlength="3" style="text-transform:uppercase;letter-spacing:2px;font-family:\'Courier New\',monospace;width:70px;flex:none" /><button class="small-btn" data-idx="' + i + '">✕</button></div>';
         }).join("") + '</div><button class="small-btn" id="btnAddAnswer">+ Add accepted variant</button></div>';
       break;
+    case "fusePanel":
+      html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+      html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Each switch has its own ON/OFF labels (what the player reads at each throw position) and its own required end position. The panel completes the instant every switch is set correctly — there\'s no per-switch feedback, so a wrong guess can\'t be narrowed down switch by switch.</p>';
+      html += '<div class="field"><label>Switches</label><div id="fuseSwitchList">' +
+        (c.switches || []).map(function (s, i) {
+          return '<div class="list-item" style="flex-wrap:wrap;row-gap:6px">' +
+            '<span class="chip">' + (i + 1) + '</span>' +
+            '<input type="text" value="' + esc(s.label) + '" data-sid="' + s.id + '" class="fuseLabelInput" placeholder="Switch label" style="flex:1;min-width:80px" />' +
+            '<input type="text" value="' + esc(s.onLabel) + '" data-sid="' + s.id + '" class="fuseOnLabelInput" placeholder="ON label" style="width:64px;flex:none" />' +
+            '<input type="text" value="' + esc(s.offLabel) + '" data-sid="' + s.id + '" class="fuseOffLabelInput" placeholder="OFF label" style="width:64px;flex:none" />' +
+            '<select class="fuseRequiredSelect" data-sid="' + s.id + '" style="flex:none"><option value="1"' + (s.requiredOn ? " selected" : "") + '>Must end ON</option><option value="0"' + (!s.requiredOn ? " selected" : "") + '>Must end OFF</option></select>' +
+            '<button class="small-btn" data-sid="' + s.id + '">✕</button></div>';
+        }).join("") + '</div><button class="small-btn" id="btnAddSwitch">+ Add switch</button></div>';
+      break;
     case "awardItem":
       html += fieldWrap("Item to award", '<select id="fItemId">' + selectOptions(hunt.items, "id", "name", c.itemId, "— choose item —") + '</select>');
       break;
@@ -2291,6 +2305,32 @@ function wireNodeInspector(n) {
         btn.onclick = function () { c.acceptedAnswers.splice(+btn.dataset.idx, 1); afterEdit(false); renderInspector(); };
       });
       if (byId("btnAddAnswer")) byId("btnAddAnswer").onclick = function () { c.acceptedAnswers.push("CAT"); afterEdit(false); renderInspector(); };
+      break;
+    case "fusePanel":
+      bindText("fPrompt", "prompt");
+      Array.prototype.forEach.call(document.querySelectorAll(".fuseLabelInput"), function (inp) {
+        inp.oninput = function (e) { var s = c.switches.find(function (x) { return x.id === inp.dataset.sid; }); if (s) s.label = e.target.value; };
+        inp.onblur = function () { afterEdit(false); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".fuseOnLabelInput"), function (inp) {
+        inp.oninput = function (e) { var s = c.switches.find(function (x) { return x.id === inp.dataset.sid; }); if (s) s.onLabel = e.target.value; };
+        inp.onblur = function () { afterEdit(false); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".fuseOffLabelInput"), function (inp) {
+        inp.oninput = function (e) { var s = c.switches.find(function (x) { return x.id === inp.dataset.sid; }); if (s) s.offLabel = e.target.value; };
+        inp.onblur = function () { afterEdit(false); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".fuseRequiredSelect"), function (sel) {
+        sel.onchange = function (e) { var s = c.switches.find(function (x) { return x.id === sel.dataset.sid; }); if (s) s.requiredOn = e.target.value === "1"; afterEdit(false); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("#fuseSwitchList button"), function (btn) {
+        btn.onclick = function () { c.switches = c.switches.filter(function (s) { return s.id !== btn.dataset.sid; }); afterEdit(false); renderInspector(); };
+      });
+      if (byId("btnAddSwitch")) byId("btnAddSwitch").onclick = function () {
+        var num = c.switches.length + 1;
+        c.switches.push({ id: uid("sw"), label: "CKT " + (num < 10 ? "0" : "") + num, onLabel: "A", offLabel: "B", requiredOn: false });
+        afterEdit(false); renderInspector();
+      };
       break;
     case "awardItem":
       bindChange("fItemId", function (v) { c.itemId = v; });

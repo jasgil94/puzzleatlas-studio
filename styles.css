@@ -408,14 +408,31 @@ button{font-family:inherit;cursor:pointer;}
 /* Cryptex Dial Lock (3 Letter) — three concentric letter rings rendered as
    inline SVG (see renderCryptexSvg/wireCryptexInteractions in engine.js).
    Colour/gradient fills live inline in the SVG itself (per-node <defs>, so
-   several instances never clash), so only cursor affordances and the
-   engraved-letter typeface need to live here. */
+   several instances never clash); this stylesheet only handles cursor
+   affordances, the engraved-letter typeface/highlight, and the wrong/right
+   feedback animations (shake+red vs. green+shackle-open), toggled as plain
+   classes by wireCryptexInteractions. */
+.pv-cryptex-wrap{width:100%;}
 .cryptex-svg{touch-action:none;}
-.cryptex-letter{fill:#2a2118;font-size:17px;font-weight:bold;font-family:Georgia,'Times New Roman',serif;}
+.cryptex-letter{fill:#2a2118;font-size:17px;font-weight:bold;font-family:Georgia,'Times New Roman',serif;transition:fill .15s ease;}
+.cryptex-letter-active{fill:#a8321c;}
 .cryptex-hit{cursor:grab;}
 .cryptex-hit:active{cursor:grabbing;}
 .cryptex-center{cursor:pointer;}
+.cryptex-btn-face{transition:fill .25s ease;}
 .cryptex-center:hover .cryptex-btn-face{fill:#d9b06a;}
+.cryptex-center.cryptex-success .cryptex-btn-face{fill:#6fae5c;}
+.cryptex-center.cryptex-fail .cryptex-btn-face{fill:#b8534a;}
+
+.cryptex-ring-track{transition:stroke .2s ease;}
+.cryptex-flash-success .cryptex-ring-track{stroke:#6fae5c !important;}
+.cryptex-flash-fail .cryptex-ring-track{stroke:#b8534a !important;}
+
+.cryptex-shackle{transition:transform .7s cubic-bezier(.2,.9,.3,1.3);transform-origin:200px 340px;}
+.cryptex-shackle.cryptex-open{transform:translate(6px,-46px) rotate(22deg);}
+
+@keyframes pvCryptexShake{0%,100%{transform:translateX(0);}20%{transform:translateX(-9px);}40%{transform:translateX(9px);}60%{transform:translateX(-6px);}80%{transform:translateX(6px);}}
+.pv-cryptex-wrap.cryptex-shake{animation:pvCryptexShake .4s ease;}
 
 .pv-swatch-row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
 .pv-swatch{width:44px;height:44px;border-radius:var(--pv-radius);border:var(--pv-border-width) var(--pv-border-style) var(--line);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease;}
@@ -429,6 +446,37 @@ button{font-family:inherit;cursor:pointer;}
 
 .pv-part-block{border:var(--pv-border-width) var(--pv-border-style) var(--line);border-radius:var(--pv-radius);padding:10px 12px;margin-bottom:10px;background:var(--pv-surface);}
 .pv-part-label{font-weight:700;color:var(--pv-text-dim);text-transform:uppercase;font-size:10.5px;letter-spacing:.05em;margin-bottom:4px;}
+
+/* Fuse Panel (Switch Bank) — a bank of brass knife switches on a
+   distribution-panel prop, adapted from the standalone fuse-panel-puzzle.html
+   prototype (see NODE_TYPES.fusePanel/pv_action_submitFusePanel in
+   engine.js). Each switch is its own clickable/keyboard-focusable card; the
+   blade swings left (ON) or right (OFF) between two fixed brass contacts,
+   with the switch's own on/off labels printed at each throw position so the
+   player can read off whichever letter/symbol is currently showing.
+   Deliberately hardcoded metal/brass colours rather than --pv-* tokens
+   (same choice as the Physical Lock Code styles above) — this is meant to
+   read as one consistent prop regardless of the active style pack. */
+.pv-fuse-panel{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:12px 10px;margin:10px 0;padding:14px 10px;border-radius:var(--pv-radius);background:linear-gradient(155deg,#4b4740 0%,#2c2a26 45%,#171614 100%);box-shadow:inset 0 0 30px rgba(0,0,0,.7),inset 0 2px 0 rgba(255,255,255,.05);border:1px solid #0c0b0a;}
+.pv-fuse-switch{position:relative;background:linear-gradient(175deg,#26241f,#1b1a16 80%);border-radius:5px;padding:8px 4px 10px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.04);cursor:pointer;user-select:none;outline:none;transition:box-shadow .2s ease;}
+.pv-fuse-switch:hover{box-shadow:inset 0 0 0 1px rgba(0,0,0,.6),0 0 0 2px rgba(255,154,60,.35);}
+.pv-fuse-switch:focus-visible{box-shadow:inset 0 0 0 1px rgba(0,0,0,.6),0 0 0 2px rgba(255,154,60,.6);}
+.pv-fuse-switch-label{font-family:var(--pv-font-mono);font-size:9px;letter-spacing:1px;color:#8f8a7a;text-align:center;margin-bottom:6px;text-shadow:0 1px 0 rgba(0,0,0,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pv-fuse-mech{position:relative;height:88px;margin:0 auto;width:56px;}
+.pv-fuse-post{position:absolute;left:50%;top:0;transform:translateX(-50%);width:11px;height:11px;border-radius:50%;background:linear-gradient(135deg,#e9c47b,#b8863f 45%,#6e4a1f 100%);box-shadow:0 1px 2px rgba(0,0,0,.7);z-index:3;}
+.pv-fuse-contact{position:absolute;top:58px;width:18px;height:7px;border-radius:2px;background:linear-gradient(135deg,#e9c47b,#b8863f 45%,#6e4a1f);box-shadow:0 1px 2px rgba(0,0,0,.7);z-index:1;transition:box-shadow .2s ease,background .2s ease;}
+.pv-fuse-contact-on{left:-5px;}
+.pv-fuse-contact-off{right:-5px;}
+.pv-fuse-blade-group{position:absolute;top:5px;left:50%;width:6px;height:54px;margin-left:-3px;transform-origin:3px 0px;transform:rotate(-34deg);transition:transform .22s cubic-bezier(.4,1.3,.6,1);z-index:2;}
+.pv-fuse-switch.on .pv-fuse-blade-group{transform:rotate(34deg);}
+.pv-fuse-blade{position:absolute;top:0;left:1px;width:4px;height:38px;border-radius:2px;background:linear-gradient(90deg,#6e4a1f,#d98a5c 45%,#6e4a1f);box-shadow:0 0 2px rgba(0,0,0,.6);}
+.pv-fuse-handle{position:absolute;top:34px;left:50%;transform:translateX(-50%);width:14px;height:22px;border-radius:4px;background:linear-gradient(120deg,#3d3d3d 0%,#0b0b0b 35%,#000 100%);box-shadow:0 2px 3px rgba(0,0,0,.8),inset 0 1px 1px rgba(255,255,255,.12);}
+.pv-fuse-poslabel{position:absolute;top:68px;width:14px;text-align:center;font-family:var(--pv-font-mono);font-size:9px;color:#d9cca0;text-shadow:0 1px 1px rgba(0,0,0,.85);opacity:.55;z-index:1;transition:opacity .2s ease,color .2s ease;}
+.pv-fuse-poslabel-on{left:-3px;}
+.pv-fuse-poslabel-off{right:-3px;}
+.pv-fuse-switch.on .pv-fuse-contact-on{background:linear-gradient(135deg,#ffd48a,#ff9a3c 45%,#6e4a1f);box-shadow:0 0 8px 2px rgba(255,154,60,.55);}
+.pv-fuse-switch.on .pv-fuse-poslabel-on{color:#ffd48a;opacity:1;}
+.pv-fuse-switch:not(.on) .pv-fuse-poslabel-off{color:#e8e0c8;opacity:1;}
 
 /* Image Reveal — framed/cropped display of the node's own uploaded image
    (c.imageAsset). Deliberately built as normal-flow content (not an inset

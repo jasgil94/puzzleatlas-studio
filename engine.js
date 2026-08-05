@@ -217,6 +217,32 @@ var NODE_TYPES = {
     defaultContent: function () { return { sourceNodeIds: [], prompt: "Combine information from the referenced nodes.", acceptedAnswers: ["ANSWER"] }; },
     summary: function (c) { return "Refs " + (c.sourceNodeIds || []).length + " node(s)"; }
   },
+  fusePanel: {
+    family: "puzzle", label: "Fuse Panel (Switch Bank)", icon: "⚡",
+    defaultTitle: "New Fuse Panel",
+    // A bank of knife switches (a distribution-panel prop, see
+    // fuse-panel-puzzle.html for the original standalone version this node
+    // type is based on). Each switch has its own player-visible on/off
+    // labels — what the player reads at each throw position, e.g. a letter
+    // supplied by some other clue — and its own required end position. The
+    // node completes the instant every switch is in its required position;
+    // there's no submit button and no per-switch right/wrong feedback (see
+    // pv_action_submitFusePanel below), so a wrong guess can't be narrowed
+    // down switch by switch — same "auto-validates on interaction" family
+    // as Sequence Pattern/Sliding Tile.
+    defaultContent: function () {
+      var switches = [];
+      for (var i = 0; i < 12; i++) {
+        switches.push({ id: uid("sw"), label: "CKT " + (i + 1 < 10 ? "0" : "") + (i + 1), onLabel: "A", offLabel: "B", requiredOn: false });
+      }
+      return { prompt: "Set each switch to the position that matches the code.", switches: switches };
+    },
+    summary: function (c) {
+      var switches = c.switches || [];
+      var onCount = switches.filter(function (s) { return s.requiredOn; }).length;
+      return switches.length + " switches — " + onCount + " must end ON, " + (switches.length - onCount) + " OFF";
+    }
+  },
   awardItem: {
     family: "state", label: "Award Item", icon: "🎒",
     defaultTitle: "Award Item",
@@ -1016,6 +1042,20 @@ function pv_action_submitCrossReferenceAnswer(session, nodeId, text) {
   if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
   return ok;
 }
+// Fuse Panel — auto-validates after every switch toggle (same family as
+// Sequence Pattern/Sliding Tile), so this runs on every flip rather than
+// behind a discrete submit button. switchState maps switch id -> boolean
+// (true = ON). Correct only when every configured switch's live state
+// matches its own requiredOn.
+function pv_action_submitFusePanel(session, nodeId, switchState) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var switches = n.content.switches || [];
+  var mechanicOk = switches.length > 0 && switches.every(function (s) { return !!(switchState || {})[s.id] === !!s.requiredOn; });
+  var ok = nodeCompletionOk(n, session, mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
 
 function pv_action_revealHint(session, hintNodeId) {
   var cur = session.state.hintProgress[hintNodeId] || 0;
@@ -1034,7 +1074,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal"];
+  "imageReveal", "fusePanel"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -1431,6 +1471,31 @@ function renderPreviewNode(session, n, ctl) {
     html += pvPrimaryButton(n, "pvSubmitCrossRef", "max-width:160px");
     var fbCr = session.state.feedback[n.id];
     if (fbCr) html += '<div class="pv-feedback ' + fbCr + '">' + (fbCr === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
+  } else if (n.type === "fusePanel") {
+    if (!ctl.fuseDraft[n.id]) {
+      ctl.fuseDraft[n.id] = {};
+      (c.switches || []).forEach(function (s) { ctl.fuseDraft[n.id][s.id] = false; });
+    }
+    var fuseState = ctl.fuseDraft[n.id];
+    html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += '<div class="pv-fuse-panel">';
+    (c.switches || []).forEach(function (s) {
+      var swOn = !!fuseState[s.id];
+      html += '<div class="pv-fuse-switch' + (swOn ? ' on' : '') + '" data-swid="' + esc(s.id) + '" tabindex="0" role="switch" aria-checked="' + (swOn ? "true" : "false") + '" aria-label="' + esc(s.label || "Switch") + '">' +
+        '<div class="pv-fuse-switch-label">' + esc(s.label || "") + '</div>' +
+        '<div class="pv-fuse-mech">' +
+          '<div class="pv-fuse-post"></div>' +
+          '<div class="pv-fuse-blade-group"><div class="pv-fuse-blade"></div><div class="pv-fuse-handle"></div></div>' +
+          '<div class="pv-fuse-contact pv-fuse-contact-on"></div>' +
+          '<div class="pv-fuse-contact pv-fuse-contact-off"></div>' +
+          '<span class="pv-fuse-poslabel pv-fuse-poslabel-on">' + esc(s.onLabel || "") + '</span>' +
+          '<span class="pv-fuse-poslabel pv-fuse-poslabel-off">' + esc(s.offLabel || "") + '</span>' +
+        '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+    var fbFu = session.state.feedback[n.id];
+    if (fbFu === "correct") html += '<div class="pv-feedback correct">✓ Power restored.</div>';
   }
   if (hints.length) {
     html += '<div style="margin-top:14px">';
@@ -1583,18 +1648,34 @@ function wireLockDials(root, ctl, session, n) {
 // keeps that same state in sync with drag gestures and clicks.
 var CRYPTEX_CX = 250, CRYPTEX_CY = 340, CRYPTEX_STEP = 360 / 26;
 
-function cryptexLetterMarkup(cx, cy, r) {
+// activeIdx: index (0-25) of the letter currently sitting under the fixed
+// pointer on this ring — that letter's text gets the .cryptex-letter-active
+// class (a darker highlight colour, see styles.css) so the player can read
+// off their current combination at a glance, live as they drag.
+function cryptexLetterMarkup(cx, cy, r, activeIdx) {
   var s = "";
   for (var i = 0; i < 26; i++) {
     var angle = i * CRYPTEX_STEP;
-    s += '<g transform="rotate(' + angle + ' ' + cx + ' ' + cy + ')"><text x="' + cx + '" y="' + (cy - r + 6) + '" text-anchor="middle" class="cryptex-letter">' + String.fromCharCode(65 + i) + '</text></g>';
+    var cls = "cryptex-letter" + (i === activeIdx ? " cryptex-letter-active" : "");
+    s += '<g class="cryptex-letter-g" data-index="' + i + '" transform="rotate(' + angle + ' ' + cx + ' ' + cy + ')"><text x="' + cx + '" y="' + (cy - r + 6) + '" text-anchor="middle" class="' + cls + '">' + String.fromCharCode(65 + i) + '</text></g>';
   }
   return s;
 }
 
+function cryptexPointerIndex(rotationDeg) {
+  var idx = Math.round(-rotationDeg / CRYPTEX_STEP);
+  return ((idx % 26) + 26) % 26;
+}
+function cryptexPointerLetter(rotationDeg) {
+  return String.fromCharCode(65 + cryptexPointerIndex(rotationDeg));
+}
+
+// Wrapped in .pv-cryptex-wrap (rather than shaking/transforming the <svg>
+// root directly) so the wrong-answer shake — a plain CSS animation toggled
+// in wireCryptexInteractions — has a reliable box to apply translateX to.
 function renderCryptexSvg(nodeId, rot) {
   var cx = CRYPTEX_CX, cy = CRYPTEX_CY, idp = "cx" + nodeId.replace(/[^a-zA-Z0-9]/g, "") + "_";
-  return '<svg class="cryptex-svg" data-node="' + nodeId + '" width="320" viewBox="0 0 500 600" style="display:block;margin:10px auto 0;max-width:100%;">' +
+  return '<div class="pv-cryptex-wrap"><svg class="cryptex-svg" data-node="' + nodeId + '" width="320" viewBox="0 0 500 600" style="display:block;margin:10px auto 0;max-width:100%;">' +
     '<defs>' +
       '<radialGradient id="' + idp + 'plate" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#e4e1d6"/><stop offset="55%" stop-color="#a9a598"/><stop offset="100%" stop-color="#69665c"/></radialGradient>' +
       '<linearGradient id="' + idp + 'shackle" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#8c8c8c"/><stop offset="50%" stop-color="#e8e8e8"/><stop offset="100%" stop-color="#6b6b6b"/></linearGradient>' +
@@ -1602,16 +1683,16 @@ function renderCryptexSvg(nodeId, rot) {
       '<radialGradient id="' + idp + 'rm" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#d4b06a"/><stop offset="100%" stop-color="#8c6c34"/></radialGradient>' +
       '<radialGradient id="' + idp + 'ri" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#e0c17e"/><stop offset="100%" stop-color="#9c7c40"/></radialGradient>' +
     '</defs>' +
-    '<path d="M 200 400 L 200 150 A 50 50 0 0 1 300 150 L 300 400" fill="none" stroke="url(#' + idp + 'shackle)" stroke-width="24" stroke-linecap="round"/>' +
+    '<g class="cryptex-shackle"><path d="M 200 400 L 200 150 A 50 50 0 0 1 300 150 L 300 400" fill="none" stroke="url(#' + idp + 'shackle)" stroke-width="24" stroke-linecap="round"/></g>' +
     '<circle cx="250" cy="340" r="192" fill="url(#' + idp + 'plate)" stroke="#4a473e" stroke-width="3"/>' +
     '<polygon points="250,132 240,150 260,150" fill="#d8483f" stroke="#5a1a15" stroke-width="1"/>' +
-    '<g class="cryptex-ring" data-ring="outer" transform="rotate(' + rot.outer + ' 250 340)"><circle cx="250" cy="340" r="165" fill="url(#' + idp + 'ro)" stroke="#3d2f14" stroke-width="46"/>' + cryptexLetterMarkup(cx, cy, 165) + '</g>' +
+    '<g class="cryptex-ring" data-ring="outer" transform="rotate(' + rot.outer + ' 250 340)"><circle class="cryptex-ring-track" cx="250" cy="340" r="165" fill="url(#' + idp + 'ro)" stroke="#3d2f14" stroke-width="46"/>' + cryptexLetterMarkup(cx, cy, 165, cryptexPointerIndex(rot.outer)) + '</g>' +
     '<circle cx="250" cy="340" r="188" fill="none" stroke="#3d3a32" stroke-width="1.5"/><circle cx="250" cy="340" r="142" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
     '<circle class="cryptex-hit" data-ring="outer" cx="250" cy="340" r="165" fill="#000" opacity="0" stroke="#000" stroke-width="46"/>' +
-    '<g class="cryptex-ring" data-ring="middle" transform="rotate(' + rot.middle + ' 250 340)"><circle cx="250" cy="340" r="117" fill="url(#' + idp + 'rm)" stroke="#4a3a18" stroke-width="42"/>' + cryptexLetterMarkup(cx, cy, 117) + '</g>' +
+    '<g class="cryptex-ring" data-ring="middle" transform="rotate(' + rot.middle + ' 250 340)"><circle class="cryptex-ring-track" cx="250" cy="340" r="117" fill="url(#' + idp + 'rm)" stroke="#4a3a18" stroke-width="42"/>' + cryptexLetterMarkup(cx, cy, 117, cryptexPointerIndex(rot.middle)) + '</g>' +
     '<circle cx="250" cy="340" r="138" fill="none" stroke="#3d3a32" stroke-width="1.5"/><circle cx="250" cy="340" r="96" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
     '<circle class="cryptex-hit" data-ring="middle" cx="250" cy="340" r="117" fill="#000" opacity="0" stroke="#000" stroke-width="42"/>' +
-    '<g class="cryptex-ring" data-ring="inner" transform="rotate(' + rot.inner + ' 250 340)"><circle cx="250" cy="340" r="73" fill="url(#' + idp + 'ri)" stroke="#5a4622" stroke-width="38"/>' + cryptexLetterMarkup(cx, cy, 73) + '</g>' +
+    '<g class="cryptex-ring" data-ring="inner" transform="rotate(' + rot.inner + ' 250 340)"><circle class="cryptex-ring-track" cx="250" cy="340" r="73" fill="url(#' + idp + 'ri)" stroke="#5a4622" stroke-width="38"/>' + cryptexLetterMarkup(cx, cy, 73, cryptexPointerIndex(rot.inner)) + '</g>' +
     '<circle cx="250" cy="340" r="92" fill="none" stroke="#3d3a32" stroke-width="1.5"/><circle cx="250" cy="340" r="54" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
     '<circle class="cryptex-hit" data-ring="inner" cx="250" cy="340" r="73" fill="#000" opacity="0" stroke="#000" stroke-width="38"/>' +
     '<g class="cryptex-center">' +
@@ -1619,13 +1700,7 @@ function renderCryptexSvg(nodeId, rot) {
       '<circle cx="250" cy="340" r="46" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
       '<circle cx="250" cy="330" r="9" fill="#4a3a1c"/><polygon points="244,336 256,336 251,354 249,354" fill="#4a3a1c"/>' +
     '</g>' +
-  '</svg>';
-}
-
-function cryptexPointerLetter(rotationDeg) {
-  var idx = Math.round(-rotationDeg / CRYPTEX_STEP);
-  idx = ((idx % 26) + 26) % 26;
-  return String.fromCharCode(65 + idx);
+  '</svg></div>';
 }
 
 // Wired fresh on every render (like every other wire* fn here) — pointer
@@ -1637,12 +1712,26 @@ function wireCryptexInteractions(root, ctl, session, n) {
   if (!svg) return;
   if (!ctl.cryptexDraft[n.id]) ctl.cryptexDraft[n.id] = { outer: 0, middle: 0, inner: 0 };
   var rot = ctl.cryptexDraft[n.id];
+  var wrapEl = svg.closest(".pv-cryptex-wrap");
 
   function angleFromEvent(evt) {
     var pt = svg.createSVGPoint();
     pt.x = evt.clientX; pt.y = evt.clientY;
     var p = pt.matrixTransform(svg.getScreenCTM().inverse());
     return (Math.atan2(p.y - CRYPTEX_CY, p.x - CRYPTEX_CX) * 180 / Math.PI) + 90;
+  }
+
+  // Keeps the .cryptex-letter-active highlight on whichever letter is
+  // currently under the fixed pointer in sync with rot[ring] — called both
+  // live during a drag and once more on release/snap.
+  function updateActiveLetter(ring) {
+    var idx = cryptexPointerIndex(rot[ring]);
+    var ringEl = svg.querySelector('.cryptex-ring[data-ring="' + ring + '"]');
+    if (!ringEl) return;
+    Array.prototype.forEach.call(ringEl.querySelectorAll(".cryptex-letter-g"), function (g) {
+      var text = g.querySelector("text");
+      if (text) text.classList.toggle("cryptex-letter-active", +g.dataset.index === idx);
+    });
   }
 
   Array.prototype.forEach.call(svg.querySelectorAll(".cryptex-hit"), function (hit) {
@@ -1665,23 +1754,61 @@ function wireCryptexInteractions(root, ctl, session, n) {
       lastAngle = angle;
       rot[ring] += delta;
       if (ringEl) ringEl.setAttribute("transform", "rotate(" + rot[ring] + " " + CRYPTEX_CX + " " + CRYPTEX_CY + ")");
+      updateActiveLetter(ring);
     };
     function finish() {
       if (!dragging) return;
       dragging = false;
       rot[ring] = Math.round(rot[ring] / CRYPTEX_STEP) * CRYPTEX_STEP;
       if (ringEl) ringEl.setAttribute("transform", "rotate(" + rot[ring] + " " + CRYPTEX_CX + " " + CRYPTEX_CY + ")");
+      updateActiveLetter(ring);
     }
     hit.onpointerup = finish;
     hit.onpointercancel = finish;
   });
 
   var center = svg.querySelector(".cryptex-center");
+  var ringEls = Array.prototype.slice.call(svg.querySelectorAll(".cryptex-ring"));
+  var shackleEl = svg.querySelector(".cryptex-shackle");
+
   if (center) center.onclick = function () {
+    // Guards against a second submission (e.g. an eager double-click) during
+    // the 3-second "unlocked" pause below, while the node has already
+    // completed but the view hasn't advanced off it yet.
+    if (svg.dataset.cxLocked === "1") return;
     var combo = cryptexPointerLetter(rot.outer) + cryptexPointerLetter(rot.middle) + cryptexPointerLetter(rot.inner);
     var ok = pv_action_submitAnswer(session, n.id, combo);
-    if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
-    ctl.render();
+
+    if (ok) {
+      svg.dataset.cxLocked = "1";
+      center.classList.remove("cryptex-fail");
+      center.classList.add("cryptex-success");
+      ringEls.forEach(function (g) { g.classList.add("cryptex-flash-success"); });
+      if (shackleEl) shackleEl.classList.add("cryptex-open");
+      // Hold the unlocked pose on screen for 3 seconds before the view
+      // actually advances to whatever comes next, so the player gets to see
+      // it — the node itself already completed above (session/available
+      // leads etc. are already up to date); this timeout only delays the
+      // re-render that moves the screen on.
+      setTimeout(function () {
+        ctl.expandedNodeId = null; ctl.pinnedNodeId = null;
+        ctl.render();
+      }, 3000);
+    } else {
+      center.classList.remove("cryptex-success");
+      center.classList.add("cryptex-fail");
+      ringEls.forEach(function (g) { g.classList.add("cryptex-flash-fail"); });
+      if (wrapEl) {
+        wrapEl.classList.remove("cryptex-shake");
+        void wrapEl.offsetWidth; // restart the shake animation even on repeated wrong guesses
+        wrapEl.classList.add("cryptex-shake");
+      }
+      setTimeout(function () {
+        center.classList.remove("cryptex-fail");
+        ringEls.forEach(function (g) { g.classList.remove("cryptex-flash-fail"); });
+        ctl.render();
+      }, 650);
+    }
   };
 }
 
@@ -1830,6 +1957,21 @@ function wirePreviewNodeInteractions(session, n, ctl) {
     ctl.render();
   };
 
+  // Fuse Panel — click/tap or Enter/Space toggles a switch; auto-validates
+  // after every flip, same interaction shape as Sliding Tile above.
+  Array.prototype.forEach.call(root.querySelectorAll("[data-swid]"), function (el) {
+    var flip = function () {
+      var draft = ctl.fuseDraft[n.id];
+      if (!draft) return;
+      draft[el.dataset.swid] = !draft[el.dataset.swid];
+      var ok = pv_action_submitFusePanel(session, n.id, draft);
+      if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+      ctl.render();
+    };
+    el.onclick = flip;
+    el.onkeydown = function (e) { if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); flip(); } };
+  });
+
   wireHintButtons(session, root, ctl);
 }
 
@@ -1863,7 +2005,7 @@ function createPreviewController(mainEl, sideEl) {
     mainEl: mainEl, sideEl: sideEl,
     session: null, expandedNodeId: null, showState: false,
     orderingDraft: {}, matchingDraft: {},
-    sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {},
+    sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {}, fuseDraft: {},
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
     laneListId: null, laneListSceneId: null, // set when a lane tab (Leads/Inventory/Hints) asks to show its scene-wide options list instead of a single node
@@ -1883,6 +2025,7 @@ function createPreviewController(mainEl, sideEl) {
     ctl.multiPartDraft = {};
     ctl.lockDialDraft = {};
     ctl.cryptexDraft = {};
+    ctl.fuseDraft = {};
     ctl.pinnedNodeId = null;
     ctl.peekStack = [];
     ctl.laneListId = null;
@@ -2063,6 +2206,7 @@ return {
   pv_action_submitMultiPartAnswer: pv_action_submitMultiPartAnswer,
   pv_action_submitLockCode: pv_action_submitLockCode,
   pv_action_submitCrossReferenceAnswer: pv_action_submitCrossReferenceAnswer,
+  pv_action_submitFusePanel: pv_action_submitFusePanel,
   pv_action_revealHint: pv_action_revealHint,
 
   PLAYER_SCREEN_TYPES: PLAYER_SCREEN_TYPES,
