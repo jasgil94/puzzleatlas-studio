@@ -42,6 +42,7 @@ var familyOf = PAEngine.familyOf;
 var nodeTitle = PAEngine.nodeTitle;
 var varName = PAEngine.varName;
 var itemName = PAEngine.itemName;
+var previousConnectingNode = PAEngine.previousConnectingNode;
 
 var collectConditionRefs = PAEngine.collectConditionRefs;
 var validateHunt = PAEngine.validateHunt;
@@ -452,7 +453,7 @@ function connectionKindLabel(laneId) {
 // a different lane is allowed (lane is a manual, per-node placement) but
 // is flagged as a soft validation warning — see studioIssues().
 var SUGGESTED_LANE = {
-  scene: "story", ending: "story",
+  scene: "story", ending: "story", storyBlock: "story",
   choice: "leads", answerEntry: "leads", ordering: "leads", matching: "leads", branch: "leads", convergence: "leads",
   locationPlaceholder: "map",
   awardItem: "inventory", score: "inventory", setVariable: "inventory",
@@ -858,6 +859,18 @@ function studioIssues(hunt) {
         title: "Lane placement",
         detail: '"' + n.title + '" is in the ' + LANE_BY_ID[n.lane].label + ' lane, but ' + NODE_TYPES[n.type].label + ' nodes are usually placed in ' + LANE_BY_ID[suggested].label + '.',
         nodeId: n.id
+      });
+    }
+    if (n.type === "storyBlock") {
+      (n.content.buttons || []).forEach(function (b) {
+        if (b.kind !== "back" && !b.connectionId) {
+          issues.push({
+            level: "warning",
+            title: "Unassigned Story Block button",
+            detail: '"' + n.title + '" has a button ("' + (b.label || "Continue") + '") that isn\'t assigned to a connection yet — it won\'t lead anywhere.',
+            nodeId: n.id
+          });
+        }
       });
     }
   });
@@ -1656,6 +1669,19 @@ function buildTypeSpecificFields(n) {
   switch (n.type) {
     case "scene":
       html += fieldWrap("Body text (player-visible)", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
+      var prevForScene = previousConnectingNode(hunt, n.id);
+      if (prevForScene && prevForScene.type === "scene") {
+        html += fieldWrap("Back button", '<select id="fShowBackButton"><option value="0"' + (!c.showBackButton ? " selected" : "") + '>No</option><option value="1"' + (c.showBackButton ? " selected" : "") + '>Yes — let the player return to "' + esc(prevForScene.title) + '"</option></select>');
+      } else if (c.showBackButton) {
+        html += '<p class="lane-warn-note">⚠ Back button is enabled, but the node connecting into this one is no longer a Simple Text node — it won\'t be shown to players. <button class="small-btn" id="btnClearBackButton" style="margin-left:6px">Clear</button></p>';
+      } else {
+        html += '<p style="font-size:11px;color:var(--text-dim)">Back button is only offered when the node connecting into this one is also a Simple Text node.</p>';
+      }
+      break;
+    case "storyBlock":
+      html += fieldWrap("Title (creator-only, never shown to the player)", '<input type="text" id="fSbTitle" value="' + esc(c.title || "") + '" />');
+      html += fieldWrap("Body text (player-visible)", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
+      html += '<p style="font-size:11px;color:var(--text-dim)">Completion buttons (added, ordered and connected) are set up below, in the Completion section.</p>';
       break;
     case "choice":
       html += fieldWrap("Prompt text", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
@@ -2026,6 +2052,12 @@ function wireNodeInspector(n) {
     case "scene": case "ending":
       bindText("fBody", "body");
       if (n.type === "ending") bindText("fResultName", "resultName");
+      if (byId("fShowBackButton")) byId("fShowBackButton").onchange = function (e) { c.showBackButton = e.target.value === "1"; afterEdit(); };
+      if (byId("btnClearBackButton")) byId("btnClearBackButton").onclick = function () { c.showBackButton = false; afterEdit(); renderInspector(); };
+      break;
+    case "storyBlock":
+      bindText("fSbTitle", "title");
+      bindText("fBody", "body");
       break;
     case "choice":
       bindText("fBody", "body");
@@ -2194,11 +2226,11 @@ function buildConditionFields(cond, prefix) {
       }).join("") + '</div>';
     if (cond.type === "anyNComplete") html += fieldWrap("N required", '<input type="number" id="' + prefix + 'CondN" min="1" value="' + (cond.n || 1) + '" />');
   } else if (cond.type === "choiceSelected") {
-    var choiceNodes = allNodes.filter(function (nd) { return nd.type === "choice"; });
-    html += fieldWrap("Choice node", '<select id="' + prefix + 'CondNode">' + selectOptions(choiceNodes, "id", "title", cond.nodeId, "— choose choice node —") + '</select>');
+    var choiceNodes = allNodes.filter(function (nd) { return nd.type === "choice" || nd.type === "storyBlock"; });
+    html += fieldWrap("Choice / Story Block node", '<select id="' + prefix + 'CondNode">' + selectOptions(choiceNodes, "id", "title", cond.nodeId, "— choose node —") + '</select>');
     var chosen = choiceNodes.find(function (nd) { return nd.id === cond.nodeId; });
-    var opts = chosen ? chosen.content.options : [];
-    html += fieldWrap("Option", '<select id="' + prefix + 'CondOption">' + selectOptions(opts, "id", "label", cond.optionId, "— choose option —") + '</select>');
+    var opts = chosen ? (chosen.type === "storyBlock" ? (chosen.content.buttons || []).filter(function (b) { return b.kind !== "back"; }) : chosen.content.options) : [];
+    html += fieldWrap("Option / Button", '<select id="' + prefix + 'CondOption">' + selectOptions(opts, "id", "label", cond.optionId, "— choose option —") + '</select>');
   } else if (cond.type === "variableEquals" || cond.type === "variableAtLeast") {
     html += fieldWrap("Variable", '<select id="' + prefix + 'CondVar">' + selectOptions(hunt.variables, "id", "name", cond.variableId, "— choose variable —") + '</select>');
     html += fieldWrap("Value", '<input type="text" id="' + prefix + 'CondValue" value="' + esc(cond.value !== undefined ? cond.value : "") + '" />');
@@ -2250,6 +2282,7 @@ function defaultCompletionSummary(n) {
   if (n.type === "convergence") return "its incoming branches converge (fires automatically)";
   if (isAutoType(n.type)) return "it becomes available (fires automatically)";
   if (n.type === "choice") return "the player picks an option";
+  if (n.type === "storyBlock") return "the player presses one of its buttons";
   if (BUTTON_LABEL_TYPES[n.type] && (n.type === "scene" || n.type === "imageReveal" || n.type === "locationPlaceholder")) return "the player presses the button";
   return "the player submits a correct answer/solution";
 }
@@ -2259,9 +2292,14 @@ function defaultCompletionSummary(n) {
 // override that replaces the node's built-in trigger with a condition —
 // see nodeCompletionOk in engine.js for the runtime side. Not shown for
 // Hint nodes, which have no completion concept (see buildNodeInspector).
+// Story Block doesn't fit the single-button-label pattern (it can have
+// several buttons), so it gets its own buttons editor instead — see
+// buildStoryBlockButtonsEditor.
 function buildCompletionEditor(n) {
   var html = '<div class="section-title">Completion</div>';
-  if (BUTTON_LABEL_TYPES[n.type]) {
+  if (n.type === "storyBlock") {
+    html += buildStoryBlockButtonsEditor(n);
+  } else if (BUTTON_LABEL_TYPES[n.type]) {
     html += fieldWrap('Button label (blank = default "' + esc(DEFAULT_BUTTON_LABEL[n.type]) + '")',
       '<input type="text" id="fButtonLabel" placeholder="' + esc(DEFAULT_BUTTON_LABEL[n.type]) + '" value="' + esc(n.buttonLabel || "") + '" />');
   }
@@ -2277,8 +2315,118 @@ function buildCompletionEditor(n) {
   return html;
 }
 
+// Story Block's completion buttons — added, reordered left-to-right, and
+// each (other than the auto-included Back button) assigned to one of this
+// node's existing outgoing connections. Assigning a connection here writes
+// a "choiceSelected" condition onto that connection automatically (the
+// same mechanism Choice nodes use, just driven by button assignment
+// instead of manually editing the connection's own inspector) — see
+// wireStoryBlockButtonsEditor for the write-back and cleanup logic.
+function buildStoryBlockButtonsEditor(n) {
+  var c = n.content;
+  c.buttons = c.buttons || [];
+  var outgoing = Store.hunt.connections.filter(function (cn) { return cn.sourceId === n.id; });
+  var html = '<div class="field"><label>Buttons (shown left → right)</label><div id="storyBtnList">';
+  c.buttons.forEach(function (b, i) {
+    html += '<div class="list-item" data-btnid="' + b.id + '" style="flex-wrap:wrap">';
+    html += '<input type="text" value="' + esc(b.label) + '" data-btnid="' + b.id + '" class="storyBtnLabelInput" style="flex:1;min-width:90px" />';
+    if (b.kind === "back") {
+      html += '<span style="font-size:11px;color:var(--text-dim);padding:0 6px">back navigation — no connection needed</span>';
+    } else {
+      html += '<select data-btnid="' + b.id + '" class="storyBtnConnSelect" style="min-width:150px">' +
+        '<option value=""' + (!b.connectionId ? " selected" : "") + '>— choose connection —</option>' +
+        outgoing.map(function (cn) {
+          var t = Store.getNode(cn.targetId);
+          return '<option value="' + cn.id + '"' + (b.connectionId === cn.id ? " selected" : "") + '>→ ' + esc(t ? t.title : "?") + '</option>';
+        }).join("") + '</select>';
+    }
+    html += '<button class="small-btn storyBtnUp" data-btnid="' + b.id + '"' + (i === 0 ? " disabled" : "") + '>↑</button>';
+    html += '<button class="small-btn storyBtnDown" data-btnid="' + b.id + '"' + (i === c.buttons.length - 1 ? " disabled" : "") + '>↓</button>';
+    html += '<button class="small-btn storyBtnDelete" data-btnid="' + b.id + '">✕</button>';
+    html += '</div>';
+  });
+  html += '</div><button class="small-btn" id="btnAddStoryButton">+ Add button</button>';
+  if (!c.buttons.some(function (b) { return b.kind === "back"; })) {
+    html += ' <button class="small-btn" id="btnAddStoryBack">+ Add back button</button>';
+  }
+  html += '</div>';
+  if (!outgoing.length) {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Drag a connection out of this node on the canvas first, then assign it to a button here.</p>';
+  }
+  return html;
+}
+
+// Keeps a button's assigned connection's routing condition in sync: setting
+// b.connectionId writes {type:"choiceSelected", nodeId, optionId:b.id} onto
+// that connection, and clearing/reassigning resets whatever connection this
+// button previously owned back to "always" — but only if this button is
+// still the one that set it, so we never clobber a condition the creator
+// configured by hand elsewhere.
+function setStoryButtonConnection(n, b, newConnectionId) {
+  if (b.connectionId) {
+    var prevConn = Store.getConnection(b.connectionId);
+    if (prevConn && prevConn.condition && prevConn.condition.type === "choiceSelected" &&
+        prevConn.condition.nodeId === n.id && prevConn.condition.optionId === b.id) {
+      prevConn.condition = { type: "always" };
+    }
+  }
+  b.connectionId = newConnectionId || "";
+  if (b.connectionId) {
+    var conn = Store.getConnection(b.connectionId);
+    if (conn) conn.condition = { type: "choiceSelected", nodeId: n.id, optionId: b.id };
+  }
+}
+
+function wireStoryBlockButtonsEditor(n) {
+  var c = n.content;
+  var byId = function (id) { return document.getElementById(id); };
+  Array.prototype.forEach.call(document.querySelectorAll(".storyBtnLabelInput"), function (inp) {
+    inp.oninput = function (e) {
+      var b = c.buttons.find(function (x) { return x.id === inp.dataset.btnid; });
+      if (b) b.label = e.target.value;
+    };
+    inp.onblur = function () { afterEdit(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".storyBtnConnSelect"), function (sel) {
+    sel.onchange = function (e) {
+      var b = c.buttons.find(function (x) { return x.id === sel.dataset.btnid; });
+      if (b) setStoryButtonConnection(n, b, e.target.value);
+      afterEdit(); renderInspector();
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".storyBtnUp"), function (btn) {
+    btn.onclick = function () {
+      var idx = c.buttons.findIndex(function (x) { return x.id === btn.dataset.btnid; });
+      if (idx > 0) { var t = c.buttons[idx - 1]; c.buttons[idx - 1] = c.buttons[idx]; c.buttons[idx] = t; afterEdit(); renderInspector(); }
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".storyBtnDown"), function (btn) {
+    btn.onclick = function () {
+      var idx = c.buttons.findIndex(function (x) { return x.id === btn.dataset.btnid; });
+      if (idx < c.buttons.length - 1) { var t = c.buttons[idx + 1]; c.buttons[idx + 1] = c.buttons[idx]; c.buttons[idx] = t; afterEdit(); renderInspector(); }
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".storyBtnDelete"), function (btn) {
+    btn.onclick = function () {
+      var removed = c.buttons.find(function (x) { return x.id === btn.dataset.btnid; });
+      if (removed && removed.connectionId) setStoryButtonConnection(n, removed, "");
+      c.buttons = c.buttons.filter(function (x) { return x.id !== btn.dataset.btnid; });
+      afterEdit(); renderInspector();
+    };
+  });
+  if (byId("btnAddStoryButton")) byId("btnAddStoryButton").onclick = function () {
+    c.buttons.push({ id: uid("btn"), label: "Continue", kind: "connection", connectionId: "" });
+    afterEdit(); renderInspector();
+  };
+  if (byId("btnAddStoryBack")) byId("btnAddStoryBack").onclick = function () {
+    c.buttons.unshift({ id: uid("btn"), label: "Back", kind: "back" });
+    afterEdit(); renderInspector();
+  };
+}
+
 function wireCompletionEditor(n) {
   var byId = function (id) { return document.getElementById(id); };
+  if (n.type === "storyBlock") wireStoryBlockButtonsEditor(n);
   if (byId("fButtonLabel")) {
     byId("fButtonLabel").oninput = function (e) { n.buttonLabel = e.target.value; };
     byId("fButtonLabel").onblur = function () { afterEdit(false); };

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "0.1.0",
+  "sceneId": "n_lighthouse_cliff",
+  "imageAsset": "lighthouse_scene.png",
+  "imageSize": { "width": 941, "height": 1672 },
+  "hotspots": [
+    {
+      "id": "hs_lighthouse",
+      "label": "Lighthouse",
+      "shape": "rect",
+      "coords": [0.415, 0.175, 0.635, 0.505],
+      "targetNodeId": null
+    },
+    {
+      "id": "hs_birds",
+      "label": "Birds",
+      "shape": "rect",
+      "coords": [0.18, 0.16, 0.34, 0.32],
+      "targetNodeId": null
+    },
+    {
+      "id": "hs_tree",
+      "label": "Tree",
+      "shape": "rect",
+      "coords": [0.68, 0.40, 0.85, 0.53],
+      "targetNodeId": null
+    }
+  ]
+}

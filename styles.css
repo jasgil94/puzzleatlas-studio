@@ -292,6 +292,11 @@ button{font-family:inherit;cursor:pointer;}
 .pv-scene-body{font-size:15px;line-height:1.6;margin-bottom:18px;white-space:pre-wrap;}
 .pv-choice-btn, .pv-option-btn{display:block;width:100%;text-align:left;background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text);padding:10px 12px;border-radius:var(--pv-radius);margin-bottom:8px;font-size:13.5px;font-family:var(--pv-font-body);cursor:pointer;}
 .pv-choice-btn:hover, .pv-option-btn:hover{border-color:var(--pv-accent);}
+/* Back button (Simple Text / Story Block) — same shape as the primary
+   button but visually secondary, so it never competes with the main
+   forward action. */
+.pv-back-btn{background:transparent;color:var(--pv-text-dim);text-align:center;}
+.pv-back-btn:hover{color:var(--pv-text);}
 .pv-answer-input{width:100%;padding:9px 10px;border-radius:var(--pv-radius);border:var(--pv-border-width) var(--pv-border-style) var(--line);background:var(--pv-bg);color:var(--pv-text);font-family:var(--pv-font-mono);font-size:14px;margin:10px 0;}
 .pv-feedback{font-size:12.5px;margin-top:6px;}
 .pv-feedback.correct{color:var(--pv-ok);}

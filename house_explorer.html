@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>4-Room House — First Person Walkthrough</title>
+<style>
+  html,body{
+    margin:0; padding:0; height:100%; overflow:hidden;
+    background:#111; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    color:#eee;
+  }
+  #app{ position:relative; width:100vw; height:100vh; }
+  canvas{ display:block; }
+
+  #hud{
+    position:absolute; top:0; left:0; width:100%;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:14px 16px; box-sizing:border-box; pointer-events:none; z-index:10;
+  }
+  #roomBanner{
+    background:rgba(0,0,0,0.55); padding:6px 16px; border-radius:20px;
+    font-size:14px; font-weight:600; letter-spacing:0.5px;
+  }
+  #hint{
+    background:rgba(0,0,0,0.5); padding:6px 12px; border-radius:8px;
+    font-size:12px; color:#ccc; max-width:260px; text-align:right;
+  }
+
+  #crosshair{
+    position:absolute; top:50%; left:50%; width:6px; height:6px;
+    margin:-3px 0 0 -3px; border-radius:50%; background:rgba(255,255,255,0.8);
+    z-index:10; pointer-events:none;
+  }
+
+  #overlay{
+    position:absolute; inset:0; background:rgba(10,10,10,0.75);
+    display:flex; align-items:center; justify-content:center; z-index:30;
+    text-align:center; cursor:pointer;
+  }
+  #overlay .box{
+    background:rgba(20,20,20,0.9); padding:24px 30px; border-radius:12px;
+    max-width:360px; border:1px solid #333;
+  }
+  #overlay h2{ margin:0 0 8px; font-size:17px; }
+  #overlay p{ margin:4px 0; font-size:13px; color:#bbb; line-height:1.5; }
+  #overlay.hidden{ display:none; }
+
+  #touchControls{
+    position:absolute; bottom:18px; left:0; width:100%;
+    display:none; justify-content:center; gap:14px; z-index:20;
+  }
+  .tbtn{
+    width:56px; height:56px; border-radius:50%;
+    background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.25);
+    color:#fff; font-size:22px; display:flex; align-items:center; justify-content:center;
+    user-select:none; touch-action:none;
+  }
+  @media (hover:none) and (pointer:coarse){
+    #touchControls{ display:flex; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div id="roomBanner">Living Room</div>
+    <div id="hint">Mouse: look around · WASD: move · Arrow keys: move/turn · Esc: release cursor</div>
+  </div>
+  <div id="crosshair"></div>
+
+  <div id="overlay">
+    <div class="box">
+      <h2>Walk through the house</h2>
+      <p>Click anywhere to look around with your mouse.</p>
+      <p>W / A / S / D or arrow keys to move. Walk through the doorways to pass between rooms.</p>
+      <p>On touch devices, drag the screen to look and use the on-screen buttons to move.</p>
+      <p style="margin-top:10px; color:#e0b060;">Click to begin</p>
+    </div>
+  </div>
+
+  <div id="touchControls">
+    <div class="tbtn" id="tLeft">&#8634;</div>
+    <div class="tbtn" id="tBack">&#9660;</div>
+    <div class="tbtn" id="tFwd">&#9650;</div>
+    <div class="tbtn" id="tRight">&#8635;</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  const app = document.getElementById('app');
+  const overlay = document.getElementById('overlay');
+  const banner = document.getElementById('roomBanner');
+
+  // ---------- Scene setup ----------
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a1a);
+
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.05, 100);
+  const EYE_H = 1.6;
+
+  const renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  app.insertBefore(renderer.domElement, app.firstChild);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ---------- Layout constants (meters) ----------
+  // Footprint: 16m x 12m, split into 4 rooms of 8m x 6m.
+  // Living TL, Kitchen TR, Bedroom BL, Bathroom BR
+  const WALL_X = 8, WALL_Z = 6;
+  const WALL_T = 0.2, WALL_H = 3;
+  const HOUSE_W = 16, HOUSE_D = 12;
+
+  const gapLK   = { z1:2.4, z2:3.8 };   // living <-> kitchen (on x=8 wall)
+  const gapBB   = { z1:8.4, z2:9.8 };   // bedroom <-> bathroom (on x=8 wall)
+  const gapLBed = { x1:3.0, x2:4.6 };   // living <-> bedroom (on z=6 wall)
+  const gapKBath= { x1:11.4,x2:13.0 };  // kitchen <-> bathroom (on z=6 wall)
+
+  // ---------- Materials ----------
+  const floorMats = {
+    living:   new THREE.MeshStandardMaterial({ color:0xe8d9c0, roughness:0.9 }),
+    kitchen:  new THREE.MeshStandardMaterial({ color:0xd2e2c8, roughness:0.9 }),
+    bedroom:  new THREE.MeshStandardMaterial({ color:0xd6dff0, roughness:0.9 }),
+    bathroom: new THREE.MeshStandardMaterial({ color:0xe6d3ea, roughness:0.9 }),
+  };
+  const wallMaterial = new THREE.MeshStandardMaterial({ color:0xcfc3ad, roughness:0.95 });
+  const ceilingMat = new THREE.MeshStandardMaterial({ color:0xf5f2ea, roughness:1, side:THREE.DoubleSide });
+
+  // ---------- Floors ----------
+  function addFloor(mat, cx, cz, sx, sz){
+    const geo = new THREE.PlaneGeometry(sx, sz);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI/2;
+    mesh.position.set(cx, 0, cz);
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+  addFloor(floorMats.living,   4,  3,  8, 6);
+  addFloor(floorMats.kitchen,  12, 3,  8, 6);
+  addFloor(floorMats.bedroom,  4,  9,  8, 6);
+  addFloor(floorMats.bathroom, 12, 9,  8, 6);
+
+  // Ceiling
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(HOUSE_W, HOUSE_D), ceilingMat);
+  ceiling.rotation.x = Math.PI/2;
+  ceiling.position.set(HOUSE_W/2, WALL_H, HOUSE_D/2);
+  scene.add(ceiling);
+
+  // ---------- Walls ----------
+  function addWallBox(cx, cz, sx, sz, h){
+    const geo = new THREE.BoxGeometry(sx, h, sz);
+    const mesh = new THREE.Mesh(geo, wallMaterial);
+    mesh.position.set(cx, h/2, cz);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+
+  // Outer perimeter
+  addWallBox(HOUSE_W/2, 0, HOUSE_W, WALL_T, WALL_H);          // north (z=0)
+  addWallBox(HOUSE_W/2, HOUSE_D, HOUSE_W, WALL_T, WALL_H);    // south (z=12)
+  addWallBox(0, HOUSE_D/2, WALL_T, HOUSE_D, WALL_H);          // west (x=0)
+  addWallBox(HOUSE_W, HOUSE_D/2, WALL_T, HOUSE_D, WALL_H);    // east (x=16)
+
+  // Interior vertical wall at x=8, with two door gaps
+  addWallBox(WALL_X, (0+gapLK.z1)/2, WALL_T, gapLK.z1-0, WALL_H);
+  addWallBox(WALL_X, (gapLK.z2+gapBB.z1)/2, WALL_T, gapBB.z1-gapLK.z2, WALL_H);
+  addWallBox(WALL_X, (gapBB.z2+HOUSE_D)/2, WALL_T, HOUSE_D-gapBB.z2, WALL_H);
+
+  // Interior horizontal wall at z=6, with two door gaps
+  addWallBox((0+gapLBed.x1)/2, WALL_Z, gapLBed.x1-0, WALL_T, WALL_H);
+  addWallBox((gapLBed.x2+gapKBath.x1)/2, WALL_Z, gapKBath.x1-gapLBed.x2, WALL_T, WALL_H);
+  addWallBox((gapKBath.x2+HOUSE_W)/2, WALL_Z, HOUSE_W-gapKBath.x2, WALL_T, WALL_H);
+
+  // ---------- Furniture ----------
+  function box(color, cx, cy, cz, sx, sy, sz, roughness){
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: roughness ?? 0.8 });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+    mesh.position.set(cx, cy, cz);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  }
+  function cylinder(color, cx, cy, cz, r, h){
+    const mat = new THREE.MeshStandardMaterial({ color, roughness:0.6 });
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 24), mat);
+    mesh.position.set(cx, cy, cz);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  }
+
+  // Living room (x:0-8, z:0-6)
+  box(0xa9744a, 1.6, 0.35, 4.8, 2.6, 0.7, 1.0);   // sofa
+  box(0x7a5230, 3.0, 0.25, 3.6, 1.2, 0.5, 0.8);   // coffee table
+  box(0x333333, 5.6, 1.1, 0.25, 1.6, 0.9, 0.1);   // TV
+  box(0x555555, 5.6, 0.5, 0.6, 1.4, 0.9, 0.4);    // TV stand
+
+  // Kitchen (x:8-16, z:0-6)
+  box(0x8b8b8b, 11.5, 0.5, 0.6, 3.2, 0.9, 0.6);   // counter
+  box(0x7a5230, 13.5, 0.4, 4.4, 1.6, 0.75, 1.0);  // dining table
+  box(0xeeeeee, 15.4, 0.6, 0.7, 0.8, 1.2, 0.7);   // fridge
+
+  // Bedroom (x:0-8, z:6-12)
+  box(0x9fb3d6, 1.8, 0.3, 8.0, 2.0, 0.6, 2.6);    // bed base
+  box(0xffffff, 1.8, 0.65, 7.1, 2.0, 0.15, 0.5);  // pillow area
+  box(0x7a5230, 5.6, 0.35, 10.8, 1.4, 0.7, 0.6);  // dresser
+
+  // Bathroom (x:8-16, z:6-12)
+  cylinder(0xffffff, 9.6, 0.3, 10.6, 0.9, 0.6);   // tub (round-ish)
+  box(0xffffff, 9.6, 0.3, 10.6, 1.6, 0.6, 1.0);   // tub (box overlay for shape)
+  cylinder(0xf0f0f0, 14.6, 0.45, 11.3, 0.35, 0.15); // sink basin
+  box(0xdddddd, 14.6, 0.35, 11.3, 0.7, 0.7, 0.5);  // sink cabinet
+
+  // ---------- Lighting ----------
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 0.55));
+  const amb = new THREE.AmbientLight(0xffffff, 0.25);
+  scene.add(amb);
+
+  function roomLight(cx, cz, color){
+    const light = new THREE.PointLight(color ?? 0xfff2d8, 0.9, 12, 2);
+    light.position.set(cx, WALL_H - 0.3, cz);
+    light.castShadow = true;
+    scene.add(light);
+    const bulb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 12, 12),
+      new THREE.MeshBasicMaterial({ color:0xfff6df })
+    );
+    bulb.position.copy(light.position);
+    scene.add(bulb);
+  }
+  roomLight(4, 3);
+  roomLight(12, 3);
+  roomLight(4, 9);
+  roomLight(12, 9);
+
+  // ---------- Player state ----------
+  let px = 4, pz = 3;      // start in living room
+  let yaw = 0, pitch = 0;
+  const R = 0.35;           // player collision radius
+  const MOVE_SPEED = 4;     // m/s
+  const TURN_SPEED = 2.0;   // rad/s (keyboard turning)
+  const MOUSE_SENS = 0.0025;
+
+  camera.position.set(px, EYE_H, pz);
+
+  function roomName(x, z){
+    if(x < WALL_X && z < WALL_Z) return 'Living Room';
+    if(x >= WALL_X && z < WALL_Z) return 'Kitchen';
+    if(x < WALL_X && z >= WALL_Z) return 'Bedroom';
+    return 'Bathroom';
+  }
+
+  function inRange(v, a, b){ return v > a && v < b; }
+
+  function resolveMove(nx, nz){
+    // outer bounds
+    nx = Math.max(R, Math.min(HOUSE_W - R, nx));
+    nz = Math.max(R, Math.min(HOUSE_D - R, nz));
+
+    // crossing vertical wall at x = WALL_X
+    const crossesV = (px < WALL_X && nx >= WALL_X) || (px >= WALL_X && nx < WALL_X);
+    if(crossesV){
+      const zForCheck = nz;
+      const throughGap =
+        inRange(zForCheck, gapLK.z1 + R*0.3, gapLK.z2 - R*0.3) ||
+        inRange(zForCheck, gapBB.z1 + R*0.3, gapBB.z2 - R*0.3);
+      if(!throughGap) nx = px;
+    }
+
+    // crossing horizontal wall at z = WALL_Z
+    const crossesH = (pz < WALL_Z && nz >= WALL_Z) || (pz >= WALL_Z && nz < WALL_Z);
+    if(crossesH){
+      const xForCheck = nx;
+      const throughGap =
+        inRange(xForCheck, gapLBed.x1 + R*0.3, gapLBed.x2 - R*0.3) ||
+        inRange(xForCheck, gapKBath.x1 + R*0.3, gapKBath.x2 - R*0.3);
+      if(!throughGap) nz = pz;
+    }
+
+    return { nx, nz };
+  }
+
+  // ---------- Input ----------
+  const keys = {};
+  document.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+  document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+  let touchMove = { fwd:0, turn:0 };
+
+  function bindTouchBtn(id, onDown, onUp){
+    const el = document.getElementById(id);
+    const down = (e)=>{ e.preventDefault(); onDown(); };
+    const up = (e)=>{ e.preventDefault(); onUp(); };
+    el.addEventListener('touchstart', down);
+    el.addEventListener('touchend', up);
+    el.addEventListener('touchcancel', up);
+    el.addEventListener('mousedown', down);
+    el.addEventListener('mouseup', up);
+    el.addEventListener('mouseleave', up);
+  }
+  bindTouchBtn('tFwd',  ()=>touchMove.fwd=1,  ()=>{ if(touchMove.fwd===1) touchMove.fwd=0; });
+  bindTouchBtn('tBack', ()=>touchMove.fwd=-1, ()=>{ if(touchMove.fwd===-1) touchMove.fwd=0; });
+  bindTouchBtn('tLeft', ()=>touchMove.turn=-1,()=>{ if(touchMove.turn===-1) touchMove.turn=0; });
+  bindTouchBtn('tRight',()=>touchMove.turn=1, ()=>{ if(touchMove.turn===1) touchMove.turn=0; });
+
+  // Pointer lock (desktop mouse look)
+  const canvas = renderer.domElement;
+  overlay.addEventListener('click', () => {
+    canvas.requestPointerLock ? canvas.requestPointerLock() : null;
+    overlay.classList.add('hidden');
+  });
+  document.addEventListener('pointerlockchange', () => {
+    if(document.pointerLockElement !== canvas){
+      // released — show overlay again only if user pressed Esc deliberately is fine either way
+    }
+  });
+  document.addEventListener('mousemove', (e) => {
+    if(document.pointerLockElement === canvas){
+      yaw   -= e.movementX * MOUSE_SENS;
+      pitch -= e.movementY * MOUSE_SENS;
+      pitch = Math.max(-1.3, Math.min(1.3, pitch));
+    }
+  });
+
+  // Touch drag look (mobile — drag anywhere on the canvas)
+  let lastTouch = null;
+  canvas.addEventListener('touchstart', (e) => {
+    if(e.touches.length === 1) lastTouch = { x:e.touches[0].clientX, y:e.touches[0].clientY };
+  });
+  canvas.addEventListener('touchmove', (e) => {
+    if(e.touches.length === 1 && lastTouch){
+      const t = e.touches[0];
+      const dx = t.clientX - lastTouch.x;
+      const dy = t.clientY - lastTouch.y;
+      yaw   -= dx * MOUSE_SENS * 1.4;
+      pitch -= dy * MOUSE_SENS * 1.4;
+      pitch = Math.max(-1.3, Math.min(1.3, pitch));
+      lastTouch = { x:t.clientX, y:t.clientY };
+    }
+    e.preventDefault();
+  }, { passive:false });
+  canvas.addEventListener('touchend', () => { lastTouch = null; });
+
+  // click to (re)start pointer lock if overlay hidden and user clicks canvas without lock (desktop)
+  canvas.addEventListener('click', () => {
+    if(canvas.requestPointerLock && document.pointerLockElement !== canvas && !('ontouchstart' in window)){
+      canvas.requestPointerLock();
+    }
+  });
+
+  // ---------- Main loop ----------
+  const clock = new THREE.Clock();
+
+  function update(){
+    const dt = Math.min(clock.getDelta(), 0.05);
+
+    // keyboard turning (arrow left/right) — always available
+    if(keys['arrowleft']) yaw += TURN_SPEED * dt;
+    if(keys['arrowright']) yaw -= TURN_SPEED * dt;
+
+    // touch turning
+    if(touchMove.turn !== 0) yaw -= touchMove.turn * TURN_SPEED * dt;
+
+    // movement input
+    let fwdInput = 0, strafeInput = 0;
+    if(keys['w'] || keys['arrowup']) fwdInput += 1;
+    if(keys['s'] || keys['arrowdown']) fwdInput -= 1;
+    if(keys['a']) strafeInput -= 1;
+    if(keys['d']) strafeInput += 1;
+    if(touchMove.fwd !== 0) fwdInput += touchMove.fwd;
+
+    if(fwdInput !== 0 || strafeInput !== 0){
+      const len = Math.hypot(fwdInput, strafeInput) || 1;
+      const fN = fwdInput/len, sN = strafeInput/len;
+
+      const dirX = Math.sin(yaw), dirZ = Math.cos(yaw);
+      const rightX = Math.sin(yaw + Math.PI/2), rightZ = Math.cos(yaw + Math.PI/2);
+
+      const moveX = (dirX*fN + rightX*sN) * MOVE_SPEED * dt;
+      const moveZ = (dirZ*fN + rightZ*sN) * MOVE_SPEED * dt;
+
+      // resolve axis-by-axis for wall sliding
+      let r1 = resolveMove(px + moveX, pz);
+      px = r1.nx;
+      let r2 = resolveMove(px, pz + moveZ);
+      pz = r2.nz;
+    }
+
+    camera.position.set(px, EYE_H, pz);
+    camera.rotation.set(0,0,0);
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+
+    const rn = roomName(px, pz);
+    if(banner.textContent !== rn) banner.textContent = rn;
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(update);
+  }
+
+  update();
+})();
+</script>
+</body>
+</html>

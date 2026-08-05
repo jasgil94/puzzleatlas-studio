@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Crazy Wall</title>
+<style>
+  :root{
+    --pin-red:#c0392b;
+    --pin-blue:#2b5fc0;
+    --pin-yellow:#d4ac0d;
+    --pin-green:#2e8b57;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+    overflow:hidden;
+    background:#1b140d;
+  }
+
+  /* ---------- Toolbar ---------- */
+  #toolbar{
+    position:fixed; top:0; left:0; right:0; height:58px; z-index:1000;
+    background:linear-gradient(#3a2a1c,#2a1d13);
+    border-bottom:3px solid #17110a;
+    display:flex; align-items:center; gap:10px; padding:0 14px;
+    box-shadow:0 2px 8px rgba(0,0,0,.5);
+  }
+  #toolbar button{
+    background:#5a4632; color:#f2e9d8; border:1px solid #24190f;
+    padding:8px 14px; border-radius:5px; cursor:pointer; font-size:13px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  #toolbar button:hover{ background:#6d5740; }
+  #toolbar button.active{ background:#8a6a35; color:#fff; box-shadow:0 0 0 2px #f2c14e inset; }
+  #toolbar .sep{ width:1px; height:30px; background:#5a4632; margin:0 4px; }
+  .swatch{
+    width:22px; height:22px; border-radius:50%; cursor:pointer;
+    border:2px solid rgba(255,255,255,.25); box-shadow:0 1px 3px rgba(0,0,0,.6);
+  }
+  .swatch.selected{ box-shadow:0 0 0 2px #fff, 0 1px 3px rgba(0,0,0,.6); }
+  #help{ color:#c9b998; font-size:12px; margin-left:auto; max-width:340px; line-height:1.3; }
+
+  /* ---------- Board ---------- */
+  #board-wrapper{
+    position:absolute; top:58px; left:0; right:0; bottom:0;
+    overflow:auto;
+  }
+  #board{
+    position:relative;
+    width:3000px; height:2000px;
+    background-color:#b98a53;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(0,0,0,.07) 0, transparent 3px),
+      radial-gradient(circle at 60% 10%, rgba(0,0,0,.06) 0, transparent 2px),
+      radial-gradient(circle at 80% 70%, rgba(0,0,0,.08) 0, transparent 3px),
+      radial-gradient(circle at 35% 80%, rgba(0,0,0,.06) 0, transparent 2px),
+      radial-gradient(circle at 90% 40%, rgba(0,0,0,.07) 0, transparent 3px),
+      radial-gradient(circle at 10% 65%, rgba(0,0,0,.05) 0, transparent 2px),
+      repeating-linear-gradient(0deg, rgba(0,0,0,.02) 0 2px, transparent 2px 4px);
+    background-size: 60px 60px, 90px 90px, 70px 70px, 100px 100px, 80px 80px, 55px 55px, auto;
+    box-shadow: inset 0 0 120px rgba(0,0,0,.45);
+    cursor:default;
+  }
+  #board.connect-mode{ cursor:crosshair; }
+
+  svg#strings-svg{
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    pointer-events:none;
+    z-index:2;
+  }
+  svg#strings-svg path.string-hit{ pointer-events:stroke; cursor:pointer; }
+
+  /* ---------- Items ---------- */
+  .item{
+    position:absolute;
+    width:190px;
+    background:#fbfaf6;
+    padding:10px 10px 14px 10px;
+    box-shadow:2px 4px 10px rgba(0,0,0,.45);
+    cursor:grab;
+    user-select:none;
+    z-index:1;
+  }
+  .item.dragging{ cursor:grabbing; box-shadow:4px 10px 22px rgba(0,0,0,.6); }
+  .item.selected-pin{ outline:3px dashed #f2c14e; outline-offset:4px; }
+  .item.note{ padding-bottom:14px; }
+
+  .item .pin{
+    position:absolute; top:-11px; left:50%; transform:translateX(-50%);
+    width:16px; height:16px; border-radius:50%;
+    box-shadow:0 2px 4px rgba(0,0,0,.6), inset -2px -2px 3px rgba(0,0,0,.35), inset 2px 2px 3px rgba(255,255,255,.5);
+    z-index:5;
+  }
+  .item .photo-area{
+    width:100%; height:170px; object-fit:cover; display:block;
+    background:#ddd; pointer-events:none;
+  }
+  .item .caption{
+    margin-top:10px; min-height:26px; text-align:center;
+    font-family:'Segoe Print','Bradley Hand',cursive; font-size:15px; color:#222;
+    outline:none; cursor:text; word-wrap:break-word;
+  }
+  .item .caption:empty:before{
+    content:attr(data-placeholder); color:#999; font-style:italic;
+  }
+  .item.note{ min-height:120px; }
+  .item.note .caption{ min-height:90px; text-align:left; margin-top:0; }
+
+  .item .delete-btn{
+    position:absolute; top:-9px; right:-9px; width:20px; height:20px;
+    border-radius:50%; background:#8b1a1a; color:#fff; border:1px solid #5a0f0f;
+    font-size:13px; line-height:18px; text-align:center; cursor:pointer;
+    opacity:0; transition:opacity .15s; z-index:6;
+  }
+  .item:hover .delete-btn{ opacity:1; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button id="btnAddPhoto">+ Photo</button>
+  <button id="btnAddNote">+ Note</button>
+  <div class="sep"></div>
+  <button id="btnConnect">🧵 Connect</button>
+  <span style="color:#c9b998;font-size:12px;">String:</span>
+  <div class="swatch selected" data-color="#c0392b" style="background:#c0392b"></div>
+  <div class="swatch" data-color="#2b5fc0" style="background:#2b5fc0"></div>
+  <div class="swatch" data-color="#d4ac0d" style="background:#d4ac0d"></div>
+  <div class="swatch" data-color="#2e8b57" style="background:#2e8b57"></div>
+  <div class="swatch" data-color="#f2f2f2" style="background:#f2f2f2"></div>
+  <div class="sep"></div>
+  <button id="btnClear">Clear board</button>
+  <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
+  <div id="help">Click <b>Connect</b>, then click two pins to string them together. Click a string to remove it. Drag items to reposition. Your board auto-saves.</div>
+</div>
+
+<div id="board-wrapper">
+  <div id="board">
+    <svg id="strings-svg"></svg>
+  </div>
+</div>
+
+<script>
+(function(){
+  const STORAGE_KEY = 'crazywall_state_v1';
+  const board = document.getElementById('board');
+  const boardWrapper = document.getElementById('board-wrapper');
+  const svg = document.getElementById('strings-svg');
+  const pinColors = ['var(--pin-red)','var(--pin-blue)','var(--pin-yellow)','var(--pin-green)'];
+  const pinColorHex = { 'var(--pin-red)':'#c0392b','var(--pin-blue)':'#2b5fc0','var(--pin-yellow)':'#d4ac0d','var(--pin-green)':'#2e8b57' };
+
+  let state = { items: [], connections: [], nextId: 1 };
+  let connectMode = false;
+  let pendingFrom = null;
+  let currentStringColor = '#c0392b';
+
+  // ---------- persistence ----------
+  function save(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    catch(e){ console.warn('Could not save board (storage may be full):', e); }
+  }
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){ state = JSON.parse(raw); }
+    }catch(e){ console.warn('Could not load saved board', e); }
+  }
+
+  // ---------- helpers ----------
+  function uid(){ return state.nextId++; }
+  function randRange(a,b){ return a + Math.random()*(b-a); }
+
+  function visibleSpot(){
+    const x = boardWrapper.scrollLeft + randRange(80, Math.max(160, boardWrapper.clientWidth-260));
+    const y = boardWrapper.scrollTop + randRange(80, Math.max(160, boardWrapper.clientHeight-260));
+    return {x, y};
+  }
+
+  // ---------- item creation ----------
+  function addPhotoItem(dataUrl){
+    const spot = visibleSpot();
+    const item = {
+      id: uid(), type:'photo', img: dataUrl, text:'',
+      x: spot.x, y: spot.y,
+      rot: randRange(-7,7),
+      pin: pinColors[Math.floor(Math.random()*pinColors.length)]
+    };
+    state.items.push(item);
+    renderAll(); save();
+  }
+
+  function addNoteItem(){
+    const spot = visibleSpot();
+    const item = {
+      id: uid(), type:'note', img:null, text:'',
+      x: spot.x, y: spot.y,
+      rot: randRange(-6,6),
+      pin: pinColors[Math.floor(Math.random()*pinColors.length)]
+    };
+    state.items.push(item);
+    renderAll(); save();
+    // focus caption for immediate typing
+    setTimeout(()=>{
+      const el = board.querySelector(`.item[data-id="${item.id}"] .caption`);
+      if(el){ el.focus(); }
+    }, 0);
+  }
+
+  function deleteItem(id){
+    state.items = state.items.filter(it=>it.id!==id);
+    state.connections = state.connections.filter(c=>c.from!==id && c.to!==id);
+    renderAll(); save();
+  }
+
+  function deleteConnection(id){
+    state.connections = state.connections.filter(c=>c.id!==id);
+    renderStrings(); save();
+  }
+
+  // ---------- dragging ----------
+  let dragState = null;
+  function startDrag(e, item, el){
+    if(connectMode) return;
+    e.preventDefault();
+    const rect = board.getBoundingClientRect();
+    dragState = {
+      id: item.id,
+      offsetX: (e.clientX - rect.left) - item.x,
+      offsetY: (e.clientY - rect.top) - item.y
+    };
+    el.classList.add('dragging');
+    document.addEventListener('pointermove', onDragMove);
+    document.addEventListener('pointerup', onDragEnd);
+  }
+  function onDragMove(e){
+    if(!dragState) return;
+    const rect = board.getBoundingClientRect();
+    const item = state.items.find(it=>it.id===dragState.id);
+    if(!item) return;
+    item.x = (e.clientX - rect.left) - dragState.offsetX;
+    item.y = (e.clientY - rect.top) - dragState.offsetY;
+    const el = board.querySelector(`.item[data-id="${item.id}"]`);
+    if(el){ el.style.left = item.x+'px'; el.style.top = item.y+'px'; }
+    renderStrings();
+  }
+  function onDragEnd(){
+    if(dragState){
+      const el = board.querySelector(`.item[data-id="${dragState.id}"]`);
+      if(el) el.classList.remove('dragging');
+    }
+    dragState = null;
+    document.removeEventListener('pointermove', onDragMove);
+    document.removeEventListener('pointerup', onDragEnd);
+    save();
+  }
+
+  // ---------- connect mode ----------
+  function handlePinClick(item, el){
+    if(!connectMode) return;
+    if(pendingFrom === null){
+      pendingFrom = item.id;
+      el.classList.add('selected-pin');
+    } else if(pendingFrom !== item.id){
+      const conn = { id: uid(), from: pendingFrom, to: item.id, color: currentStringColor };
+      state.connections.push(conn);
+      const prevEl = board.querySelector(`.item[data-id="${pendingFrom}"]`);
+      if(prevEl) prevEl.classList.remove('selected-pin');
+      pendingFrom = null;
+      renderStrings(); save();
+    } else {
+      // clicked same pin twice - deselect
+      el.classList.remove('selected-pin');
+      pendingFrom = null;
+    }
+  }
+
+  // ---------- render ----------
+  function createItemElement(item){
+    const el = document.createElement('div');
+    el.className = 'item ' + (item.type==='note' ? 'note' : '');
+    el.dataset.id = item.id;
+    el.style.left = item.x + 'px';
+    el.style.top = item.y + 'px';
+    el.style.transform = `rotate(${item.rot}deg)`;
+
+    const pin = document.createElement('div');
+    pin.className = 'pin';
+    pin.style.background = pinColorHex[item.pin] || '#c0392b';
+    el.appendChild(pin);
+
+    const del = document.createElement('div');
+    del.className = 'delete-btn';
+    del.textContent = '×';
+    del.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });
+    del.addEventListener('click', (e)=>{ e.stopPropagation(); deleteItem(item.id); });
+    el.appendChild(del);
+
+    if(item.type === 'photo'){
+      const img = document.createElement('img');
+      img.className = 'photo-area';
+      img.src = item.img;
+      img.draggable = false;
+      el.appendChild(img);
+    }
+
+    const caption = document.createElement('div');
+    caption.className = 'caption';
+    caption.contentEditable = 'true';
+    caption.dataset.placeholder = item.type==='note' ? 'Write your notes here...' : 'Write a caption...';
+    caption.innerText = item.text || '';
+    caption.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });
+    caption.addEventListener('click', (e)=>{ e.stopPropagation(); });
+    caption.addEventListener('input', ()=>{
+      item.text = caption.innerText;
+      clearTimeout(caption._t);
+      caption._t = setTimeout(save, 400);
+    });
+    caption.addEventListener('blur', save);
+    el.appendChild(caption);
+
+    el.addEventListener('pointerdown', (e)=>{
+      if(e.target === del || e.target === caption) return;
+      startDrag(e, item, el);
+    });
+    el.addEventListener('click', (e)=>{
+      if(connectMode){ handlePinClick(item, el); }
+    });
+
+    return el;
+  }
+
+  function renderAll(){
+    board.querySelectorAll('.item').forEach(n=>n.remove());
+    state.items.forEach(item=>{
+      board.appendChild(createItemElement(item));
+    });
+    renderStrings();
+  }
+
+  function pinAnchor(item){
+    // approximate on-screen top-center pin position within the board, accounting for rotation is skipped for simplicity
+    return { x: item.x + 95, y: item.y };
+  }
+
+  function renderStrings(){
+    svg.innerHTML = '';
+    state.connections.forEach(conn=>{
+      const a = state.items.find(it=>it.id===conn.from);
+      const b = state.items.find(it=>it.id===conn.to);
+      if(!a || !b) return;
+      const p1 = pinAnchor(a);
+      const p2 = pinAnchor(b);
+      const mx = (p1.x + p2.x)/2;
+      const my = (p1.y + p2.y)/2 + Math.min(60, Math.hypot(p2.x-p1.x, p2.y-p1.y)*0.12) + 20;
+      const d = `M ${p1.x} ${p1.y} Q ${mx} ${my} ${p2.x} ${p2.y}`;
+
+      const hit = document.createElementNS('http://www.w3.org/2000/svg','path');
+      hit.setAttribute('d', d);
+      hit.setAttribute('class','string-hit');
+      hit.setAttribute('stroke','transparent');
+      hit.setAttribute('stroke-width','14');
+      hit.setAttribute('fill','none');
+      hit.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        if(!connectMode) deleteConnection(conn.id);
+      });
+      svg.appendChild(hit);
+
+      const visible = document.createElementNS('http://www.w3.org/2000/svg','path');
+      visible.setAttribute('d', d);
+      visible.setAttribute('stroke', conn.color);
+      visible.setAttribute('stroke-width','2.2');
+      visible.setAttribute('fill','none');
+      visible.setAttribute('opacity','0.85');
+      svg.appendChild(visible);
+    });
+  }
+
+  // ---------- toolbar wiring ----------
+  document.getElementById('btnAddPhoto').addEventListener('click', ()=>{
+    document.getElementById('photoInput').click();
+  });
+  document.getElementById('photoInput').addEventListener('change', (e)=>{
+    const files = Array.from(e.target.files || []);
+    files.forEach(file=>{
+      const reader = new FileReader();
+      reader.onload = (ev)=> addPhotoItem(ev.target.result);
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  });
+  document.getElementById('btnAddNote').addEventListener('click', addNoteItem);
+
+  const connectBtn = document.getElementById('btnConnect');
+  connectBtn.addEventListener('click', ()=>{
+    connectMode = !connectMode;
+    connectBtn.classList.toggle('active', connectMode);
+    board.classList.toggle('connect-mode', connectMode);
+    if(!connectMode && pendingFrom !== null){
+      const prevEl = board.querySelector(`.item[data-id="${pendingFrom}"]`);
+      if(prevEl) prevEl.classList.remove('selected-pin');
+      pendingFrom = null;
+    }
+  });
+
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape' && pendingFrom !== null){
+      const prevEl = board.querySelector(`.item[data-id="${pendingFrom}"]`);
+      if(prevEl) prevEl.classList.remove('selected-pin');
+      pendingFrom = null;
+    }
+  });
+
+  document.querySelectorAll('.swatch').forEach(sw=>{
+    sw.addEventListener('click', ()=>{
+      document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('selected'));
+      sw.classList.add('selected');
+      currentStringColor = sw.dataset.color;
+    });
+  });
+
+  document.getElementById('btnClear').addEventListener('click', ()=>{
+    if(confirm('Clear the entire board? This cannot be undone.')){
+      state = { items: [], connections: [], nextId: 1 };
+      renderAll(); save();
+    }
+  });
+
+  // ---------- init ----------
+  load();
+  renderAll();
+})();
+</script>
+</body>
+</html>

@@ -58,13 +58,18 @@ var FAMILIES = {
 
 var NODE_TYPES = {
   scene: {
-    family: "narrative", label: "Scene / Text Reveal", icon: "📜",
+    family: "narrative", label: "Simple Text", icon: "📜",
     defaultTitle: "New Scene",
     // mediaUrl/mediaType are optional on every node type's content (see
     // wrapWithMedia below) — when set, the player screen shows the media
     // full-bleed in the background with the node's content pinned to the
     // bottom third on top of it.
-    defaultContent: function () { return { body: "Write the narrative text the player sees here.", mediaUrl: "", mediaType: "image" }; },
+    // showBackButton: when true, a "← Back" button appears alongside the
+    // Continue button, letting the player re-read the previous screen. Only
+    // meaningful (and only exposed in the Studio inspector) when the node
+    // directly upstream of this one is also a Simple Text node — see
+    // previousConnectingNode below and buildTypeSpecificFields in app.js.
+    defaultContent: function () { return { body: "Write the narrative text the player sees here.", mediaUrl: "", mediaType: "image", showBackButton: false }; },
     summary: function (c) { return c.body ? c.body.slice(0, 60) : ""; }
   },
   choice: {
@@ -77,6 +82,28 @@ var NODE_TYPES = {
       ] };
     },
     summary: function (c) { return (c.options || []).map(function (o) { return o.label; }).join(" / "); }
+  },
+  storyBlock: {
+    family: "narrative", label: "Story Block", icon: "📖",
+    defaultTitle: "New Story Block",
+    // title: creator-only organizational label, never shown to the player —
+    // distinct from the node's own Basics > Title field (n.title), which can
+    // surface to the player in the Open Leads list when several nodes are
+    // available at once. body/mediaUrl/mediaType behave exactly like Simple
+    // Text. buttons: an ordered (left-to-right) list of completion buttons —
+    // each is either kind "connection" (routes via an outgoing connection
+    // from this node, chosen in the Studio inspector's Completion tab — see
+    // buildStoryBlockButtonsEditor in app.js) or kind "back" (pure
+    // navigation, like Simple Text's back button — no connection involved).
+    // A single "Back" button is included by default and can be deleted.
+    defaultContent: function () {
+      return {
+        title: "", body: "Write the narrative text the player sees here.",
+        mediaUrl: "", mediaType: "image",
+        buttons: [{ id: uid("btn"), label: "Back", kind: "back" }]
+      };
+    },
+    summary: function (c) { return c.body ? c.body.slice(0, 60) : ""; }
   },
   answerEntry: {
     family: "puzzle", label: "Answer Entry (text match)", icon: "🔑",
@@ -364,7 +391,7 @@ var CONDITION_TYPES = {
   nodeComplete:       { label: "Node is complete" },
   allComplete:        { label: "All of these nodes are complete" },
   anyNComplete:       { label: "Any N of these nodes are complete" },
-  choiceSelected:     { label: "A specific choice option was selected" },
+  choiceSelected:     { label: "A specific choice option or story block button was selected" },
   variableEquals:     { label: "Variable equals value" },
   variableAtLeast:    { label: "Variable is at least value" },
   itemHeld:           { label: "Player holds item" }
@@ -572,6 +599,19 @@ function familyOf(nodeType) { return (NODE_TYPES[nodeType] || {}).family || "stu
 function nodeTitle(hunt, id) { var n = (hunt.nodes || []).find(function (x) { return x.id === id; }); return n ? n.title : "(none)"; }
 function varName(hunt, id) { var v = (hunt.variables || []).find(function (x) { return x.id === id; }); return v ? v.name : "(unset)"; }
 function itemName(hunt, id) { var it = (hunt.items || []).find(function (x) { return x.id === id; }); return it ? it.name : "(unset)"; }
+
+// The node directly upstream of `nodeId`, via whichever incoming connection
+// comes first in hunt.connections — used by Simple Text's and Story Block's
+// Back button (both to decide, in the Studio inspector, whether Back makes
+// sense to offer, and at runtime to know which node to peek back to). A
+// node can have several incoming connections (e.g. a convergence); this
+// deliberately just picks one deterministic "previous" node rather than
+// modeling branching history.
+function previousConnectingNode(hunt, nodeId) {
+  var conn = (hunt.connections || []).find(function (c) { return c.targetId === nodeId; });
+  if (!conn) return null;
+  return (hunt.nodes || []).find(function (n) { return n.id === conn.sourceId; }) || null;
+}
 
 /* ---------------------------------------------------------------------
    Validation engine — structural graph checks over the canonical model.
@@ -980,7 +1020,7 @@ function pv_action_revealHint(session, hintNodeId) {
    only ever queries inside its own root element, so several can be on
    screen at once without id clashes.
 --------------------------------------------------------------------- */
-var PLAYER_SCREEN_TYPES = ["scene", "choice", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
+var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "crossReferenceLookup",
   "imageReveal"];
 
@@ -1153,8 +1193,26 @@ function renderPreviewNode(session, n, ctl) {
   var hints = hintsForNode(session.hunt, n.id);
   if (n.type === "scene") {
     html += '<div class="pv-scene-body">' + esc(c.body) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">' + esc(buttonLabelFor(n)) + '</button>';
+    if (c.showBackButton) {
+      var prevSc = previousConnectingNode(session.hunt, n.id);
+      if (prevSc && prevSc.type === "scene") {
+        html += '<button class="pv-choice-btn pv-back-btn" data-back-target="' + esc(prevSc.id) + '" style="max-width:200px;margin-top:8px">← Back</button>';
+      }
+    }
     var fbSc = session.state.feedback[n.id];
     if (fbSc === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
+  } else if (n.type === "storyBlock") {
+    html += '<div class="pv-scene-body">' + esc(c.body) + '</div>';
+    (c.buttons || []).forEach(function (b) {
+      if (b.kind === "back") {
+        var prevSb = previousConnectingNode(session.hunt, n.id);
+        if (prevSb) html += '<button class="pv-choice-btn pv-back-btn" data-back-target="' + esc(prevSb.id) + '" style="max-width:220px;margin-top:6px">' + esc(b.label || "← Back") + '</button>';
+      } else {
+        html += '<button class="pv-choice-btn" data-opt="' + esc(b.id) + '" style="max-width:220px;margin-top:6px">' + esc(b.label || "Continue") + '</button>';
+      }
+    });
+    var fbSb = session.state.feedback[n.id];
+    if (fbSb === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "choice") {
     html += '<div class="pv-scene-body">' + esc(c.body) + '</div>';
     c.options.forEach(function (o) { html += '<button class="pv-option-btn" data-opt="' + o.id + '">' + esc(o.label) + '</button>'; });
@@ -1457,15 +1515,35 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   if (!n) return;
   var root = ctl.mainEl;
   var byId = function (id) { return root.querySelector("#" + id); };
+  // True when the screen currently on display is a Back-peek at an
+  // already-completed node (see ctl.peekStack, below, and the peek branch
+  // in ctl.render()) rather than the player's live current node — in that
+  // case the primary/option button(s) just return to where the player was
+  // instead of re-completing an already-completed node.
+  var peeking = !!(ctl.peekStack && ctl.peekStack.length && ctl.peekStack[ctl.peekStack.length - 1] === n.id);
   if (byId("pvContinue")) byId("pvContinue").onclick = function () {
+    if (peeking) { ctl.peekStack.pop(); ctl.render(); return; }
     var ok = pv_action_continueScene(session, n.id);
     if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
     ctl.render();
   };
   Array.prototype.forEach.call(root.querySelectorAll("[data-opt]"), function (el) {
     el.onclick = function () {
+      if (peeking) { ctl.peekStack.pop(); ctl.render(); return; }
       var ok = pv_action_selectChoice(session, n.id, el.dataset.opt);
       if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+      ctl.render();
+    };
+  });
+  // Back button (Simple Text / Story Block) — always pushes the target node
+  // onto the peek stack, whether we're currently live or already mid-peek
+  // (peeking further back), so pv-back-btn behaves identically either way.
+  Array.prototype.forEach.call(root.querySelectorAll(".pv-back-btn"), function (el) {
+    el.onclick = function () {
+      var target = el.dataset.backTarget;
+      if (!target) return;
+      ctl.peekStack = ctl.peekStack || [];
+      ctl.peekStack.push(target);
       ctl.render();
     };
   });
@@ -1612,6 +1690,7 @@ function createPreviewController(mainEl, sideEl) {
     orderingDraft: {}, matchingDraft: {},
     sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {},
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
+    peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
     laneListId: null, laneListSceneId: null, // set when a lane tab (Leads/Inventory/Hints) asks to show its scene-wide options list instead of a single node
     currentLane: "story", // which lane the main panel's default "open leads" view is scoped to — see ctl.render(); kept in sync by showNode/showLaneList (tab bar taps) so a connection into a different lane never silently jumps the view there
     _activeIds: { expandedId: null, leadIds: [] },
@@ -1629,6 +1708,7 @@ function createPreviewController(mainEl, sideEl) {
     ctl.multiPartDraft = {};
     ctl.lockDialDraft = {};
     ctl.pinnedNodeId = null;
+    ctl.peekStack = [];
     ctl.laneListId = null;
     ctl.laneListSceneId = null;
     ctl.currentLane = "story";
@@ -1663,8 +1743,23 @@ function createPreviewController(mainEl, sideEl) {
     var pinnedNode = ctl.pinnedNodeId ? hunt.nodes.find(function (n) { return n.id === ctl.pinnedNodeId; }) : null;
     if (ctl.pinnedNodeId && !pinnedNode) ctl.pinnedNodeId = null; // was deleted — fall back to normal flow
 
+    // Drop any peeked node ids that no longer exist (e.g. deleted mid-preview).
+    if (ctl.peekStack && ctl.peekStack.length) {
+      ctl.peekStack = ctl.peekStack.filter(function (id) { return !!hunt.nodes.find(function (n) { return n.id === id; }); });
+    }
+    var peekNode = (ctl.peekStack && ctl.peekStack.length) ? hunt.nodes.find(function (n) { return n.id === ctl.peekStack[ctl.peekStack.length - 1]; }) : null;
+
     if (pinnedNode) {
       renderPinnedNode(session, pinnedNode, ctl);
+    } else if (peekNode) {
+      // A Back button (Simple Text / Story Block) sent the player to look at
+      // an already-completed earlier screen — render it exactly like a live
+      // node (so its own Continue/Back buttons work), but wirePreviewNodeInteractions
+      // detects we're mid-peek and makes the forward button return instead
+      // of re-completing an already-completed node.
+      main.innerHTML = renderPreviewNode(session, peekNode, ctl);
+      wirePreviewNodeInteractions(session, peekNode, ctl);
+      ctl._activeIds = { expandedId: peekNode.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
     } else if (ctl.laneListId && !state.endingReached) {
       var laneNodes = laneOptionsForScene(session, ctl.laneListId, ctl.laneListSceneId);
       main.innerHTML = renderLaneOptionsList(session, ctl.laneListId, laneNodes);
@@ -1764,6 +1859,7 @@ return {
   nodeTitle: nodeTitle,
   varName: varName,
   itemName: itemName,
+  previousConnectingNode: previousConnectingNode,
 
   collectConditionRefs: collectConditionRefs,
   validateHunt: validateHunt,

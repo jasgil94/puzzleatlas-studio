@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Loop Circuit Racer</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 16px; left: 16px; color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    font-size: 14px; line-height: 1.5; user-select: none; pointer-events: none;
+  }
+  #speed {
+    position: fixed; bottom: 24px; right: 24px; color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    font-size: 42px; font-weight: 700; user-select: none; pointer-events: none;
+  }
+  #speed span { font-size: 16px; font-weight: 400; opacity: 0.8; }
+  #msg {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    color: #fff; font-size: 20px; text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+    user-select: none; pointer-events: none; transition: opacity 0.6s;
+  }
+</style>
+</head>
+<body>
+<div id="hud">Arrow Up: Accelerate &nbsp;|&nbsp; Arrow Down: Brake/Reverse &nbsp;|&nbsp; Arrow Left/Right: Steer</div>
+<div id="speed">0<span> km/h</span></div>
+<div id="msg">Click to start</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Scene setup ----------
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x8fd0ff);
+  scene.fog = new THREE.Fog(0x8fd0ff, 60, 220);
+
+  var camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 500);
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  window.addEventListener("resize", function () {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ---------- Lighting ----------
+  var hemi = new THREE.HemisphereLight(0xffffff, 0x3a5a2a, 0.9);
+  scene.add(hemi);
+
+  var sun = new THREE.DirectionalLight(0xffffff, 0.9);
+  sun.position.set(80, 120, 40);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -120;
+  sun.shadow.camera.right = 120;
+  sun.shadow.camera.top = 120;
+  sun.shadow.camera.bottom = -120;
+  sun.shadow.camera.far = 300;
+  scene.add(sun);
+
+  // ---------- Track geometry ----------
+  // Elliptical loop: outer edge (A_OUT, B_OUT), inner edge (A_IN, B_IN).
+  var A_OUT = 70, B_OUT = 45;
+  var A_IN = 45, B_IN = 22;
+
+  function ellipsePoint(a, b, t) {
+    return new THREE.Vector2(a * Math.cos(t), b * Math.sin(t));
+  }
+
+  // Outer grass plane (large, sits slightly below track)
+  var grassOuter = new THREE.Mesh(
+    new THREE.PlaneGeometry(1000, 1000),
+    new THREE.MeshLambertMaterial({ color: 0x3f8f3f })
+  );
+  grassOuter.rotation.x = -Math.PI / 2;
+  grassOuter.position.y = -0.05;
+  grassOuter.receiveShadow = true;
+  scene.add(grassOuter);
+
+  // Track surface: outer ellipse shape with inner ellipse hole
+  var outerShape = new THREE.Shape();
+  var segs = 128;
+  for (var i = 0; i <= segs; i++) {
+    var t = (i / segs) * Math.PI * 2;
+    var p = ellipsePoint(A_OUT, B_OUT, t);
+    if (i === 0) outerShape.moveTo(p.x, p.y); else outerShape.lineTo(p.x, p.y);
+  }
+  var innerHole = new THREE.Path();
+  for (var j = 0; j <= segs; j++) {
+    var t2 = (j / segs) * Math.PI * 2;
+    var p2 = ellipsePoint(A_IN, B_IN, -t2); // reverse winding for hole
+    if (j === 0) innerHole.moveTo(p2.x, p2.y); else innerHole.lineTo(p2.x, p2.y);
+  }
+  outerShape.holes.push(innerHole);
+
+  var trackGeo = new THREE.ShapeGeometry(outerShape, 64);
+  var trackMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3f });
+  var track = new THREE.Mesh(trackGeo, trackMat);
+  track.rotation.x = -Math.PI / 2;
+  track.position.y = 0;
+  track.receiveShadow = true;
+  scene.add(track);
+
+  // Infield (grass inside the inner ellipse)
+  var infieldShape = new THREE.Shape();
+  for (var k = 0; k <= segs; k++) {
+    var t3 = (k / segs) * Math.PI * 2;
+    var p3 = ellipsePoint(A_IN, B_IN, t3);
+    if (k === 0) infieldShape.moveTo(p3.x, p3.y); else infieldShape.lineTo(p3.x, p3.y);
+  }
+  var infieldGeo = new THREE.ShapeGeometry(infieldShape, 64);
+  var infield = new THREE.Mesh(infieldGeo, new THREE.MeshLambertMaterial({ color: 0x4aa34a }));
+  infield.rotation.x = -Math.PI / 2;
+  infield.position.y = 0.02;
+  infield.receiveShadow = true;
+  scene.add(infield);
+
+  // Lane markings: dashed centerline between inner and outer edge
+  var A_MID = (A_OUT + A_IN) / 2, B_MID = (B_OUT + B_IN) / 2;
+  var dashCount = 64;
+  for (var d = 0; d < dashCount; d++) {
+    if (d % 2 === 0) continue;
+    var ta = (d / dashCount) * Math.PI * 2;
+    var tb = ((d + 1) / dashCount) * Math.PI * 2;
+    var pa = ellipsePoint(A_MID, B_MID, ta);
+    var pb = ellipsePoint(A_MID, B_MID, tb);
+    var midX = (pa.x + pb.x) / 2, midZ = (pa.y + pb.y) / 2;
+    var len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+    var angle = Math.atan2(pb.y - pa.y, pb.x - pa.x);
+    var dash = new THREE.Mesh(
+      new THREE.PlaneGeometry(len * 0.7, 0.6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    dash.rotation.x = -Math.PI / 2;
+    dash.rotation.z = -angle;
+    dash.position.set(midX, 0.03, midZ);
+    scene.add(dash);
+  }
+
+  // Barrier walls (red/white striped) along outer and inner edges
+  function buildBarrier(a, b, outward) {
+    var count = 90;
+    var group = new THREE.Group();
+    for (var n = 0; n < count; n++) {
+      var t = (n / count) * Math.PI * 2;
+      var tn = ((n + 1) / count) * Math.PI * 2;
+      var p1 = ellipsePoint(a, b, t);
+      var p2 = ellipsePoint(a, b, tn);
+      var segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      var angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      var cx = (p1.x + p2.x) / 2, cz = (p1.y + p2.y) / 2;
+      var color = n % 2 === 0 ? 0xdd2222 : 0xf2f2f2;
+      var seg = new THREE.Mesh(
+        new THREE.BoxGeometry(segLen * 1.02, 1.0, 0.6),
+        new THREE.MeshLambertMaterial({ color: color })
+      );
+      seg.position.set(cx, 0.5, cz);
+      seg.rotation.y = -angle;
+      seg.castShadow = true;
+      seg.receiveShadow = true;
+      group.add(seg);
+    }
+    scene.add(group);
+  }
+  buildBarrier(A_OUT + 0.3, B_OUT + 0.3, true);
+  buildBarrier(A_IN - 0.3, B_IN - 0.3, false);
+
+  // Some scenery (trees) scattered outside the track
+  function addTree(x, z) {
+    var trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.45, 2.2, 8),
+      new THREE.MeshLambertMaterial({ color: 0x6b4a2c })
+    );
+    trunk.position.set(x, 1.1, z);
+    trunk.castShadow = true;
+    var leaves = new THREE.Mesh(
+      new THREE.ConeGeometry(2.2, 4.5, 8),
+      new THREE.MeshLambertMaterial({ color: 0x1f6b2a })
+    );
+    leaves.position.set(x, 4.2, z);
+    leaves.castShadow = true;
+    scene.add(trunk);
+    scene.add(leaves);
+  }
+  for (var tI = 0; tI < 40; tI++) {
+    var ang = Math.random() * Math.PI * 2;
+    var rad = (A_OUT + 15) + Math.random() * 40;
+    addTree(Math.cos(ang) * rad, Math.sin(ang) * (rad * (B_OUT / A_OUT)));
+  }
+
+  // ---------- Car ----------
+  var car = new THREE.Group();
+
+  var bodyMat = new THREE.MeshLambertMaterial({ color: 0xd81f26 });
+  var body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.55, 4.2), bodyMat);
+  body.position.y = 0.55;
+  body.castShadow = true;
+  car.add(body);
+
+  var cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5, 0.5, 2.0),
+    new THREE.MeshLambertMaterial({ color: 0x222831 })
+  );
+  cabin.position.set(0, 1.05, -0.2);
+  cabin.castShadow = true;
+  car.add(cabin);
+
+  var wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.35, 16);
+  var wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  var wheelPositions = [
+    [-1.05, 0.42, 1.35], [1.05, 0.42, 1.35],
+    [-1.05, 0.42, -1.35], [1.05, 0.42, -1.35]
+  ];
+  var wheels = [];
+  wheelPositions.forEach(function (pos) {
+    var w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(pos[0], pos[1], pos[2]);
+    w.castShadow = true;
+    car.add(w);
+    wheels.push(w);
+  });
+
+  // Tail lights (visible from behind, for orientation feedback)
+  var lightGeo = new THREE.BoxGeometry(0.3, 0.2, 0.1);
+  var lightMat = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+  [-0.75, 0.75].forEach(function (lx) {
+    var l = new THREE.Mesh(lightGeo, lightMat);
+    l.position.set(lx, 0.6, 2.12);
+    car.add(l);
+  });
+
+  car.position.set((A_OUT + A_IN) / 2, 0, 0);
+  scene.add(car);
+
+  // ---------- Input ----------
+  var keys = { up: false, down: false, left: false, right: false };
+  var started = false;
+  var msgEl = document.getElementById("msg");
+
+  function startGame() {
+    if (started) return;
+    started = true;
+    msgEl.style.opacity = "0";
+  }
+
+  window.addEventListener("keydown", function (e) {
+    startGame();
+    switch (e.code) {
+      case "ArrowUp": keys.up = true; e.preventDefault(); break;
+      case "ArrowDown": keys.down = true; e.preventDefault(); break;
+      case "ArrowLeft": keys.left = true; e.preventDefault(); break;
+      case "ArrowRight": keys.right = true; e.preventDefault(); break;
+    }
+  });
+  window.addEventListener("keyup", function (e) {
+    switch (e.code) {
+      case "ArrowUp": keys.up = false; break;
+      case "ArrowDown": keys.down = false; break;
+      case "ArrowLeft": keys.left = false; break;
+      case "ArrowRight": keys.right = false; break;
+    }
+  });
+  window.addEventListener("click", startGame);
+
+  // ---------- Physics state ----------
+  var heading = Math.PI / 2; // facing along the loop
+  var speed = 0; // units per second, +forward / -reverse
+  var MAX_SPEED = 34;
+  var MAX_REVERSE = -14;
+  var ACCEL = 18;
+  var BRAKE_DECEL = 28;
+  var FRICTION = 9;
+  var TURN_RATE = 2.4; // rad/s at full speed influence
+
+  var speedEl = document.getElementById("speed");
+
+  // Camera smoothing targets
+  var camPos = new THREE.Vector3();
+  var camLookAt = new THREE.Vector3();
+  var camInit = false;
+
+  function updatePhysics(dt) {
+    // Acceleration / braking
+    if (keys.up) {
+      speed += ACCEL * dt;
+    } else if (keys.down) {
+      speed -= BRAKE_DECEL * dt;
+    } else {
+      // natural friction toward zero
+      if (speed > 0) speed = Math.max(0, speed - FRICTION * dt);
+      else if (speed < 0) speed = Math.min(0, speed + FRICTION * dt);
+    }
+    speed = Math.max(MAX_REVERSE, Math.min(MAX_SPEED, speed));
+
+    // Steering — scaled by how fast we're moving, reversed when reversing
+    var speedFactor = Math.min(1, Math.abs(speed) / 8);
+    var dir = speed >= 0 ? 1 : -1;
+    var steer = 0;
+    if (keys.left) steer += 1;
+    if (keys.right) steer -= 1;
+    heading += steer * TURN_RATE * dt * speedFactor * dir;
+
+    // Move car
+    var nx = car.position.x + Math.sin(heading) * speed * dt;
+    var nz = car.position.z + Math.cos(heading) * speed * dt;
+
+    // Collision with barriers — clamp to inside the elliptical annulus track
+    var outerMargin = 1.4; // keep car center a bit inside the wall
+    var innerMargin = 1.4;
+    var aOutC = A_OUT - outerMargin, bOutC = B_OUT - outerMargin;
+    var aInC = A_IN + innerMargin, bInC = B_IN + innerMargin;
+
+    var outerVal = (nx * nx) / (aOutC * aOutC) + (nz * nz) / (bOutC * bOutC);
+    var innerVal = (nx * nx) / (aInC * aInC) + (nz * nz) / (bInC * bInC);
+
+    var collided = false;
+    if (outerVal > 1) {
+      var s = 1 / Math.sqrt(outerVal);
+      nx *= s; nz *= s;
+      collided = true;
+    } else if (innerVal < 1 && innerVal > 0) {
+      var s2 = 1 / Math.sqrt(innerVal);
+      nx *= s2; nz *= s2;
+      collided = true;
+    }
+    if (collided) {
+      speed *= 0.45; // energy loss on impact
+    }
+
+    car.position.x = nx;
+    car.position.z = nz;
+    car.rotation.y = heading;
+
+    // Wheel spin feedback
+    var spin = speed * dt * 2.2;
+    wheels.forEach(function (w) { w.rotation.x -= spin; });
+
+    // HUD
+    var kmh = Math.round(Math.abs(speed) * 3.2);
+    speedEl.innerHTML = kmh + "<span> km/h</span>";
+  }
+
+  function updateCamera(dt) {
+    var camDist = 7.5, camHeight = 3.2;
+    var targetPos = new THREE.Vector3(
+      car.position.x - Math.sin(heading) * camDist,
+      camHeight,
+      car.position.z - Math.cos(heading) * camDist
+    );
+    var targetLook = new THREE.Vector3(
+      car.position.x + Math.sin(heading) * 4,
+      1.0,
+      car.position.z + Math.cos(heading) * 4
+    );
+
+    if (!camInit) {
+      camPos.copy(targetPos);
+      camLookAt.copy(targetLook);
+      camInit = true;
+    } else {
+      var lerpFactor = 1 - Math.pow(0.001, dt);
+      camPos.lerp(targetPos, lerpFactor);
+      camLookAt.lerp(targetLook, lerpFactor);
+    }
+    camera.position.copy(camPos);
+    camera.lookAt(camLookAt);
+  }
+
+  // ---------- Main loop ----------
+  var lastTime = performance.now();
+  function animate(now) {
+    requestAnimationFrame(animate);
+    var dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+
+    if (started) updatePhysics(dt);
+    updateCamera(dt);
+
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>

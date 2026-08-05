@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Standard Telephone Exchange &mdash; No. 4</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital@0;1&display=swap');
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: radial-gradient(ellipse at center, #2a2420 0%, #0e0b09 60%, #000 100%);
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+  }
+
+  #page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 30px 10px;
+  }
+
+  #board {
+    position: relative;
+    width: 1000px;
+    height: 640px;
+    max-width: 96vw;
+    background:
+      repeating-linear-gradient(90deg, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.02) 3px, transparent 6px, transparent 9px),
+      linear-gradient(160deg, #5a3a24 0%, #472c1b 35%, #3a2314 70%, #2c1a0e 100%);
+    border-radius: 16px;
+    box-shadow:
+      inset 0 0 0 3px #1a0f08,
+      inset 0 0 40px rgba(0,0,0,0.55),
+      0 25px 70px rgba(0,0,0,0.7),
+      0 0 0 10px #201209;
+    user-select: none;
+    touch-action: none;
+  }
+
+  .screw {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #f2d98a, #a5822f 55%, #5c421a 100%);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.6), inset 0 0 2px rgba(0,0,0,0.5);
+  }
+  .screw::after {
+    content: "";
+    position: absolute;
+    top: 50%; left: 12%;
+    width: 76%; height: 2px;
+    background: #3a2a10;
+    transform: translateY(-50%) rotate(28deg);
+  }
+  .screw.tl { top: 16px; left: 16px; }
+  .screw.tr { top: 16px; right: 16px; }
+  .screw.bl { bottom: 16px; left: 16px; }
+  .screw.br { bottom: 16px; right: 16px; }
+
+  .title-plaque {
+    position: absolute;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    color: #e8c877;
+    letter-spacing: 3px;
+    font-family: 'Cinzel', Georgia, serif;
+  }
+  .title-plaque .main {
+    font-size: 26px;
+    font-weight: 700;
+    text-shadow: 0 1px 0 #000, 0 0 12px rgba(232,200,119,0.25);
+  }
+  .title-plaque .sub {
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 5px;
+    color: #b89658;
+  }
+  .title-plaque .rule {
+    width: 260px;
+    height: 1px;
+    margin: 8px auto 0;
+    background: linear-gradient(90deg, transparent, #b89658, transparent);
+  }
+
+  .col-label {
+    position: absolute;
+    color: #c9a862;
+    font-family: 'Cinzel', Georgia, serif;
+    font-size: 11px;
+    letter-spacing: 3px;
+    opacity: 0.8;
+  }
+
+  .jack {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    margin-left: -20px;
+    margin-top: -20px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #f4dfa0, #b8923f 45%, #6e4e1e 85%);
+    box-shadow:
+      0 3px 6px rgba(0,0,0,0.6),
+      inset 0 0 3px rgba(0,0,0,0.5);
+  }
+  .jack::before {
+    content: "";
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 18px; height: 18px;
+    margin: -9px 0 0 -9px;
+    border-radius: 50%;
+    background: #0a0806;
+    box-shadow: inset 0 3px 5px rgba(0,0,0,0.9), inset 0 -1px 1px rgba(255,255,255,0.08);
+  }
+
+  .jack-number {
+    position: absolute;
+    width: 22px;
+    height: 14px;
+    margin-left: -11px;
+    background: linear-gradient(180deg, #d8bd7e, #a3854a);
+    border-radius: 2px;
+    text-align: center;
+    font-family: 'Cinzel', Georgia, serif;
+    font-size: 10px;
+    line-height: 14px;
+    color: #2a1c0c;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  }
+
+  .lamp {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    margin-left: -8px;
+    margin-top: -8px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #7a3f2c, #401f14);
+    box-shadow: inset 0 0 3px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.5);
+    transition: background 0.25s ease, box-shadow 0.25s ease;
+  }
+  .lamp.lit {
+    background: radial-gradient(circle at 35% 30%, #ffe9a8, #f5a623 55%, #b96b12 100%);
+    box-shadow:
+      0 0 10px 4px rgba(255,190,80,0.75),
+      0 0 24px 10px rgba(255,150,40,0.35),
+      inset 0 0 3px rgba(255,255,255,0.4);
+  }
+
+  .tray-label {
+    position: absolute;
+    bottom: 34px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #8a6a3c;
+    font-family: 'Cinzel', Georgia, serif;
+    font-size: 10px;
+    letter-spacing: 3px;
+    opacity: 0.7;
+  }
+
+  .peg {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    margin-left: -7px;
+    margin-top: -7px;
+    border-radius: 50%;
+    background: #1a120a;
+    box-shadow: inset 0 2px 3px rgba(0,0,0,0.8), 0 0 0 2px rgba(0,0,0,0.3);
+  }
+
+  svg#cableSvg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .cable-shadow { fill: none; stroke: rgba(0,0,0,0.45); stroke-linecap: round; }
+  .cable-main { fill: none; stroke-linecap: round; transition: filter 0.25s ease; }
+  .cable-sheen { fill: none; stroke: rgba(255,255,255,0.28); stroke-linecap: round; }
+  .cable-main.active { filter: drop-shadow(0 0 6px currentColor); }
+
+  .plug {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    margin-left: -15px;
+    margin-top: -15px;
+    border-radius: 50%;
+    cursor: grab;
+    touch-action: none;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.6), inset 0 2px 2px rgba(255,255,255,0.25), inset 0 -3px 4px rgba(0,0,0,0.4);
+    z-index: 20;
+  }
+  .plug::after {
+    content: "";
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 12px; height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #e8dcb8, #8a7a52);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+  }
+  .plug.dragging {
+    cursor: grabbing;
+    z-index: 50;
+    box-shadow: 0 10px 18px rgba(0,0,0,0.7), inset 0 2px 2px rgba(255,255,255,0.3);
+  }
+
+  .hint {
+    color: #9a8560;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-style: italic;
+    font-size: 16px;
+    letter-spacing: 0.5px;
+    margin: 0;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div id="page">
+  <div id="board">
+    <div class="screw tl"></div>
+    <div class="screw tr"></div>
+    <div class="screw bl"></div>
+    <div class="screw br"></div>
+
+    <div class="title-plaque">
+      <div class="main">Standard Telephone Exchange</div>
+      <div class="rule"></div>
+      <div class="sub">No. 4 &nbsp;&middot;&nbsp; MANUAL SWITCHBOARD</div>
+    </div>
+
+    <svg id="cableSvg"></svg>
+    <div class="tray-label">Return Cords Here</div>
+  </div>
+  <p class="hint">Drag a plug onto any jack to connect the line &mdash; pull it free to disconnect.</p>
+</div>
+
+<script>
+(function () {
+  const JACKS = [
+    { id: 'L1', x: 130, y: 210, num: '1' },
+    { id: 'L2', x: 130, y: 290, num: '2' },
+    { id: 'L3', x: 130, y: 370, num: '3' },
+    { id: 'L4', x: 130, y: 450, num: '4' },
+    { id: 'R1', x: 870, y: 210, num: '5' },
+    { id: 'R2', x: 870, y: 290, num: '6' },
+    { id: 'R3', x: 870, y: 370, num: '7' },
+    { id: 'R4', x: 870, y: 450, num: '8' },
+  ];
+
+  const CABLES = [
+    { id: 'red',   color: '#b3382c', dark: '#5c1710' },
+    { id: 'amber', color: '#cc9a2e', dark: '#6e4f13' },
+    { id: 'green', color: '#33804f', dark: '#123d24' },
+    { id: 'blue',  color: '#2e6094', dark: '#12314f' },
+  ];
+
+  const PARK_XS = [150, 230, 380, 460, 540, 620, 770, 850];
+  const PARK_Y = 555;
+  const SNAP_R = 34;
+  const BOARD_W = 1000, BOARD_H = 640;
+
+  const board = document.getElementById('board');
+  const svg = document.getElementById('cableSvg');
+
+  // -- build jacks, numbers, lamps --------------------------------------
+  const jacksById = {};
+  JACKS.forEach(j => {
+    j.occupied = null;
+
+    const el = document.createElement('div');
+    el.className = 'jack';
+    el.style.left = j.x + 'px';
+    el.style.top = j.y + 'px';
+    board.appendChild(el);
+
+    const num = document.createElement('div');
+    num.className = 'jack-number';
+    num.style.left = j.x + 'px';
+    num.style.top = (j.y + 24) + 'px';
+    num.textContent = 'LINE ' + j.num;
+    board.appendChild(num);
+
+    const lamp = document.createElement('div');
+    lamp.className = 'lamp';
+    lamp.style.left = j.x + 'px';
+    lamp.style.top = (j.y - 32) + 'px';
+    board.appendChild(lamp);
+    j.lampEl = lamp;
+
+    jacksById[j.id] = j;
+  });
+
+  // column labels
+  ['CALLING', 'CALLED'].forEach((txt, i) => {
+    const lbl = document.createElement('div');
+    lbl.className = 'col-label';
+    lbl.style.left = (i === 0 ? 130 : 870) + 'px';
+    lbl.style.top = '150px';
+    lbl.style.transform = 'translateX(-50%)';
+    lbl.textContent = txt;
+    board.appendChild(lbl);
+  });
+
+  // parking pegs
+  PARK_XS.forEach(x => {
+    const peg = document.createElement('div');
+    peg.className = 'peg';
+    peg.style.left = x + 'px';
+    peg.style.top = PARK_Y + 'px';
+    board.appendChild(peg);
+  });
+
+  // -- build cables & plugs ----------------------------------------------
+  const ends = []; // flat list of all plug ends
+  const cablesById = {};
+
+  CABLES.forEach((c, i) => {
+    cablesById[c.id] = c;
+    const slotA = PARK_XS[i * 2];
+    const slotB = PARK_XS[i * 2 + 1];
+
+    ['a', 'b'].forEach((tag, idx) => {
+      const home = { x: idx === 0 ? slotA : slotB, y: PARK_Y };
+      const end = {
+        id: c.id + '-' + tag,
+        cableId: c.id,
+        home: home,
+        x: home.x,
+        y: home.y,
+        plugged: null,
+      };
+
+      const el = document.createElement('div');
+      el.className = 'plug';
+      el.style.background =
+        'radial-gradient(circle at 35% 30%, ' + lighten(c.color) + ', ' + c.color + ' 55%, ' + c.dark + ' 100%)';
+      el.style.left = end.x + 'px';
+      el.style.top = end.y + 'px';
+      board.appendChild(el);
+      end.el = el;
+
+      attachDrag(end);
+      ends.push(end);
+    });
+
+    c.endA = ends[ends.length - 2];
+    c.endB = ends[ends.length - 1];
+
+    // svg path group: shadow, main, sheen
+    const shadow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    shadow.setAttribute('class', 'cable-shadow');
+    shadow.setAttribute('stroke-width', '11');
+    const main = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    main.setAttribute('class', 'cable-main');
+    main.setAttribute('stroke', c.color);
+    main.setAttribute('stroke-width', '9');
+    main.style.color = c.color;
+    const sheen = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    sheen.setAttribute('class', 'cable-sheen');
+    sheen.setAttribute('stroke-width', '2');
+
+    svg.appendChild(shadow);
+    svg.appendChild(main);
+    svg.appendChild(sheen);
+    c.pathShadow = shadow;
+    c.pathMain = main;
+    c.pathSheen = sheen;
+  });
+
+  function lighten(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    r = Math.min(255, r + 90); g = Math.min(255, g + 90); b = Math.min(255, b + 90);
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
+
+  // -- drag handling -------------------------------------------------------
+  let dragging = null;
+
+  function boardPos(e) {
+    const rect = board.getBoundingClientRect();
+    const scaleX = BOARD_W / rect.width;
+    const scaleY = BOARD_H / rect.height;
+    let x = (e.clientX - rect.left) * scaleX;
+    let y = (e.clientY - rect.top) * scaleY;
+    x = Math.max(20, Math.min(BOARD_W - 20, x));
+    y = Math.max(20, Math.min(BOARD_H - 20, y));
+    return { x, y };
+  }
+
+  function moveEndTo(end, pos) {
+    end.x = pos.x;
+    end.y = pos.y;
+    end.el.style.left = end.x + 'px';
+    end.el.style.top = end.y + 'px';
+  }
+
+  function attachDrag(end) {
+    end.el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { end.el.setPointerCapture(e.pointerId); } catch (err) {}
+      dragging = end;
+      end.el.classList.add('dragging');
+
+      if (end.plugged) {
+        jacksById[end.plugged].occupied = null;
+        end.plugged = null;
+        updateLamps();
+      }
+      moveEndTo(end, boardPos(e));
+      renderCables();
+    });
+
+    end.el.addEventListener('pointermove', (e) => {
+      if (dragging !== end) return;
+      moveEndTo(end, boardPos(e));
+      renderCables();
+    });
+
+    function finish(e) {
+      if (dragging !== end) return;
+      end.el.classList.remove('dragging');
+      dragging = null;
+
+      const pos = boardPos(e);
+      let best = null, bestDist = Infinity;
+      JACKS.forEach(j => {
+        const d = Math.hypot(j.x - pos.x, j.y - pos.y);
+        if (d < bestDist) { bestDist = d; best = j; }
+      });
+
+      if (best && bestDist < SNAP_R && !best.occupied) {
+        best.occupied = end.id;
+        end.plugged = best.id;
+        moveEndTo(end, { x: best.x, y: best.y });
+        playTone(220, 0.09, 'square');
+      } else {
+        moveEndTo(end, end.home);
+        playTone(110, 0.12, 'sine');
+      }
+      renderCables();
+      updateLamps();
+    }
+
+    end.el.addEventListener('pointerup', finish);
+    end.el.addEventListener('pointercancel', finish);
+  }
+
+  // -- rendering -----------------------------------------------------------
+  function renderCables() {
+    CABLES.forEach(c => {
+      const a = c.endA, b = c.endB;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      const sag = Math.min(150, 24 + dist * 0.18);
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2 + sag;
+      const d = 'M ' + a.x + ' ' + a.y + ' Q ' + mx + ' ' + my + ' ' + b.x + ' ' + b.y;
+
+      c.pathShadow.setAttribute('d', d);
+      c.pathShadow.setAttribute('transform', 'translate(3,5)');
+      c.pathMain.setAttribute('d', d);
+      c.pathSheen.setAttribute('d', d);
+
+      const active = !!(a.plugged && b.plugged);
+      c.pathMain.classList.toggle('active', active);
+      c.pathMain.setAttribute('stroke-width', active ? '10' : '9');
+    });
+  }
+
+  function updateLamps() {
+    JACKS.forEach(j => {
+      j.lampEl.classList.toggle('lit', !!j.occupied);
+    });
+  }
+
+  renderCables();
+  updateLamps();
+
+  // -- tiny synthesized clicks ----------------------------------------------
+  let audioCtx = null;
+  function playTone(freq, dur, type) {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.16, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.start();
+      o.stop(audioCtx.currentTime + dur + 0.02);
+    } catch (err) { /* audio unavailable, ignore */ }
+  }
+})();
+</script>
+</body>
+</html>
