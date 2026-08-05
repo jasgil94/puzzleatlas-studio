@@ -1605,12 +1605,30 @@ function fieldWrap(labelText, innerHtml) {
    here control what the player actually sees, not just the editor. */
 var PV_FONT_MIN = 10, PV_FONT_MAX = 32, PV_FONT_DEFAULT = 15, PV_FONT_STEP = 1;
 
+// prop also supports three prefixes for button text, each a separate text
+// field per option/button (or, for a node's single primary action button,
+// stored on the node itself rather than its content):
+//   "opt:<id>"  — a Choice node's per-option button label (content.options)
+//   "btn:<id>"  — a Story Block's per-button label (content.buttons)
+//   "node:<prop>" — a property on the node itself, not its content (e.g.
+//                   "node:buttonLabelFontSize" for the Completion section's
+//                   single button-label field)
+var PV_BTN_FONT_DEFAULT = 13.5; // matches .pv-choice-btn/.pv-option-btn's own CSS default
 function pvFontSize(n, prop) {
   var c = n.content;
   if (prop.indexOf("stage:") === 0) {
     var s = (c.stages || []).find(function (x) { return x.id === prop.slice(6); });
     return (s && s.fontSize) || 12;
   }
+  if (prop.indexOf("opt:") === 0) {
+    var o = (c.options || []).find(function (x) { return x.id === prop.slice(4); });
+    return (o && o.fontSize) || PV_BTN_FONT_DEFAULT;
+  }
+  if (prop.indexOf("btn:") === 0) {
+    var b = (c.buttons || []).find(function (x) { return x.id === prop.slice(4); });
+    return (b && b.fontSize) || PV_BTN_FONT_DEFAULT;
+  }
+  if (prop.indexOf("node:") === 0) return n[prop.slice(5)] || PV_BTN_FONT_DEFAULT;
   return c[prop] || PV_FONT_DEFAULT;
 }
 function setPvFontSize(n, prop, val) {
@@ -1620,6 +1638,17 @@ function setPvFontSize(n, prop, val) {
     if (s) s.fontSize = val;
     return;
   }
+  if (prop.indexOf("opt:") === 0) {
+    var o = (c.options || []).find(function (x) { return x.id === prop.slice(4); });
+    if (o) o.fontSize = val;
+    return;
+  }
+  if (prop.indexOf("btn:") === 0) {
+    var b = (c.buttons || []).find(function (x) { return x.id === prop.slice(4); });
+    if (b) b.fontSize = val;
+    return;
+  }
+  if (prop.indexOf("node:") === 0) { n[prop.slice(5)] = val; return; }
   c[prop] = val;
 }
 
@@ -1637,8 +1666,37 @@ function playerTextField(labelText, elId, prop, value, fontSize) {
   '</div>';
 }
 
+// Same idea as playerTextField, but for a single-line button label (a
+// plain <input>, not a textarea — button text doesn't wrap/grow the way a
+// paragraph box does, so there's no autoscale-ta class here).
+function playerButtonField(labelText, elId, prop, value, fontSize, placeholder) {
+  fontSize = fontSize || PV_BTN_FONT_DEFAULT;
+  return '<div class="field">' +
+    '<div class="field-label-row"><label>' + esc(labelText) + '</label>' +
+      '<div class="fs-controls">' +
+        '<button type="button" class="fs-btn" data-fsdec="' + esc(prop) + '" data-fstarget="' + elId + '" title="Decrease font size">−</button>' +
+        '<span class="fs-val" data-fsval="' + esc(prop) + '">' + fontSize + 'px</span>' +
+        '<button type="button" class="fs-btn" data-fsinc="' + esc(prop) + '" data-fstarget="' + elId + '" title="Increase font size">+</button>' +
+      '</div>' +
+    '</div>' +
+    '<input type="text" id="' + elId + '" style="font-size:' + fontSize + 'px" placeholder="' + esc(placeholder || "") + '" value="' + esc(value) + '" />' +
+  '</div>';
+}
+
+// A compact +/- control (no separate label row) for a button label that
+// lives inline in a list row — Choice options and Story Block buttons,
+// where each row is already just "[input][...][delete]".
+function inlineFsControls(prop, targetId, fontSize) {
+  fontSize = fontSize || PV_BTN_FONT_DEFAULT;
+  return '<div class="fs-controls" style="flex:0 0 auto">' +
+    '<button type="button" class="fs-btn" data-fsdec="' + esc(prop) + '" data-fstarget="' + targetId + '" title="Decrease font size">−</button>' +
+    '<span class="fs-val" data-fsval="' + esc(prop) + '">' + fontSize + 'px</span>' +
+    '<button type="button" class="fs-btn" data-fsinc="' + esc(prop) + '" data-fstarget="' + targetId + '" title="Increase font size">+</button>' +
+  '</div>';
+}
+
 function autoGrowTextarea(el) {
-  if (!el) return;
+  if (!el || el.tagName !== "TEXTAREA") return; // no-op on single-line inputs (e.g. button-label fields)
   el.style.height = "auto";
   el.style.height = Math.max(el.scrollHeight, 60) + "px";
 }
@@ -1760,7 +1818,10 @@ function buildTypeSpecificFields(n) {
       html += playerTextField("Prompt text (player-visible)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
       html += '<div class="field"><label>Options</label><div id="optList">' +
         c.options.map(function (o, i) {
-          return '<div class="list-item"><input type="text" value="' + esc(o.label) + '" data-oid="' + o.id + '" class="optLabelInput" /><button class="small-btn" data-oid="' + o.id + '">✕</button></div>';
+          var optElId = "optlbl_" + o.id, optProp = "opt:" + o.id, optFs = o.fontSize || PV_BTN_FONT_DEFAULT;
+          return '<div class="list-item"><input type="text" id="' + optElId + '" style="font-size:' + optFs + 'px" value="' + esc(o.label) + '" data-oid="' + o.id + '" class="optLabelInput" />' +
+            inlineFsControls(optProp, optElId, optFs) +
+            '<button class="small-btn" data-oid="' + o.id + '">✕</button></div>';
         }).join("") + '</div><button class="small-btn" id="btnAddOption">+ Add option</button></div>';
       html += '<p style="font-size:11px;color:var(--text-dim)">Connect a rule from this node with condition "choice option selected" to route based on the player\'s pick.</p>';
       break;
@@ -2383,8 +2444,8 @@ function buildCompletionEditor(n) {
   if (n.type === "storyBlock") {
     html += buildStoryBlockButtonsEditor(n);
   } else if (BUTTON_LABEL_TYPES[n.type]) {
-    html += fieldWrap('Button label (blank = default "' + esc(DEFAULT_BUTTON_LABEL[n.type]) + '")',
-      '<input type="text" id="fButtonLabel" placeholder="' + esc(DEFAULT_BUTTON_LABEL[n.type]) + '" value="' + esc(n.buttonLabel || "") + '" />');
+    html += playerButtonField('Button label (blank = default "' + esc(DEFAULT_BUTTON_LABEL[n.type]) + '") — player-visible',
+      "fButtonLabel", "node:buttonLabelFontSize", n.buttonLabel || "", n.buttonLabelFontSize, DEFAULT_BUTTON_LABEL[n.type]);
   }
   var ov = n.completionOverride || (n.completionOverride = { enabled: false, condition: { type: "always" } });
   html += fieldWrap("This node is complete when…", '<select id="fCompletionMode">' +
@@ -2417,8 +2478,10 @@ function buildStoryBlockButtonsEditor(n) {
   var orderHint = c.buttonLayout === "horizontal" ? "shown left → right" : "shown top → bottom";
   html += '<div class="field"><label>Buttons (' + orderHint + ')</label><div id="storyBtnList">';
   c.buttons.forEach(function (b, i) {
+    var btnElId = "storybtnlbl_" + b.id, btnProp = "btn:" + b.id, btnFs = b.fontSize || PV_BTN_FONT_DEFAULT;
     html += '<div class="list-item" data-btnid="' + b.id + '" style="flex-wrap:wrap">';
-    html += '<input type="text" value="' + esc(b.label) + '" data-btnid="' + b.id + '" class="storyBtnLabelInput" style="flex:1;min-width:90px" />';
+    html += '<input type="text" id="' + btnElId + '" value="' + esc(b.label) + '" data-btnid="' + b.id + '" class="storyBtnLabelInput" style="flex:1;min-width:90px;font-size:' + btnFs + 'px" />';
+    html += inlineFsControls(btnProp, btnElId, btnFs);
     if (b.kind === "back") {
       html += '<span style="font-size:11px;color:var(--text-dim);padding:0 6px">back navigation — no connection needed</span>';
     } else {

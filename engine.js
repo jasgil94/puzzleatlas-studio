@@ -1199,11 +1199,33 @@ function pvFontStyle(size, defaultSize) {
   return ' style="font-size:' + (size || defaultSize || 15) + 'px"';
 }
 
+// Same idea as pvFontStyle, but for button text. A node's single primary
+// action button (Continue/Submit/Unlock/etc., whichever buttonLabelFor
+// picks) shares one size stored on the node itself — node.buttonLabelFontSize
+// — since a button label isn't part of node.content and only one such
+// button is ever on screen per node. baseStyle is the button's existing
+// non-font inline CSS (e.g. "max-width:200px"), folded into the same
+// style attribute. Default 13.5px matches .pv-choice-btn's own CSS default.
+function pvPrimaryButton(n, idAttr, baseStyle) {
+  var fs = n.buttonLabelFontSize || 13.5;
+  var style = (baseStyle ? baseStyle + ";" : "") + "font-size:" + fs + "px";
+  return '<button class="pv-choice-btn" id="' + idAttr + '" style="' + style + '">' + esc(buttonLabelFor(n)) + '</button>';
+}
+
+// Choice options and Story Block buttons are each their own independent
+// text field in the inspector (one per option/button), so each gets its
+// own font size too, read off the option/button object itself.
+function pvItemButton(cls, dataAttr, label, fontSize, baseStyle) {
+  var fs = fontSize || 13.5;
+  var style = (baseStyle ? baseStyle + ";" : "") + "font-size:" + fs + "px";
+  return '<button class="' + cls + '" ' + dataAttr + ' style="' + style + '">' + esc(label) + '</button>';
+}
+
 function renderPreviewNode(session, n, ctl) {
   var c = n.content, html = "";
   var hints = hintsForNode(session.hunt, n.id);
   if (n.type === "scene") {
-    html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>' + pvPrimaryButton(n, "pvContinue", "max-width:200px");
     if (c.showBackButton) {
       var prevSc = previousConnectingNode(session.hunt, n.id);
       if (prevSc && prevSc.type === "scene") {
@@ -1215,14 +1237,14 @@ function renderPreviewNode(session, n, ctl) {
   } else if (n.type === "storyBlock") {
     html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
     var sbHorizontal = c.buttonLayout === "horizontal";
-    var sbBtnStyle = sbHorizontal ? "" : ' style="max-width:220px;margin-top:6px"';
+    var sbBtnBaseStyle = sbHorizontal ? "" : "max-width:220px;margin-top:6px";
     var sbBtnsHtml = "";
     (c.buttons || []).forEach(function (b) {
       if (b.kind === "back") {
         var prevSb = previousConnectingNode(session.hunt, n.id);
-        if (prevSb) sbBtnsHtml += '<button class="pv-choice-btn pv-back-btn" data-back-target="' + esc(prevSb.id) + '"' + sbBtnStyle + '>' + esc(b.label || "← Back") + '</button>';
+        if (prevSb) sbBtnsHtml += pvItemButton("pv-choice-btn pv-back-btn", 'data-back-target="' + esc(prevSb.id) + '"', b.label || "← Back", b.fontSize, sbBtnBaseStyle);
       } else {
-        sbBtnsHtml += '<button class="pv-choice-btn" data-opt="' + esc(b.id) + '"' + sbBtnStyle + '>' + esc(b.label || "Continue") + '</button>';
+        sbBtnsHtml += pvItemButton("pv-choice-btn", 'data-opt="' + esc(b.id) + '"', b.label || "Continue", b.fontSize, sbBtnBaseStyle);
       }
     });
     // Horizontal layout puts every button in a shared row (pv-btn-row —
@@ -1234,14 +1256,14 @@ function renderPreviewNode(session, n, ctl) {
     if (fbSb === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "choice") {
     html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
-    c.options.forEach(function (o) { html += '<button class="pv-option-btn" data-opt="' + o.id + '">' + esc(o.label) + '</button>'; });
+    c.options.forEach(function (o) { html += pvItemButton("pv-option-btn", 'data-opt="' + o.id + '"', o.label, o.fontSize); });
     var fbCh = session.state.feedback[n.id];
     if (fbCh === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "answerEntry") {
     if (c.imageAsset) html += renderImageRevealBlock(c);
     html += '<div class="pv-scene-body"' + pvFontStyle(c.promptFontSize) + '>' + esc(c.prompt) + '</div>';
     html += '<input type="text" class="pv-answer-input" id="pvAnswerInput" placeholder="Type your answer…" />';
-    html += '<button class="pv-choice-btn" id="pvSubmitAnswer" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvSubmitAnswer", "max-width:160px");
     var fb = session.state.feedback[n.id];
     if (fb) html += '<div class="pv-feedback ' + fb + '">' + (fb === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
   } else if (n.type === "ordering") {
@@ -1251,7 +1273,7 @@ function renderPreviewNode(session, n, ctl) {
       var it = c.items.find(function (x) { return x.id === id; });
       html += '<div class="list-item" data-ordidx="' + idx + '"><span class="chip">' + (idx + 1) + '</span><span style="flex:1">' + esc(it.label) + '</span><button class="small-btn ordUpPv">↑</button><button class="small-btn ordDownPv">↓</button></div>';
     });
-    html += '<button class="pv-choice-btn" id="pvSubmitOrdering" style="max-width:160px;margin-top:10px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvSubmitOrdering", "max-width:160px;margin-top:10px");
     var fb2 = session.state.feedback[n.id];
     if (fb2) html += '<div class="pv-feedback ' + fb2 + '">' + (fb2 === "correct" ? "✓ Correct order." : "✗ Not the right order — try again.") + '</div>';
   } else if (n.type === "matching") {
@@ -1264,35 +1286,35 @@ function renderPreviewNode(session, n, ctl) {
       html += '<div class="list-item"><span style="flex:1">' + esc(l.label) + ' →</span><select class="pvPairSelect" data-lid="' + l.id + '">' +
         c.right.map(function (r) { return '<option value="' + r.id + '"' + (ctl.matchingDraft[n.id][l.id] === r.id ? " selected" : "") + '>' + esc(r.label) + '</option>'; }).join("") + '</select></div>';
     });
-    html += '<button class="pv-choice-btn" id="pvSubmitMatching" style="max-width:160px;margin-top:10px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvSubmitMatching", "max-width:160px;margin-top:10px");
     var fb3 = session.state.feedback[n.id];
     if (fb3) html += '<div class="pv-feedback ' + fb3 + '">' + (fb3 === "correct" ? "✓ Correct matches." : "✗ Some pairs are wrong — try again.") + '</div>';
   } else if (n.type === "imageReveal") {
     html += renderImageRevealBlock(c);
-    html += '<button class="pv-choice-btn" id="pvContinue" style="max-width:200px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvContinue", "max-width:200px");
     var fbIr = session.state.feedback[n.id];
     if (fbIr === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "locationPlaceholder") {
-    html += '<div class="pv-scene-body">' + esc(c.placeholderNote) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += '<div class="pv-scene-body">' + esc(c.placeholderNote) + '</div>' + pvPrimaryButton(n, "pvContinue", "max-width:200px");
     var fbLp = session.state.feedback[n.id];
     if (fbLp === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "cipher") {
     html += '<div class="pv-mono-block">' + esc(c.ciphertext) + '</div>';
     html += '<div class="pv-info-card">Cipher: ' + esc(c.cipherType || "cipher") + (c.key ? " · Key: " + esc(c.key) : "") + '</div>';
     html += '<input type="text" class="pv-answer-input" id="pvCipherInput" placeholder="Type the decoded answer…" />';
-    html += '<button class="pv-choice-btn" id="pvSubmitCipher" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvSubmitCipher", "max-width:160px");
     var fbCi = session.state.feedback[n.id];
     if (fbCi) html += '<div class="pv-feedback ' + fbCi + '">' + (fbCi === "correct" ? "✓ Decoded correctly." : "✗ Not quite — try again.") + '</div>';
   } else if (n.type === "mathLogic") {
     html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
     html += '<input type="text" inputmode="decimal" class="pv-answer-input" id="pvMathInput" placeholder="Enter a number' + (c.unit ? " (" + esc(c.unit) + ")" : "") + '…" />';
-    html += '<button class="pv-choice-btn" id="pvSubmitMath" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvSubmitMath", "max-width:160px");
     var fbMa = session.state.feedback[n.id];
     if (fbMa) html += '<div class="pv-feedback ' + fbMa + '">' + (fbMa === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
   } else if (n.type === "anagram") {
     html += '<div class="pv-mono-block">' + esc((c.scrambled || "").toUpperCase().split("").join(" ")) + '</div>';
     html += '<input type="text" class="pv-answer-input" id="pvAnagramInput" placeholder="Type the unscrambled word/phrase…" />';
-    html += '<button class="pv-choice-btn" id="pvSubmitAnagram" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvSubmitAnagram", "max-width:160px");
     var fbAn = session.state.feedback[n.id];
     if (fbAn) html += '<div class="pv-feedback ' + fbAn + '">' + (fbAn === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
   } else if (n.type === "sequencePattern") {
@@ -1331,7 +1353,7 @@ function renderPreviewNode(session, n, ctl) {
         '<div class="pv-scene-body" style="margin-bottom:8px;font-size:13.5px">' + esc(p.prompt) + '</div>' +
         '<input type="text" class="pv-answer-input pvPartInput" data-partid="' + p.id + '" placeholder="Answer…" value="' + esc(ctl.multiPartDraft[n.id][p.id] || "") + '" /></div>';
     });
-    html += '<button class="pv-choice-btn" id="pvSubmitMultiPart" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvSubmitMultiPart", "max-width:160px");
     var fbMp = session.state.feedback[n.id];
     if (fbMp) html += '<div class="pv-feedback ' + fbMp + '">' + (fbMp === "correct" ? "✓ All parts correct." : "✗ One or more parts are wrong — try again.") + '</div>';
   } else if (n.type === "physicalLockCode") {
@@ -1381,14 +1403,14 @@ function renderPreviewNode(session, n, ctl) {
     html += '</div>'; // .pv-lock-body
     html += '</div>'; // .pv-lock-wrap
     html += '<input type="hidden" id="pvLockInput" value="' + esc(dialState.map(function (i) { return wheelValues[i]; }).join("")) + '" />';
-    html += '<button class="pv-choice-btn" id="pvSubmitLock" style="max-width:200px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvSubmitLock", "max-width:200px");
     if (fbLo) html += '<div class="pv-feedback ' + fbLo + '">' + (fbLo === "correct" ? "✓ Unlocked." : "✗ Incorrect code — try again.") + '</div>';
   } else if (n.type === "crossReferenceLookup") {
     var srcTitles = (c.sourceNodeIds || []).map(function (id) { return nodeTitle(session.hunt, id); });
     if (srcTitles.length) html += '<div class="pv-info-card">References: ' + esc(srcTitles.join(", ")) + '</div>';
     html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
     html += '<input type="text" class="pv-answer-input" id="pvCrossRefInput" placeholder="Type your answer…" />';
-    html += '<button class="pv-choice-btn" id="pvSubmitCrossRef" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += pvPrimaryButton(n, "pvSubmitCrossRef", "max-width:160px");
     var fbCr = session.state.feedback[n.id];
     if (fbCr) html += '<div class="pv-feedback ' + fbCr + '">' + (fbCr === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
   }
