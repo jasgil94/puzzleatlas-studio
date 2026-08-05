@@ -86,21 +86,21 @@ var NODE_TYPES = {
   storyBlock: {
     family: "narrative", label: "Story Block", icon: "📖",
     defaultTitle: "New Story Block",
-    // title: creator-only organizational label, never shown to the player —
-    // distinct from the node's own Basics > Title field (n.title), which can
-    // surface to the player in the Open Leads list when several nodes are
-    // available at once. body/mediaUrl/mediaType behave exactly like Simple
-    // Text. buttons: an ordered (left-to-right) list of completion buttons —
-    // each is either kind "connection" (routes via an outgoing connection
-    // from this node, chosen in the Studio inspector's Completion tab — see
-    // buildStoryBlockButtonsEditor in app.js) or kind "back" (pure
-    // navigation, like Simple Text's back button — no connection involved).
-    // A single "Back" button is included by default and can be deleted.
+    // body/mediaUrl/mediaType behave exactly like Simple Text. buttons: an
+    // ordered list of completion buttons — each is either kind "connection"
+    // (routes via an outgoing connection from this node, chosen in the
+    // Studio inspector's Completion tab — see buildStoryBlockButtonsEditor
+    // in app.js) or kind "back" (pure navigation, like Simple Text's back
+    // button — no connection involved). A single "Back" button is included
+    // by default and can be deleted. buttonLayout: "vertical" (top to
+    // bottom, default) or "horizontal" (left to right, buttons share a row
+    // — see the pv-btn-row styling in renderPreviewNode/styles.css).
     defaultContent: function () {
       return {
-        title: "", body: "Write the narrative text the player sees here.",
+        body: "Write the narrative text the player sees here.",
         mediaUrl: "", mediaType: "image",
-        buttons: [{ id: uid("btn"), label: "Back", kind: "back" }]
+        buttons: [{ id: uid("btn"), label: "Back", kind: "back" }],
+        buttonLayout: "vertical"
       };
     },
     summary: function (c) { return c.body ? c.body.slice(0, 60) : ""; }
@@ -1203,14 +1203,22 @@ function renderPreviewNode(session, n, ctl) {
     if (fbSc === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "storyBlock") {
     html += '<div class="pv-scene-body">' + esc(c.body) + '</div>';
+    var sbHorizontal = c.buttonLayout === "horizontal";
+    var sbBtnStyle = sbHorizontal ? "" : ' style="max-width:220px;margin-top:6px"';
+    var sbBtnsHtml = "";
     (c.buttons || []).forEach(function (b) {
       if (b.kind === "back") {
         var prevSb = previousConnectingNode(session.hunt, n.id);
-        if (prevSb) html += '<button class="pv-choice-btn pv-back-btn" data-back-target="' + esc(prevSb.id) + '" style="max-width:220px;margin-top:6px">' + esc(b.label || "← Back") + '</button>';
+        if (prevSb) sbBtnsHtml += '<button class="pv-choice-btn pv-back-btn" data-back-target="' + esc(prevSb.id) + '"' + sbBtnStyle + '>' + esc(b.label || "← Back") + '</button>';
       } else {
-        html += '<button class="pv-choice-btn" data-opt="' + esc(b.id) + '" style="max-width:220px;margin-top:6px">' + esc(b.label || "Continue") + '</button>';
+        sbBtnsHtml += '<button class="pv-choice-btn" data-opt="' + esc(b.id) + '"' + sbBtnStyle + '>' + esc(b.label || "Continue") + '</button>';
       }
     });
+    // Horizontal layout puts every button in a shared row (pv-btn-row —
+    // see styles.css), which also scales the font down and wraps longer
+    // labels onto multiple lines so they don't overflow their share of the
+    // row. Vertical (default) keeps the original one-per-line stack.
+    html += sbHorizontal ? '<div class="pv-btn-row">' + sbBtnsHtml + '</div>' : sbBtnsHtml;
     var fbSb = session.state.feedback[n.id];
     if (fbSb === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "choice") {

@@ -297,6 +297,12 @@ button{font-family:inherit;cursor:pointer;}
    forward action. */
 .pv-back-btn{background:transparent;color:var(--pv-text-dim);text-align:center;}
 .pv-back-btn:hover{color:var(--pv-text);}
+/* Story Block "Left to Right" button layout — buttons share a row instead
+   of stacking. Each button shrinks to fit (flex-basis 0, grow evenly),
+   drops to a smaller font and wraps its label onto multiple lines instead
+   of overflowing or truncating when the row gets tight. */
+.pv-btn-row{display:flex;gap:8px;margin-bottom:8px;}
+.pv-btn-row .pv-choice-btn{flex:1 1 0;min-width:0;margin-bottom:0;text-align:center;white-space:normal;word-break:break-word;font-size:12px;line-height:1.25;display:flex;align-items:center;justify-content:center;}
 .pv-answer-input{width:100%;padding:9px 10px;border-radius:var(--pv-radius);border:var(--pv-border-width) var(--pv-border-style) var(--line);background:var(--pv-bg);color:var(--pv-text);font-family:var(--pv-font-mono);font-size:14px;margin:10px 0;}
 .pv-feedback{font-size:12.5px;margin-top:6px;}
 .pv-feedback.correct{color:var(--pv-ok);}

@@ -1679,7 +1679,6 @@ function buildTypeSpecificFields(n) {
       }
       break;
     case "storyBlock":
-      html += fieldWrap("Title (creator-only, never shown to the player)", '<input type="text" id="fSbTitle" value="' + esc(c.title || "") + '" />');
       html += fieldWrap("Body text (player-visible)", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
       html += '<p style="font-size:11px;color:var(--text-dim)">Completion buttons (added, ordered and connected) are set up below, in the Completion section.</p>';
       break;
@@ -2056,7 +2055,6 @@ function wireNodeInspector(n) {
       if (byId("btnClearBackButton")) byId("btnClearBackButton").onclick = function () { c.showBackButton = false; afterEdit(); renderInspector(); };
       break;
     case "storyBlock":
-      bindText("fSbTitle", "title");
       bindText("fBody", "body");
       break;
     case "choice":
@@ -2325,8 +2323,14 @@ function buildCompletionEditor(n) {
 function buildStoryBlockButtonsEditor(n) {
   var c = n.content;
   c.buttons = c.buttons || [];
+  if (!c.buttonLayout) c.buttonLayout = "vertical";
   var outgoing = Store.hunt.connections.filter(function (cn) { return cn.sourceId === n.id; });
-  var html = '<div class="field"><label>Buttons (shown left → right)</label><div id="storyBtnList">';
+  var html = fieldWrap("Button layout", '<select id="fSbButtonLayout">' +
+    '<option value="vertical"' + (c.buttonLayout !== "horizontal" ? " selected" : "") + '>Top to Bottom</option>' +
+    '<option value="horizontal"' + (c.buttonLayout === "horizontal" ? " selected" : "") + '>Left to Right</option>' +
+    '</select>');
+  var orderHint = c.buttonLayout === "horizontal" ? "shown left → right" : "shown top → bottom";
+  html += '<div class="field"><label>Buttons (' + orderHint + ')</label><div id="storyBtnList">';
   c.buttons.forEach(function (b, i) {
     html += '<div class="list-item" data-btnid="' + b.id + '" style="flex-wrap:wrap">';
     html += '<input type="text" value="' + esc(b.label) + '" data-btnid="' + b.id + '" class="storyBtnLabelInput" style="flex:1;min-width:90px" />';
@@ -2380,6 +2384,7 @@ function setStoryButtonConnection(n, b, newConnectionId) {
 function wireStoryBlockButtonsEditor(n) {
   var c = n.content;
   var byId = function (id) { return document.getElementById(id); };
+  if (byId("fSbButtonLayout")) byId("fSbButtonLayout").onchange = function (e) { c.buttonLayout = e.target.value; afterEdit(); renderInspector(); };
   Array.prototype.forEach.call(document.querySelectorAll(".storyBtnLabelInput"), function (inp) {
     inp.oninput = function (e) {
       var b = c.buttons.find(function (x) { return x.id === inp.dataset.btnid; });
