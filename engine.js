@@ -199,6 +199,18 @@ var NODE_TYPES = {
       return style.label + " lock — " + c.codeFormat + " code, length " + c.codeLength;
     }
   },
+  cryptexLock: {
+    family: "puzzle", label: "Cryptex Dial Lock (3 Letter)", icon: "🗝️",
+    defaultTitle: "New Cryptex Lock",
+    // Three concentric letter rings (A–Z) the player drags to rotate, plus a
+    // centre button that reads off the letter under the fixed pointer on
+    // each ring and submits it through the normal free-text answer check
+    // (checkTextAnswer/pv_action_submitAnswer) — see renderCryptexSvg/
+    // wireCryptexInteractions below. acceptedAnswers holds one or more
+    // 3-letter combinations, same shape as Answer Entry.
+    defaultContent: function () { return { acceptedAnswers: ["CAT"] }; },
+    summary: function (c) { return "Combination: " + (c.acceptedAnswers || []).join(", "); }
+  },
   crossReferenceLookup: {
     family: "puzzle", label: "Cross-Reference Lookup", icon: "🔍",
     defaultTitle: "New Cross-Reference Lookup",
@@ -1021,7 +1033,7 @@ function pv_action_revealHint(session, hintNodeId) {
    screen at once without id clashes.
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
-  "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "crossReferenceLookup",
+  "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
   "imageReveal"];
 
 // Default primary-action button text per node type, used by
@@ -1405,6 +1417,12 @@ function renderPreviewNode(session, n, ctl) {
     html += '<input type="hidden" id="pvLockInput" value="' + esc(dialState.map(function (i) { return wheelValues[i]; }).join("")) + '" />';
     html += pvPrimaryButton(n, "pvSubmitLock", "max-width:200px");
     if (fbLo) html += '<div class="pv-feedback ' + fbLo + '">' + (fbLo === "correct" ? "✓ Unlocked." : "✗ Incorrect code — try again.") + '</div>';
+  } else if (n.type === "cryptexLock") {
+    if (!ctl.cryptexDraft[n.id]) ctl.cryptexDraft[n.id] = { outer: 0, middle: 0, inner: 0 };
+    html += '<div class="pv-scene-body">Drag each ring to line up a letter against the pointer at the top, then press the centre stud to try that combination.</div>';
+    html += renderCryptexSvg(n.id, ctl.cryptexDraft[n.id]);
+    var fbCx = session.state.feedback[n.id];
+    if (fbCx) html += '<div class="pv-feedback ' + fbCx + '">' + (fbCx === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
   } else if (n.type === "crossReferenceLookup") {
     var srcTitles = (c.sourceNodeIds || []).map(function (id) { return nodeTitle(session.hunt, id); });
     if (srcTitles.length) html += '<div class="pv-info-card">References: ' + esc(srcTitles.join(", ")) + '</div>';
@@ -1552,6 +1570,121 @@ function wireLockDials(root, ctl, session, n) {
   syncOutputs();
 }
 
+// Cryptex Dial Lock (3 Letter) — three concentric letter rings (A–Z) drawn
+// as inline SVG. Each ring has an invisible "hit" circle the player drags
+// (mouse or touch, via pointer capture) to spin it; a fixed pointer at the
+// top of the housing marks the letter currently "selected" on each ring.
+// Pressing the centre stud reads off the three pointer letters and submits
+// them through the same free-text answer pipeline as Answer Entry
+// (pv_action_submitAnswer/checkTextAnswer), so grading, feedback and node
+// completion all reuse existing plumbing — only the input UI is bespoke.
+// Purely presentational, same division of labour as wireLockDials above:
+// renderCryptexSvg draws from ctl.cryptexDraft[n.id], wireCryptexInteractions
+// keeps that same state in sync with drag gestures and clicks.
+var CRYPTEX_CX = 250, CRYPTEX_CY = 340, CRYPTEX_STEP = 360 / 26;
+
+function cryptexLetterMarkup(cx, cy, r) {
+  var s = "";
+  for (var i = 0; i < 26; i++) {
+    var angle = i * CRYPTEX_STEP;
+    s += '<g transform="rotate(' + angle + ' ' + cx + ' ' + cy + ')"><text x="' + cx + '" y="' + (cy - r + 6) + '" text-anchor="middle" class="cryptex-letter">' + String.fromCharCode(65 + i) + '</text></g>';
+  }
+  return s;
+}
+
+function renderCryptexSvg(nodeId, rot) {
+  var cx = CRYPTEX_CX, cy = CRYPTEX_CY, idp = "cx" + nodeId.replace(/[^a-zA-Z0-9]/g, "") + "_";
+  return '<svg class="cryptex-svg" data-node="' + nodeId + '" width="320" viewBox="0 0 500 600" style="display:block;margin:10px auto 0;max-width:100%;">' +
+    '<defs>' +
+      '<radialGradient id="' + idp + 'plate" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#e4e1d6"/><stop offset="55%" stop-color="#a9a598"/><stop offset="100%" stop-color="#69665c"/></radialGradient>' +
+      '<linearGradient id="' + idp + 'shackle" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#8c8c8c"/><stop offset="50%" stop-color="#e8e8e8"/><stop offset="100%" stop-color="#6b6b6b"/></linearGradient>' +
+      '<radialGradient id="' + idp + 'ro" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#c79a52"/><stop offset="100%" stop-color="#7a5a28"/></radialGradient>' +
+      '<radialGradient id="' + idp + 'rm" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#d4b06a"/><stop offset="100%" stop-color="#8c6c34"/></radialGradient>' +
+      '<radialGradient id="' + idp + 'ri" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#e0c17e"/><stop offset="100%" stop-color="#9c7c40"/></radialGradient>' +
+    '</defs>' +
+    '<path d="M 200 400 L 200 150 A 50 50 0 0 1 300 150 L 300 400" fill="none" stroke="url(#' + idp + 'shackle)" stroke-width="24" stroke-linecap="round"/>' +
+    '<circle cx="250" cy="340" r="192" fill="url(#' + idp + 'plate)" stroke="#4a473e" stroke-width="3"/>' +
+    '<polygon points="250,132 240,150 260,150" fill="#d8483f" stroke="#5a1a15" stroke-width="1"/>' +
+    '<g class="cryptex-ring" data-ring="outer" transform="rotate(' + rot.outer + ' 250 340)"><circle cx="250" cy="340" r="165" fill="url(#' + idp + 'ro)" stroke="#3d2f14" stroke-width="46"/>' + cryptexLetterMarkup(cx, cy, 165) + '</g>' +
+    '<circle cx="250" cy="340" r="188" fill="none" stroke="#3d3a32" stroke-width="1.5"/><circle cx="250" cy="340" r="142" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
+    '<circle class="cryptex-hit" data-ring="outer" cx="250" cy="340" r="165" fill="#000" opacity="0" stroke="#000" stroke-width="46"/>' +
+    '<g class="cryptex-ring" data-ring="middle" transform="rotate(' + rot.middle + ' 250 340)"><circle cx="250" cy="340" r="117" fill="url(#' + idp + 'rm)" stroke="#4a3a18" stroke-width="42"/>' + cryptexLetterMarkup(cx, cy, 117) + '</g>' +
+    '<circle cx="250" cy="340" r="138" fill="none" stroke="#3d3a32" stroke-width="1.5"/><circle cx="250" cy="340" r="96" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
+    '<circle class="cryptex-hit" data-ring="middle" cx="250" cy="340" r="117" fill="#000" opacity="0" stroke="#000" stroke-width="42"/>' +
+    '<g class="cryptex-ring" data-ring="inner" transform="rotate(' + rot.inner + ' 250 340)"><circle cx="250" cy="340" r="73" fill="url(#' + idp + 'ri)" stroke="#5a4622" stroke-width="38"/>' + cryptexLetterMarkup(cx, cy, 73) + '</g>' +
+    '<circle cx="250" cy="340" r="92" fill="none" stroke="#3d3a32" stroke-width="1.5"/><circle cx="250" cy="340" r="54" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
+    '<circle class="cryptex-hit" data-ring="inner" cx="250" cy="340" r="73" fill="#000" opacity="0" stroke="#000" stroke-width="38"/>' +
+    '<g class="cryptex-center">' +
+      '<circle class="cryptex-btn-face" cx="250" cy="340" r="46" fill="#caa15a" stroke="#6b4a20" stroke-width="2"/>' +
+      '<circle cx="250" cy="340" r="46" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
+      '<circle cx="250" cy="330" r="9" fill="#4a3a1c"/><polygon points="244,336 256,336 251,354 249,354" fill="#4a3a1c"/>' +
+    '</g>' +
+  '</svg>';
+}
+
+function cryptexPointerLetter(rotationDeg) {
+  var idx = Math.round(-rotationDeg / CRYPTEX_STEP);
+  idx = ((idx % 26) + 26) % 26;
+  return String.fromCharCode(65 + idx);
+}
+
+// Wired fresh on every render (like every other wire* fn here) — pointer
+// capture on each ring's own hit circle means move/up keep routing to that
+// same element even once the cursor leaves it, so no persistent window-level
+// listener or module-scope drag variable is needed.
+function wireCryptexInteractions(root, ctl, session, n) {
+  var svg = root.querySelector('.cryptex-svg[data-node="' + n.id + '"]');
+  if (!svg) return;
+  if (!ctl.cryptexDraft[n.id]) ctl.cryptexDraft[n.id] = { outer: 0, middle: 0, inner: 0 };
+  var rot = ctl.cryptexDraft[n.id];
+
+  function angleFromEvent(evt) {
+    var pt = svg.createSVGPoint();
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    var p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return (Math.atan2(p.y - CRYPTEX_CY, p.x - CRYPTEX_CX) * 180 / Math.PI) + 90;
+  }
+
+  Array.prototype.forEach.call(svg.querySelectorAll(".cryptex-hit"), function (hit) {
+    var ring = hit.dataset.ring;
+    var ringEl = svg.querySelector('.cryptex-ring[data-ring="' + ring + '"]');
+    var dragging = false, lastAngle = 0;
+
+    hit.onpointerdown = function (e) {
+      dragging = true;
+      lastAngle = angleFromEvent(e);
+      e.preventDefault();
+      try { hit.setPointerCapture(e.pointerId); } catch (err) { /* older browsers: drag still tracks via direct listeners */ }
+    };
+    hit.onpointermove = function (e) {
+      if (!dragging) return;
+      var angle = angleFromEvent(e);
+      var delta = angle - lastAngle;
+      while (delta > 180) delta -= 360;
+      while (delta < -180) delta += 360;
+      lastAngle = angle;
+      rot[ring] += delta;
+      if (ringEl) ringEl.setAttribute("transform", "rotate(" + rot[ring] + " " + CRYPTEX_CX + " " + CRYPTEX_CY + ")");
+    };
+    function finish() {
+      if (!dragging) return;
+      dragging = false;
+      rot[ring] = Math.round(rot[ring] / CRYPTEX_STEP) * CRYPTEX_STEP;
+      if (ringEl) ringEl.setAttribute("transform", "rotate(" + rot[ring] + " " + CRYPTEX_CX + " " + CRYPTEX_CY + ")");
+    }
+    hit.onpointerup = finish;
+    hit.onpointercancel = finish;
+  });
+
+  var center = svg.querySelector(".cryptex-center");
+  if (center) center.onclick = function () {
+    var combo = cryptexPointerLetter(rot.outer) + cryptexPointerLetter(rot.middle) + cryptexPointerLetter(rot.inner);
+    var ok = pv_action_submitAnswer(session, n.id, combo);
+    if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+    ctl.render();
+  };
+}
+
 function wirePreviewNodeInteractions(session, n, ctl) {
   if (!n) return;
   var root = ctl.mainEl;
@@ -1628,6 +1761,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireTextSubmitAction(root, ctl, session, n, "pvAnagramInput", "pvSubmitAnagram", pv_action_submitAnagramAnswer);
   wireTextSubmitAction(root, ctl, session, n, "pvLockInput", "pvSubmitLock", pv_action_submitLockCode);
   wireLockDials(root, ctl, session, n);
+  wireCryptexInteractions(root, ctl, session, n);
   wireTextSubmitAction(root, ctl, session, n, "pvCrossRefInput", "pvSubmitCrossRef", pv_action_submitCrossReferenceAnswer);
 
   // Sequence / Pattern — tap swatches in order; auto-validates once the
@@ -1729,7 +1863,7 @@ function createPreviewController(mainEl, sideEl) {
     mainEl: mainEl, sideEl: sideEl,
     session: null, expandedNodeId: null, showState: false,
     orderingDraft: {}, matchingDraft: {},
-    sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {},
+    sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {},
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
     laneListId: null, laneListSceneId: null, // set when a lane tab (Leads/Inventory/Hints) asks to show its scene-wide options list instead of a single node
@@ -1748,6 +1882,7 @@ function createPreviewController(mainEl, sideEl) {
     ctl.tileDraft = {};
     ctl.multiPartDraft = {};
     ctl.lockDialDraft = {};
+    ctl.cryptexDraft = {};
     ctl.pinnedNodeId = null;
     ctl.peekStack = [];
     ctl.laneListId = null;

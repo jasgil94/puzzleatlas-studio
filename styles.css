@@ -405,6 +405,18 @@ button{font-family:inherit;cursor:pointer;}
 .pv-lock-style-rusted .pv-lock-arrow svg{fill:#2b1a10;}
 .pv-lock-style-rusted .pv-lock-wheel-row{font-family:Impact,'Arial Narrow',Haettenschweiler,sans-serif;letter-spacing:1px;color:#e8d9b0;text-shadow:0 1px 2px rgba(0,0,0,.7), 0 0 4px rgba(120,60,20,.5);}
 
+/* Cryptex Dial Lock (3 Letter) — three concentric letter rings rendered as
+   inline SVG (see renderCryptexSvg/wireCryptexInteractions in engine.js).
+   Colour/gradient fills live inline in the SVG itself (per-node <defs>, so
+   several instances never clash), so only cursor affordances and the
+   engraved-letter typeface need to live here. */
+.cryptex-svg{touch-action:none;}
+.cryptex-letter{fill:#2a2118;font-size:17px;font-weight:bold;font-family:Georgia,'Times New Roman',serif;}
+.cryptex-hit{cursor:grab;}
+.cryptex-hit:active{cursor:grabbing;}
+.cryptex-center{cursor:pointer;}
+.cryptex-center:hover .cryptex-btn-face{fill:#d9b06a;}
+
 .pv-swatch-row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
 .pv-swatch{width:44px;height:44px;border-radius:var(--pv-radius);border:var(--pv-border-width) var(--pv-border-style) var(--line);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease;}
 .pv-swatch:hover{border-color:var(--pv-accent);}

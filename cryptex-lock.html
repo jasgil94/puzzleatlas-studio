@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cryptex Lock</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: radial-gradient(circle at 50% 30%, #2b2b30 0%, #131315 70%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  .wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    user-select: none;
+  }
+  svg {
+    touch-action: none;
+    cursor: grab;
+  }
+  svg:active {
+    cursor: grabbing;
+  }
+  .hit {
+    fill: #000;
+    opacity: 0;
+    pointer-events: all;
+    cursor: grab;
+  }
+  .letter text {
+    fill: #2a2118;
+    font-size: 17px;
+    font-weight: bold;
+    transition: fill 0.15s ease;
+  }
+  .letter.active text {
+    fill: #7a3a12;
+  }
+  #centerBtn {
+    cursor: pointer;
+  }
+  #centerBtn circle.face {
+    fill: #caa15a;
+    stroke: #6b4a20;
+    stroke-width: 2;
+    transition: fill 0.25s ease;
+  }
+  #centerBtn:hover circle.face {
+    fill: #d9b06a;
+  }
+  #centerBtn.success circle.face {
+    fill: #6fae5c;
+  }
+  #centerBtn.fail circle.face {
+    fill: #b8534a;
+  }
+  .status {
+    margin-top: 18px;
+    color: #d8d3c6;
+    font-size: 15px;
+    min-height: 22px;
+    letter-spacing: 0.5px;
+  }
+  .hint {
+    margin-top: 4px;
+    color: #7c7a72;
+    font-size: 12px;
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-9px); }
+    40% { transform: translateX(9px); }
+    60% { transform: translateX(-6px); }
+    80% { transform: translateX(6px); }
+  }
+  .shake {
+    animation: shake 0.4s ease;
+  }
+  #shackle {
+    transition: transform 0.7s cubic-bezier(.2,.9,.3,1.3);
+    transform-origin: 200px 340px;
+  }
+  #shackle.open {
+    transform: translate(6px, -46px) rotate(22deg);
+  }
+  .ring-track {
+    transition: filter 0.2s ease;
+  }
+  .flash-success .ring-track {
+    filter: drop-shadow(0 0 0 transparent);
+    stroke: #6fae5c !important;
+  }
+  .flash-fail .ring-track {
+    stroke: #b8534a !important;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <svg id="lockSvg" width="500" height="600" viewBox="0 0 500 600">
+    <defs>
+      <radialGradient id="plateGrad" cx="35%" cy="30%" r="75%">
+        <stop offset="0%" stop-color="#e4e1d6"/>
+        <stop offset="55%" stop-color="#a9a598"/>
+        <stop offset="100%" stop-color="#69665c"/>
+      </radialGradient>
+      <linearGradient id="shackleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#8c8c8c"/>
+        <stop offset="50%" stop-color="#e8e8e8"/>
+        <stop offset="100%" stop-color="#6b6b6b"/>
+      </linearGradient>
+      <radialGradient id="ringOuterGrad" cx="40%" cy="35%" r="70%">
+        <stop offset="0%" stop-color="#c79a52"/>
+        <stop offset="100%" stop-color="#7a5a28"/>
+      </radialGradient>
+      <radialGradient id="ringMiddleGrad" cx="40%" cy="35%" r="70%">
+        <stop offset="0%" stop-color="#d4b06a"/>
+        <stop offset="100%" stop-color="#8c6c34"/>
+      </radialGradient>
+      <radialGradient id="ringInnerGrad" cx="40%" cy="35%" r="70%">
+        <stop offset="0%" stop-color="#e0c17e"/>
+        <stop offset="100%" stop-color="#9c7c40"/>
+      </radialGradient>
+    </defs>
+
+    <!-- shackle (padlock loop) -->
+    <g id="shackle">
+      <path d="M 200 400 L 200 150 A 50 50 0 0 1 300 150 L 300 400"
+            fill="none" stroke="url(#shackleGrad)" stroke-width="24"
+            stroke-linecap="round"/>
+    </g>
+
+    <!-- body plate -->
+    <circle cx="250" cy="340" r="192" fill="url(#plateGrad)" stroke="#4a473e" stroke-width="3"/>
+
+    <!-- pointer marker (fixed, does not rotate) -->
+    <polygon points="250,132 240,150 260,150" fill="#d8483f" stroke="#5a1a15" stroke-width="1"/>
+
+    <!-- OUTER RING -->
+    <g id="ringOuterGroup">
+      <circle class="ring-track" cx="250" cy="340" r="165" fill="url(#ringOuterGrad)"
+              stroke="#3d2f14" stroke-width="46"/>
+      <g id="ringOuterLetters"></g>
+    </g>
+    <circle cx="250" cy="340" r="188" fill="none" stroke="#3d3a32" stroke-width="1.5"/>
+    <circle cx="250" cy="340" r="142" fill="none" stroke="#3d3a32" stroke-width="1.5"/>
+    <circle class="hit" data-ring="outer" cx="250" cy="340" r="165" fill="#000" stroke="#000" stroke-width="46"/>
+
+    <!-- MIDDLE RING -->
+    <g id="ringMiddleGroup">
+      <circle class="ring-track" cx="250" cy="340" r="117" fill="url(#ringMiddleGrad)"
+              stroke="#4a3a18" stroke-width="42"/>
+      <g id="ringMiddleLetters"></g>
+    </g>
+    <circle cx="250" cy="340" r="138" fill="none" stroke="#3d3a32" stroke-width="1.5"/>
+    <circle cx="250" cy="340" r="96" fill="none" stroke="#3d3a32" stroke-width="1.5"/>
+    <circle class="hit" data-ring="middle" cx="250" cy="340" r="117" fill="#000" stroke="#000" stroke-width="42"/>
+
+    <!-- INNER RING -->
+    <g id="ringInnerGroup">
+      <circle class="ring-track" cx="250" cy="340" r="73" fill="url(#ringInnerGrad)"
+              stroke="#5a4622" stroke-width="38"/>
+      <g id="ringInnerLetters"></g>
+    </g>
+    <circle cx="250" cy="340" r="92" fill="none" stroke="#3d3a32" stroke-width="1.5"/>
+    <circle cx="250" cy="340" r="54" fill="none" stroke="#3d3a32" stroke-width="1.5"/>
+    <circle class="hit" data-ring="inner" cx="250" cy="340" r="73" fill="#000" stroke="#000" stroke-width="38"/>
+
+    <!-- CENTER BUTTON -->
+    <g id="centerBtn">
+      <circle class="face" cx="250" cy="340" r="46"/>
+      <circle cx="250" cy="340" r="46" fill="none" stroke="#3d3a32" stroke-width="1.5"/>
+      <circle cx="250" cy="330" r="9" fill="#4a3a1c"/>
+      <polygon points="244,336 256,336 251,354 249,354" fill="#4a3a1c"/>
+    </g>
+  </svg>
+
+  <div class="status" id="status">Drag the rings, then press the center to try your combination.</div>
+  <div class="hint">Three letters. Good luck.</div>
+</div>
+
+<script>
+(function () {
+  const svg = document.getElementById('lockSvg');
+  const cx = 250, cy = 340;
+  const STEP = 360 / 26;
+  const TARGET = 'CAT';
+
+  const RINGS = {
+    outer:  { r: 165, group: document.getElementById('ringOuterGroup'), letters: document.getElementById('ringOuterLetters'), rotation: 0, els: [] },
+    middle: { r: 117, group: document.getElementById('ringMiddleGroup'), letters: document.getElementById('ringMiddleLetters'), rotation: 0, els: [] },
+    inner:  { r: 73,  group: document.getElementById('ringInnerGroup'), letters: document.getElementById('ringInnerLetters'), rotation: 0, els: [] }
+  };
+
+  function buildRing(ring) {
+    for (let i = 0; i < 26; i++) {
+      const angle = i * STEP;
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'letter');
+      g.setAttribute('data-index', i);
+      g.setAttribute('transform', `rotate(${angle} ${cx} ${cy})`);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', cx);
+      t.setAttribute('y', cy - ring.r + 6);
+      t.setAttribute('text-anchor', 'middle');
+      t.textContent = String.fromCharCode(65 + i);
+      g.appendChild(t);
+      ring.letters.appendChild(g);
+      ring.els.push(g);
+    }
+  }
+  Object.values(RINGS).forEach(buildRing);
+
+  function applyRotation(ring) {
+    ring.group.setAttribute('transform', `rotate(${ring.rotation} ${cx} ${cy})`);
+    updateActive(ring);
+  }
+
+  function pointerIndex(ring) {
+    let idx = Math.round(-ring.rotation / STEP);
+    idx = ((idx % 26) + 26) % 26;
+    return idx;
+  }
+
+  function pointerLetter(ring) {
+    return String.fromCharCode(65 + pointerIndex(ring));
+  }
+
+  function updateActive(ring) {
+    const idx = pointerIndex(ring);
+    ring.els.forEach((el, i) => {
+      el.classList.toggle('active', i === idx);
+    });
+  }
+
+  Object.values(RINGS).forEach(applyRotation);
+
+  function getSvgPoint(evt) {
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    const ctm = svg.getScreenCTM().inverse();
+    return pt.matrixTransform(ctm);
+  }
+
+  function angleFromCenter(p) {
+    const dx = p.x - cx, dy = p.y - cy;
+    return (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
+  }
+
+  function normalizeDelta(d) {
+    while (d > 180) d -= 360;
+    while (d < -180) d += 360;
+    return d;
+  }
+
+  let dragRing = null;
+  let lastAngle = 0;
+
+  function onPointerDown(evt) {
+    const name = evt.currentTarget.getAttribute('data-ring');
+    dragRing = RINGS[name];
+    lastAngle = angleFromCenter(getSvgPoint(evt));
+    svg.style.cursor = 'grabbing';
+    evt.preventDefault();
+  }
+
+  function onPointerMove(evt) {
+    if (!dragRing) return;
+    const currentAngle = angleFromCenter(getSvgPoint(evt));
+    const delta = normalizeDelta(currentAngle - lastAngle);
+    lastAngle = currentAngle;
+    dragRing.rotation += delta;
+    applyRotation(dragRing);
+  }
+
+  function onPointerUp() {
+    if (!dragRing) return;
+    const snapped = Math.round(dragRing.rotation / STEP) * STEP;
+    dragRing.group.style.transition = 'transform 0.15s ease-out';
+    dragRing.rotation = snapped;
+    applyRotation(dragRing);
+    setTimeout(() => { dragRing.group.style.transition = ''; }, 160);
+    dragRing = null;
+    svg.style.cursor = 'grab';
+  }
+
+  Object.entries(RINGS).forEach(([name, ring]) => {
+    const hit = svg.querySelector(`.hit[data-ring="${name}"]`);
+    hit.addEventListener('pointerdown', onPointerDown);
+    hit.addEventListener('wheel', (evt) => {
+      evt.preventDefault();
+      const dir = evt.deltaY > 0 ? 1 : -1;
+      ring.group.style.transition = 'transform 0.12s ease-out';
+      ring.rotation += dir * STEP;
+      applyRotation(ring);
+      setTimeout(() => { ring.group.style.transition = ''; }, 130);
+    }, { passive: false });
+  });
+
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
+
+  const statusEl = document.getElementById('status');
+  const centerBtn = document.getElementById('centerBtn');
+  const shackle = document.getElementById('shackle');
+  const body = document.querySelector('.wrap');
+
+  centerBtn.addEventListener('click', () => {
+    const combo = RINGS.outer && [RINGS.outer, RINGS.middle, RINGS.inner].map(pointerLetter).join('');
+    if (combo === TARGET) {
+      centerBtn.classList.remove('fail');
+      centerBtn.classList.add('success');
+      shackle.classList.add('open');
+      [RINGS.outer.group, RINGS.middle.group, RINGS.inner.group].forEach(g => g.classList.add('flash-success'));
+      statusEl.textContent = 'Unlocked.';
+    } else {
+      centerBtn.classList.remove('success');
+      centerBtn.classList.add('fail');
+      body.classList.remove('shake');
+      void body.offsetWidth;
+      body.classList.add('shake');
+      [RINGS.outer.group, RINGS.middle.group, RINGS.inner.group].forEach(g => g.classList.add('flash-fail'));
+      statusEl.textContent = `Denied: ${combo}`;
+      setTimeout(() => {
+        centerBtn.classList.remove('fail');
+        [RINGS.outer.group, RINGS.middle.group, RINGS.inner.group].forEach(g => g.classList.remove('flash-fail'));
+      }, 500);
+    }
+  });
+})();
+</script>
+</body>
+</html>

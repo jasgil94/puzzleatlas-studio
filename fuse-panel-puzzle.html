@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Distribution Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Oswald:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --metal-dark:#171614;
+    --metal-mid:#2c2a26;
+    --metal-light:#4b4740;
+    --metal-scratch:#5c584f;
+    --rust-1:#5a3420;
+    --rust-2:#3a2417;
+    --brass:#b8863f;
+    --brass-light:#e9c47b;
+    --brass-dark:#6e4a1f;
+    --copper:#a45a34;
+    --copper-light:#d98a5c;
+    --bakelite:#0b0b0b;
+    --bakelite-hi:#3d3d3d;
+    --label-cream:#d9cca0;
+    --label-green:#5f6e50;
+    --label-ink:#2b2a1f;
+    --glow:#ff9a3c;
+    --glow-soft:rgba(255,154,60,0.55);
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0;
+    min-height:100vh;
+    background:#0a0908;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:30px 16px;
+    font-family:'Oswald', sans-serif;
+  }
+
+  /* ---------- outer board ---------- */
+  .board{
+    position:relative;
+    width:100%;
+    max-width:900px;
+    padding:38px 34px 44px;
+    border-radius:6px;
+    background:
+      radial-gradient(ellipse at 15% 8%, rgba(255,255,255,0.05), transparent 45%),
+      radial-gradient(ellipse at 85% 95%, rgba(0,0,0,0.5), transparent 50%),
+      radial-gradient(circle at 30% 70%, var(--rust-2) 0%, transparent 35%),
+      radial-gradient(circle at 80% 20%, var(--rust-1) 0%, transparent 28%),
+      radial-gradient(circle at 60% 85%, var(--rust-2) 0%, transparent 22%),
+      repeating-linear-gradient(90deg, rgba(0,0,0,0.12) 0px, transparent 1px 3px),
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.10) 0px, transparent 1px 3px),
+      linear-gradient(155deg, var(--metal-light) 0%, var(--metal-mid) 45%, var(--metal-dark) 100%);
+    box-shadow:
+      inset 0 0 90px rgba(0,0,0,0.85),
+      inset 0 2px 0 rgba(255,255,255,0.05),
+      0 25px 60px rgba(0,0,0,0.7);
+    border:5px solid #0c0b0a;
+    outline:2px solid #2a2722;
+    outline-offset:-9px;
+  }
+
+  .board::after{
+    /* grime / noise overlay */
+    content:"";
+    position:absolute; inset:0;
+    background-image:
+      radial-gradient(rgba(0,0,0,0.5) 0.5px, transparent 0.5px),
+      radial-gradient(rgba(255,255,255,0.04) 0.5px, transparent 0.5px);
+    background-size:3px 3px, 5px 5px;
+    background-position:0 0, 1px 2px;
+    mix-blend-mode:overlay;
+    opacity:0.5;
+    pointer-events:none;
+    border-radius:3px;
+  }
+
+  .screw{
+    position:absolute;
+    width:14px; height:14px;
+    border-radius:50%;
+    background:
+      linear-gradient(135deg, #8d8d8d, #302f2d 55%, #131211);
+    box-shadow:0 1px 2px rgba(0,0,0,0.8), inset 0 0 2px rgba(0,0,0,0.9);
+  }
+  .screw::after{
+    content:"";
+    position:absolute; top:50%; left:50%;
+    width:9px; height:1.5px;
+    background:#161513;
+    transform:translate(-50%,-50%) rotate(35deg);
+    box-shadow:0 1px 0 rgba(255,255,255,0.08);
+  }
+  .screw.tl{ top:14px; left:14px; }
+  .screw.tr{ top:14px; right:14px; }
+  .screw.bl{ bottom:14px; left:14px; }
+  .screw.br{ bottom:14px; right:14px; }
+
+  .board-title{
+    position:relative;
+    text-align:center;
+    font-family:'Oswald', sans-serif;
+    font-weight:600;
+    letter-spacing:6px;
+    font-size:15px;
+    color:#c7a765;
+    text-shadow:0 1px 0 rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.4);
+    margin:0 0 6px;
+  }
+  .board-subtitle{
+    position:relative;
+    text-align:center;
+    font-family:'Special Elite', monospace;
+    letter-spacing:2px;
+    font-size:10.5px;
+    color:#8b8578;
+    margin:0 0 28px;
+    opacity:0.75;
+  }
+
+  /* ---------- grid ---------- */
+  .grid{
+    position:relative;
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    grid-template-rows:repeat(3, 1fr);
+    gap:22px 18px;
+  }
+
+  /* ---------- individual switch unit ---------- */
+  .switch-unit{
+    position:relative;
+    background:
+      linear-gradient(160deg, rgba(255,255,255,0.03), transparent 40%),
+      linear-gradient(175deg, #26241f, #1b1a16 80%);
+    border-radius:5px;
+    padding:12px 10px 14px;
+    box-shadow:
+      inset 0 0 0 1px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(255,255,255,0.04),
+      0 3px 8px rgba(0,0,0,0.5);
+    cursor:pointer;
+    user-select:none;
+    outline:none;
+    transition:box-shadow 0.2s ease;
+  }
+  .switch-unit:focus-visible{
+    box-shadow:
+      inset 0 0 0 1px rgba(0,0,0,0.6),
+      0 0 0 2px var(--glow-soft);
+  }
+
+  .plate-number{
+    font-family:'Special Elite', monospace;
+    font-size:9.5px;
+    letter-spacing:1px;
+    color:#8f8a7a;
+    text-align:center;
+    margin-bottom:6px;
+    text-shadow:0 1px 0 rgba(0,0,0,0.6);
+  }
+
+  /* ---- mechanism (knife switch) ---- */
+  .mechanism{
+    position:relative;
+    height:122px;
+    margin:0 auto 8px;
+    width:70px;
+  }
+
+  .post{
+    position:absolute;
+    left:50%;
+    transform:translateX(-50%);
+    border-radius:3px;
+    background:linear-gradient(135deg, var(--brass-light), var(--brass) 45%, var(--brass-dark) 100%);
+    box-shadow:0 1px 2px rgba(0,0,0,0.7), inset 0 0 1px rgba(255,255,255,0.4);
+  }
+  .post-top{
+    top:0;
+    width:14px; height:14px;
+    border-radius:50%;
+    z-index:3;
+  }
+  /* contacts: two fixed lower contacts mirrored left/right — the blade
+     swings between them (left = ON / down-left, right = OFF / down-right) */
+  .contact{
+    position:absolute;
+    top:76px;
+    width:22px; height:9px;
+    border-radius:2px;
+    z-index:1;
+    background:linear-gradient(135deg, var(--brass-light), var(--brass) 45%, var(--brass-dark) 100%);
+    box-shadow:0 1px 2px rgba(0,0,0,0.7), inset 0 0 1px rgba(255,255,255,0.4);
+    transition:box-shadow 0.2s ease, background 0.2s ease;
+  }
+  .contact-on{ left:-6px; }
+  .contact-off{ right:-6px; }
+
+  .blade-group{
+    position:absolute;
+    top:7px;
+    left:50%;
+    width:8px;
+    height:72px;
+    margin-left:-4px;
+    transform-origin:4px 0px;
+    transform:rotate(-34deg);
+    transition:transform 0.22s cubic-bezier(.4,1.3,.6,1);
+    z-index:2;
+  }
+  .switch-unit.on .blade-group{
+    transform:rotate(34deg);
+  }
+
+  /* single-letter placeholders beneath each throw position */
+  .pos-label{
+    position:absolute;
+    top:92px;
+    width:16px;
+    text-align:center;
+    font-family:'Special Elite', monospace;
+    font-size:10px;
+    color:var(--label-cream);
+    text-shadow:0 1px 1px rgba(0,0,0,0.85);
+    opacity:0.75;
+    z-index:1;
+  }
+  .label-on{ left:-3px; }
+  .label-off{ right:-3px; }
+
+  .blade{
+    position:absolute;
+    top:0; left:1px;
+    width:6px;
+    height:52px;
+    border-radius:2px;
+    background:linear-gradient(90deg, var(--brass-dark), var(--copper-light) 45%, var(--brass-dark));
+    box-shadow:0 0 2px rgba(0,0,0,0.6);
+  }
+
+  .handle{
+    position:absolute;
+    top:46px;
+    left:50%;
+    transform:translateX(-50%);
+    width:18px;
+    height:30px;
+    border-radius:5px;
+    background:
+      linear-gradient(120deg, var(--bakelite-hi) 0%, var(--bakelite) 35%, #000 100%);
+    box-shadow:
+      0 2px 4px rgba(0,0,0,0.8),
+      inset 0 1px 1px rgba(255,255,255,0.12),
+      inset 0 -3px 4px rgba(0,0,0,0.7);
+  }
+  .handle::after{
+    content:"";
+    position:absolute;
+    top:4px; left:3px;
+    width:4px; height:9px;
+    border-radius:2px;
+    background:rgba(255,255,255,0.13);
+    filter:blur(0.3px);
+  }
+
+  .switch-unit.on .contact-on{
+    background:linear-gradient(135deg, #ffd48a, var(--glow) 45%, var(--brass-dark));
+    box-shadow:0 0 10px 3px var(--glow-soft), inset 0 0 2px rgba(255,255,255,0.6);
+  }
+
+  /* ---- fuse cylinder ---- */
+  .fuse{
+    position:relative;
+    height:46px;
+    width:88px;
+    margin:0 auto;
+    display:flex;
+    align-items:center;
+  }
+  .cap{
+    width:10px; height:24px;
+    flex:0 0 auto;
+    background:linear-gradient(90deg, var(--brass-dark), var(--brass-light) 50%, var(--brass-dark));
+    box-shadow:inset 0 0 2px rgba(0,0,0,0.6);
+  }
+  .cap-top{ border-radius:4px 0 0 4px; }
+  .cap-bottom{ border-radius:0 4px 4px 0; }
+
+  .tube{
+    position:relative;
+    flex:1 1 auto;
+    height:24px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.08), transparent 30%),
+      linear-gradient(180deg, #c9bd94, #a89c72 45%, #8c8262 100%);
+    box-shadow:
+      inset 0 2px 3px rgba(255,255,255,0.15),
+      inset 0 -3px 4px rgba(0,0,0,0.35),
+      0 1px 3px rgba(0,0,0,0.6);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+    transition:box-shadow 0.25s ease, background 0.25s ease;
+  }
+  .tube::before{
+    /* aged paper stains */
+    content:"";
+    position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 20% 80%, rgba(80,60,20,0.25), transparent 40%),
+      radial-gradient(circle at 75% 15%, rgba(60,50,20,0.2), transparent 35%);
+    mix-blend-mode:multiply;
+  }
+  .label{
+    position:relative;
+    font-family:'Special Elite', monospace;
+    font-size:9px;
+    letter-spacing:0.5px;
+    color:var(--label-ink);
+    background:var(--label-cream);
+    padding:2px 6px;
+    border-radius:1px;
+    box-shadow:0 0 0 1px rgba(0,0,0,0.15);
+    opacity:0.92;
+  }
+  .amp{
+    position:relative;
+    font-family:'Special Elite', monospace;
+    font-size:7px;
+    color:var(--label-green);
+    margin-left:3px;
+  }
+
+  .switch-unit.on .tube{
+    background:
+      linear-gradient(180deg, rgba(255,200,140,0.25), transparent 40%),
+      linear-gradient(180deg, #d8c99a, #b9a878 45%, #9c8f66 100%);
+    box-shadow:
+      inset 0 0 8px rgba(255,154,60,0.55),
+      inset 0 2px 3px rgba(255,255,255,0.2),
+      0 0 12px 2px var(--glow-soft);
+  }
+
+  .status-strip{
+    display:flex;
+    justify-content:center;
+    gap:5px;
+    margin-top:6px;
+  }
+  .status-dot{
+    width:5px; height:5px;
+    border-radius:50%;
+    background:#3a352c;
+    box-shadow:inset 0 0 1px rgba(0,0,0,0.8);
+  }
+  .switch-unit.on .status-dot{
+    background:var(--glow);
+    box-shadow:0 0 4px 1px var(--glow-soft);
+  }
+
+  footer{
+    text-align:center;
+    margin-top:8px;
+    font-family:'Special Elite', monospace;
+    font-size:9px;
+    letter-spacing:1px;
+    color:#726c5e;
+  }
+
+  @media (max-width:560px){
+    .grid{ grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="board" id="board">
+  <span class="screw tl"></span>
+  <span class="screw tr"></span>
+  <span class="screw bl"></span>
+  <span class="screw br"></span>
+
+  <h1 class="board-title">MAIN DISTRIBUTION PANEL</h1>
+  <p class="board-subtitle">— CIRCUITS 01&ndash;12 · HANDLE WITH CARE —</p>
+
+  <div class="grid" id="switchGrid"></div>
+
+  <footer>DANGER — HIGH VOLTAGE — AUTHORIZED PERSONNEL ONLY</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var TOTAL = 12;
+  var grid = document.getElementById('switchGrid');
+
+  function pad(n){ return n < 10 ? '0' + n : '' + n; }
+
+  // Build the 12 switch units
+  for (var i = 0; i < TOTAL; i++){
+    var unit = document.createElement('div');
+    unit.className = 'switch-unit';
+    unit.setAttribute('data-index', i);
+    unit.setAttribute('tabindex', '0');
+    unit.setAttribute('role', 'switch');
+    unit.setAttribute('aria-checked', 'false');
+    unit.setAttribute('aria-label', 'Circuit ' + pad(i + 1));
+
+    unit.innerHTML =
+      '<div class="plate-number">CKT ' + pad(i + 1) + '</div>' +
+      '<div class="mechanism">' +
+        '<div class="post post-top"></div>' +
+        '<div class="blade-group">' +
+          '<div class="blade"></div>' +
+          '<div class="handle"></div>' +
+        '</div>' +
+        '<div class="contact contact-on"></div>' +
+        '<div class="contact contact-off"></div>' +
+        '<span class="pos-label label-on" data-role="on-letter">A</span>' +
+        '<span class="pos-label label-off" data-role="off-letter">A</span>' +
+      '</div>' +
+      '<div class="fuse">' +
+        '<div class="cap cap-top"></div>' +
+        '<div class="tube"><span class="label">F-' + pad(i + 1) + '</span></div>' +
+        '<div class="cap cap-bottom"></div>' +
+      '</div>' +
+      '<div class="status-strip"><span class="status-dot"></span></div>';
+
+    grid.appendChild(unit);
+  }
+
+  /* ------------------------------------------------------------
+     Puzzle state API
+     window.switchPanel.state      -> array of 12 booleans (true = ON/down)
+     window.switchPanel.getState() -> copy of the state array
+     window.switchPanel.set(i,val) -> programmatically set a switch
+     window.switchPanel.toggle(i)  -> programmatically toggle a switch
+     window.switchPanel.reset()    -> set all switches off
+     window.switchPanel.matches(arr) -> bool, compares state to arr
+     Listens: window "switchpanel:change" CustomEvent fires on every change,
+              detail = { index, value, state: [...] }
+  ------------------------------------------------------------ */
+
+  var state = new Array(TOTAL).fill(false);
+  var units = Array.prototype.slice.call(grid.querySelectorAll('.switch-unit'));
+
+  function applyVisual(idx){
+    var unit = units[idx];
+    var on = state[idx];
+    unit.classList.toggle('on', on);
+    unit.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+
+  function setSwitch(idx, value, silent){
+    if (idx < 0 || idx >= TOTAL) return;
+    value = !!value;
+    if (state[idx] === value) { applyVisual(idx); return; }
+    state[idx] = value;
+    applyVisual(idx);
+    if (!silent){
+      window.dispatchEvent(new CustomEvent('switchpanel:change', {
+        detail: { index: idx, value: value, state: state.slice() }
+      }));
+    }
+  }
+
+  function toggleSwitch(idx){
+    setSwitch(idx, !state[idx]);
+  }
+
+  units.forEach(function(unit, idx){
+    unit.addEventListener('click', function(){
+      toggleSwitch(idx);
+    });
+    unit.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar'){
+        e.preventDefault();
+        toggleSwitch(idx);
+      }
+    });
+  });
+
+  function setLetters(idx, onText, offText){
+    if (idx < 0 || idx >= TOTAL) return;
+    var unit = units[idx];
+    if (onText != null) unit.querySelector('.label-on').textContent = onText;
+    if (offText != null) unit.querySelector('.label-off').textContent = offText;
+  }
+
+  window.switchPanel = {
+    state: state,
+    getState: function(){ return state.slice(); },
+    set: function(idx, value){ setSwitch(idx, value); },
+    toggle: function(idx){ toggleSwitch(idx); },
+    reset: function(){ for (var i = 0; i < TOTAL; i++) setSwitch(i, false); },
+    matches: function(arr){
+      if (!arr || arr.length !== TOTAL) return false;
+      for (var i = 0; i < TOTAL; i++){
+        if (!!arr[i] !== state[i]) return false;
+      }
+      return true;
+    },
+    setLetters: setLetters
+  };
+
+})();
+</script>
+</body>
+</html>

@@ -463,7 +463,7 @@ var SUGGESTED_LANE = {
   // puzzles in Leads; state-family goes to Inventory; the new Support
   // type goes to Hints, same as the existing Hint node.
   cipher: "leads", mathLogic: "leads", anagram: "leads", sequencePattern: "leads", slidingTile: "leads",
-  multiPartAnswer: "leads", physicalLockCode: "leads", crossReferenceLookup: "leads",
+  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads",
   gate: "leads", randomizer: "leads", teamSplitMerge: "leads", metaPuzzleCombine: "leads",
   timer: "leads", attemptLimiter: "leads",
   combineCraftItem: "inventory", trade: "inventory",
@@ -1874,6 +1874,13 @@ function buildTypeSpecificFields(n) {
       html += fieldWrap("Code length", '<input type="number" id="fCodeLength" min="1" value="' + (c.codeLength || 4) + '" />');
       html += fieldWrap("Accepted code", '<input type="text" id="fAcceptedCode" value="' + esc(c.acceptedCode || "") + '" />');
       break;
+    case "cryptexLock":
+      html += '<p style="font-size:12px;color:var(--text-dim)">Player drags three letter rings and presses the centre stud to try a combination. Letters are always A–Z, matched case-insensitively.</p>';
+      html += '<div class="field"><label>Accepted combinations (3 letters)</label><div id="ansList">' +
+        (c.acceptedAnswers || []).map(function (a, i) {
+          return '<div class="list-item"><input type="text" value="' + esc(a) + '" data-idx="' + i + '" class="ansInput" maxlength="3" style="text-transform:uppercase;letter-spacing:2px;font-family:\'Courier New\',monospace;width:70px;flex:none" /><button class="small-btn" data-idx="' + i + '">✕</button></div>';
+        }).join("") + '</div><button class="small-btn" id="btnAddAnswer">+ Add accepted variant</button></div>';
+      break;
     case "awardItem":
       html += fieldWrap("Item to award", '<select id="fItemId">' + selectOptions(hunt.items, "id", "name", c.itemId, "— choose item —") + '</select>');
       break;
@@ -2274,6 +2281,16 @@ function wireNodeInspector(n) {
       bindChange("fCodeFormat", function (v) { c.codeFormat = v; });
       if (byId("fCodeLength")) { byId("fCodeLength").oninput = function (e) { c.codeLength = Number(e.target.value); }; byId("fCodeLength").onblur = function () { afterEdit(false); }; }
       bindText("fAcceptedCode", "acceptedCode");
+      break;
+    case "cryptexLock":
+      Array.prototype.forEach.call(document.querySelectorAll(".ansInput"), function (inp) {
+        inp.oninput = function (e) { c.acceptedAnswers[+inp.dataset.idx] = e.target.value.toUpperCase(); };
+        inp.onblur = function () { afterEdit(false); renderInspector(); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("#ansList button"), function (btn) {
+        btn.onclick = function () { c.acceptedAnswers.splice(+btn.dataset.idx, 1); afterEdit(false); renderInspector(); };
+      });
+      if (byId("btnAddAnswer")) byId("btnAddAnswer").onclick = function () { c.acceptedAnswers.push("CAT"); afterEdit(false); renderInspector(); };
       break;
     case "awardItem":
       bindChange("fItemId", function (v) { c.itemId = v; });
