@@ -1117,7 +1117,7 @@ function renderLaneOptionsList(session, laneId, nodes) {
       var shown = state.hintProgress[h.id] || 0;
       html += '<div style="margin-bottom:16px"><div style="color:var(--pv-text-dim);font-size:11.5px;margin-bottom:4px">For: ' + esc(nodeTitle(hunt, h.content.forNodeId)) + '</div>';
       html += '<button class="pv-hint-btn" data-hint="' + h.id + '" ' + (shown >= h.content.stages.length ? "disabled" : "") + '>💡 Reveal hint (' + shown + "/" + h.content.stages.length + ')</button>';
-      for (var i = 0; i < shown; i++) html += '<div class="pv-hint-text">' + esc(h.content.stages[i].text) + '</div>';
+      for (var i = 0; i < shown; i++) html += '<div class="pv-hint-text"' + pvFontStyle(h.content.stages[i].fontSize, 12) + '>' + esc(h.content.stages[i].text) + '</div>';
       html += '</div>';
     });
   } else if (laneId === "inventory") {
@@ -1188,11 +1188,22 @@ function renderImageRevealBlock(c) {
   return html;
 }
 
+// Renders body/prompt/hint text at the font size chosen (via the Studio
+// inspector's +/- controls, see playerTextField/wireFontSizeButtons in
+// app.js) at content.bodyFontSize / content.promptFontSize / a hint
+// stage's own fontSize — so those buttons change what the player
+// actually sees here, not just the editor. Falls back to the class's own
+// CSS default (15px for .pv-scene-body, 12px for .pv-hint-text) when a
+// field's size was never customized.
+function pvFontStyle(size, defaultSize) {
+  return ' style="font-size:' + (size || defaultSize || 15) + 'px"';
+}
+
 function renderPreviewNode(session, n, ctl) {
   var c = n.content, html = "";
   var hints = hintsForNode(session.hunt, n.id);
   if (n.type === "scene") {
-    html += '<div class="pv-scene-body">' + esc(c.body) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">' + esc(buttonLabelFor(n)) + '</button>';
+    html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div><button class="pv-choice-btn" id="pvContinue" style="max-width:200px">' + esc(buttonLabelFor(n)) + '</button>';
     if (c.showBackButton) {
       var prevSc = previousConnectingNode(session.hunt, n.id);
       if (prevSc && prevSc.type === "scene") {
@@ -1202,7 +1213,7 @@ function renderPreviewNode(session, n, ctl) {
     var fbSc = session.state.feedback[n.id];
     if (fbSc === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "storyBlock") {
-    html += '<div class="pv-scene-body">' + esc(c.body) + '</div>';
+    html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
     var sbHorizontal = c.buttonLayout === "horizontal";
     var sbBtnStyle = sbHorizontal ? "" : ' style="max-width:220px;margin-top:6px"';
     var sbBtnsHtml = "";
@@ -1222,20 +1233,20 @@ function renderPreviewNode(session, n, ctl) {
     var fbSb = session.state.feedback[n.id];
     if (fbSb === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "choice") {
-    html += '<div class="pv-scene-body">' + esc(c.body) + '</div>';
+    html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
     c.options.forEach(function (o) { html += '<button class="pv-option-btn" data-opt="' + o.id + '">' + esc(o.label) + '</button>'; });
     var fbCh = session.state.feedback[n.id];
     if (fbCh === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "answerEntry") {
     if (c.imageAsset) html += renderImageRevealBlock(c);
-    html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += '<div class="pv-scene-body"' + pvFontStyle(c.promptFontSize) + '>' + esc(c.prompt) + '</div>';
     html += '<input type="text" class="pv-answer-input" id="pvAnswerInput" placeholder="Type your answer…" />';
     html += '<button class="pv-choice-btn" id="pvSubmitAnswer" style="max-width:160px">' + esc(buttonLabelFor(n)) + '</button>';
     var fb = session.state.feedback[n.id];
     if (fb) html += '<div class="pv-feedback ' + fb + '">' + (fb === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
   } else if (n.type === "ordering") {
     if (!ctl.orderingDraft[n.id]) ctl.orderingDraft[n.id] = c.items.map(function (it) { return it.id; });
-    html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += '<div class="pv-scene-body"' + pvFontStyle(c.promptFontSize) + '>' + esc(c.prompt) + '</div>';
     ctl.orderingDraft[n.id].forEach(function (id, idx) {
       var it = c.items.find(function (x) { return x.id === id; });
       html += '<div class="list-item" data-ordidx="' + idx + '"><span class="chip">' + (idx + 1) + '</span><span style="flex:1">' + esc(it.label) + '</span><button class="small-btn ordUpPv">↑</button><button class="small-btn ordDownPv">↓</button></div>';
@@ -1248,7 +1259,7 @@ function renderPreviewNode(session, n, ctl) {
       ctl.matchingDraft[n.id] = {};
       c.left.forEach(function (l) { ctl.matchingDraft[n.id][l.id] = c.right[0] ? c.right[0].id : ""; });
     }
-    html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += '<div class="pv-scene-body"' + pvFontStyle(c.promptFontSize) + '>' + esc(c.prompt) + '</div>';
     c.left.forEach(function (l) {
       html += '<div class="list-item"><span style="flex:1">' + esc(l.label) + ' →</span><select class="pvPairSelect" data-lid="' + l.id + '">' +
         c.right.map(function (r) { return '<option value="' + r.id + '"' + (ctl.matchingDraft[n.id][l.id] === r.id ? " selected" : "") + '>' + esc(r.label) + '</option>'; }).join("") + '</select></div>';
@@ -1386,7 +1397,7 @@ function renderPreviewNode(session, n, ctl) {
     hints.forEach(function (h) {
       var shown = session.state.hintProgress[h.id] || 0;
       html += '<div><button class="pv-hint-btn" data-hint="' + h.id + '" ' + (shown >= h.content.stages.length ? "disabled" : "") + '>💡 Reveal hint (' + shown + "/" + h.content.stages.length + ')</button>';
-      for (var i = 0; i < shown; i++) html += '<div class="pv-hint-text">' + esc(h.content.stages[i].text) + '</div>';
+      for (var i = 0; i < shown; i++) html += '<div class="pv-hint-text"' + pvFontStyle(h.content.stages[i].fontSize, 12) + '>' + esc(h.content.stages[i].text) + '</div>';
       html += '</div>';
     });
     html += '</div>';
@@ -1674,7 +1685,7 @@ function renderPinnedNode(session, n, ctl) {
   var state = session.state;
 
   if (n.type === "ending") {
-    ctl.mainEl.innerHTML = wrapWithMedia(n.content, '<div class="pv-ending"><h2>🏁 ' + esc(n.content.resultName) + '</h2><p class="pv-scene-body">' + esc(n.content.body) + '</p></div>');
+    ctl.mainEl.innerHTML = wrapWithMedia(n.content, '<div class="pv-ending"><h2>🏁 ' + esc(n.content.resultName) + '</h2><p class="pv-scene-body"' + pvFontStyle(n.content.bodyFontSize) + '>' + esc(n.content.body) + '</p></div>');
     ctl._activeIds = { expandedId: n.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
     return;
   }
@@ -1779,7 +1790,7 @@ function createPreviewController(mainEl, sideEl) {
     } else if (state.endingReached) {
       var en = hunt.nodes.find(function (n) { return n.id === state.endingReached; });
       main.innerHTML = en ?
-        wrapWithMedia(en.content, '<div class="pv-ending"><h2>🏁 ' + esc(en.content.resultName) + '</h2><p class="pv-scene-body">' + esc(en.content.body) + '</p>' +
+        wrapWithMedia(en.content, '<div class="pv-ending"><h2>🏁 ' + esc(en.content.resultName) + '</h2><p class="pv-scene-body"' + pvFontStyle(en.content.bodyFontSize) + '>' + esc(en.content.body) + '</p>' +
         '<p style="color:var(--pv-text-dim);font-size:12px">Hunt complete. ' + Object.keys(state.completed).length + " nodes visited · Score " + state.score + '</p></div>')
         : '<div class="pv-empty">The reached ending was removed from the hunt.</div>';
       ctl._activeIds = { expandedId: null, leadIds: [] };

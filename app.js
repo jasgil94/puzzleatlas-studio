@@ -1594,6 +1594,80 @@ function renderHuntMeta() {
 function fieldWrap(labelText, innerHtml) {
   return '<div class="field"><label>' + esc(labelText) + '</label>' + innerHtml + '</div>';
 }
+
+/* Player-visible text fields (text the player will actually see on the
+   real player screen, per engine.js's renderPreviewNode) get a +/- font-
+   size control next to the label and auto-grow instead of a fixed-height
+   scrollbox. "prop" identifies where the chosen size is stored on the
+   node content, e.g. "bodyFontSize"/"promptFontSize", or for dynamic
+   sub-items "stage:<id>" (hint stages). engine.js reads these same
+   content properties when it renders the player screen, so the buttons
+   here control what the player actually sees, not just the editor. */
+var PV_FONT_MIN = 10, PV_FONT_MAX = 32, PV_FONT_DEFAULT = 15, PV_FONT_STEP = 1;
+
+function pvFontSize(n, prop) {
+  var c = n.content;
+  if (prop.indexOf("stage:") === 0) {
+    var s = (c.stages || []).find(function (x) { return x.id === prop.slice(6); });
+    return (s && s.fontSize) || 12;
+  }
+  return c[prop] || PV_FONT_DEFAULT;
+}
+function setPvFontSize(n, prop, val) {
+  var c = n.content;
+  if (prop.indexOf("stage:") === 0) {
+    var s = (c.stages || []).find(function (x) { return x.id === prop.slice(6); });
+    if (s) s.fontSize = val;
+    return;
+  }
+  c[prop] = val;
+}
+
+function playerTextField(labelText, elId, prop, value, fontSize) {
+  fontSize = fontSize || PV_FONT_DEFAULT;
+  return '<div class="field">' +
+    '<div class="field-label-row"><label>' + esc(labelText) + '</label>' +
+      '<div class="fs-controls">' +
+        '<button type="button" class="fs-btn" data-fsdec="' + esc(prop) + '" data-fstarget="' + elId + '" title="Decrease font size">−</button>' +
+        '<span class="fs-val" data-fsval="' + esc(prop) + '">' + fontSize + 'px</span>' +
+        '<button type="button" class="fs-btn" data-fsinc="' + esc(prop) + '" data-fstarget="' + elId + '" title="Increase font size">+</button>' +
+      '</div>' +
+    '</div>' +
+    '<textarea id="' + elId + '" class="autoscale-ta" style="font-size:' + fontSize + 'px">' + esc(value) + '</textarea>' +
+  '</div>';
+}
+
+function autoGrowTextarea(el) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.max(el.scrollHeight, 60) + "px";
+}
+function autoGrowAll(root) {
+  Array.prototype.forEach.call((root || document).querySelectorAll(".autoscale-ta"), autoGrowTextarea);
+}
+
+function wireFontSizeButtons(n) {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-fsinc],[data-fsdec]"), function (btn) {
+    btn.onclick = function () {
+      var prop = btn.dataset.fsinc || btn.dataset.fsdec;
+      var delta = btn.dataset.fsinc ? PV_FONT_STEP : -PV_FONT_STEP;
+      var next = Math.min(PV_FONT_MAX, Math.max(PV_FONT_MIN, pvFontSize(n, prop) + delta));
+      setPvFontSize(n, prop, next);
+      var ta = document.getElementById(btn.dataset.fstarget);
+      if (ta) { ta.style.fontSize = next + "px"; autoGrowTextarea(ta); }
+      Array.prototype.forEach.call(document.querySelectorAll('[data-fsval="' + prop.replace(/"/g, "") + '"]'), function (span) { span.textContent = next + "px"; });
+      afterEdit(false);
+    };
+  });
+}
+/* Any autoscale textarea also grows as the player-visible text is typed,
+   on top of whatever save-on-input handler the field already has. */
+function wireAutoscaleTextareas() {
+  Array.prototype.forEach.call(document.querySelectorAll(".autoscale-ta"), function (el) {
+    el.addEventListener("input", function () { autoGrowTextarea(el); });
+  });
+  autoGrowAll();
+}
 function selectOptions(list, valueKey, labelKey, current, placeholder) {
   var html = placeholder ? '<option value="">' + esc(placeholder) + '</option>' : "";
   html += list.map(function (item) {
@@ -1668,7 +1742,7 @@ function buildTypeSpecificFields(n) {
   var c = n.content, hunt = Store.hunt, html = '<div class="section-title">Content</div>';
   switch (n.type) {
     case "scene":
-      html += fieldWrap("Body text (player-visible)", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
+      html += playerTextField("Body text (player-visible)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
       var prevForScene = previousConnectingNode(hunt, n.id);
       if (prevForScene && prevForScene.type === "scene") {
         html += fieldWrap("Back button", '<select id="fShowBackButton"><option value="0"' + (!c.showBackButton ? " selected" : "") + '>No</option><option value="1"' + (c.showBackButton ? " selected" : "") + '>Yes — let the player return to "' + esc(prevForScene.title) + '"</option></select>');
@@ -1679,11 +1753,11 @@ function buildTypeSpecificFields(n) {
       }
       break;
     case "storyBlock":
-      html += fieldWrap("Body text (player-visible)", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
+      html += playerTextField("Body text (player-visible)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
       html += '<p style="font-size:11px;color:var(--text-dim)">Completion buttons (added, ordered and connected) are set up below, in the Completion section.</p>';
       break;
     case "choice":
-      html += fieldWrap("Prompt text", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
+      html += playerTextField("Prompt text (player-visible)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
       html += '<div class="field"><label>Options</label><div id="optList">' +
         c.options.map(function (o, i) {
           return '<div class="list-item"><input type="text" value="' + esc(o.label) + '" data-oid="' + o.id + '" class="optLabelInput" /><button class="small-btn" data-oid="' + o.id + '">✕</button></div>';
@@ -1691,7 +1765,7 @@ function buildTypeSpecificFields(n) {
       html += '<p style="font-size:11px;color:var(--text-dim)">Connect a rule from this node with condition "choice option selected" to route based on the player\'s pick.</p>';
       break;
     case "answerEntry":
-      html += fieldWrap("Prompt (player-visible)", '<textarea id="fPrompt">' + esc(c.prompt) + '</textarea>');
+      html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
       html += '<div class="field"><label>Accepted answers</label><div id="ansList">' +
         (c.acceptedAnswers || []).map(function (a, i) {
           return '<div class="list-item"><input type="text" value="' + esc(a) + '" data-idx="' + i + '" class="ansInput" /><button class="small-btn" data-idx="' + i + '">✕</button></div>';
@@ -1702,7 +1776,7 @@ function buildTypeSpecificFields(n) {
       html += buildImageRevealFields(c);
       break;
     case "ordering":
-      html += fieldWrap("Prompt", '<textarea id="fPrompt">' + esc(c.prompt) + '</textarea>');
+      html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
       html += '<div class="field"><label>Items (edit labels)</label><div id="itemsEditList">' +
         c.items.map(function (it) {
           return '<div class="list-item"><input type="text" value="' + esc(it.label) + '" data-iid="' + it.id + '" class="itLabelInput" /></div>';
@@ -1715,7 +1789,7 @@ function buildTypeSpecificFields(n) {
         }).join("") + '</div></div>';
       break;
     case "matching":
-      html += fieldWrap("Prompt", '<textarea id="fPrompt">' + esc(c.prompt) + '</textarea>');
+      html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
       html += '<div class="field"><label>Left items</label>' + c.left.map(function (it) {
         return '<div class="list-item"><input type="text" value="' + esc(it.label) + '" data-lid="' + it.id + '" class="leftLabelInput" /></div>';
       }).join("") + '</div>';
@@ -1759,14 +1833,21 @@ function buildTypeSpecificFields(n) {
       break;
     case "ending":
       html += fieldWrap("Result name", '<input type="text" id="fResultName" value="' + esc(c.resultName) + '" />');
-      html += fieldWrap("Ending text (player-visible)", '<textarea id="fBody">' + esc(c.body) + '</textarea>');
+      html += playerTextField("Ending text (player-visible)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
       break;
     case "hint":
       var puzzleNodes = hunt.nodes.filter(function (x) { return familyOf(x.type) === "puzzle"; });
       html += fieldWrap("Attached to puzzle node", '<select id="fForNodeId">' + selectOptions(puzzleNodes, "id", "title", c.forNodeId, "— choose puzzle —") + '</select>');
-      html += '<div class="field"><label>Progressive stages (revealed in order)</label><div id="hintStages">' +
+      html += '<div class="field"><label>Progressive stages (revealed in order, player-visible)</label><div id="hintStages">' +
         c.stages.map(function (s, idx) {
-          return '<div class="hint-block"><span class="hint-badge">STAGE ' + (idx + 1) + '</span><textarea data-hid="' + s.id + '" class="hintStageInput" style="margin-top:6px">' + esc(s.text) + '</textarea><div style="text-align:right;margin-top:4px"><button class="small-btn" data-hid="' + s.id + '">Remove stage</button></div></div>';
+          var hid = "fHintStage_" + s.id, prop = "stage:" + s.id, fs = s.fontSize || 12;
+          return '<div class="hint-block"><div class="field-label-row" style="margin-bottom:6px"><span class="hint-badge">STAGE ' + (idx + 1) + '</span>' +
+            '<div class="fs-controls">' +
+              '<button type="button" class="fs-btn" data-fsdec="' + prop + '" data-fstarget="' + hid + '" title="Decrease font size">−</button>' +
+              '<span class="fs-val" data-fsval="' + prop + '">' + fs + 'px</span>' +
+              '<button type="button" class="fs-btn" data-fsinc="' + prop + '" data-fstarget="' + hid + '" title="Increase font size">+</button>' +
+            '</div></div>' +
+            '<textarea id="' + hid + '" data-hid="' + s.id + '" class="hintStageInput autoscale-ta" style="font-size:' + fs + 'px">' + esc(s.text) + '</textarea><div style="text-align:right;margin-top:4px"><button class="small-btn" data-hid="' + s.id + '">Remove stage</button></div></div>';
         }).join("") + '</div><button class="small-btn" id="btnAddHintStage">+ Add stage</button></div>';
       break;
     case "locationPlaceholder":
@@ -2168,6 +2249,10 @@ function wireNodeInspector(n) {
       wireGenericContentFields(n);
       break;
   }
+
+  // player-visible text fields: +/- font-size buttons and auto-grow boxes
+  wireFontSizeButtons(n);
+  wireAutoscaleTextareas();
 
   // background media (shared across all node types)
   wireMediaFields(c);

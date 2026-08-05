@@ -206,8 +206,15 @@ button{font-family:inherit;cursor:pointer;}
 .field input[type=text], .field input[type=number], .field textarea, .field select{
   width:100%;background:var(--bg3);border:1px solid var(--line);color:var(--text);border-radius:5px;padding:6px 8px;font-size:12.5px;font-family:inherit;}
 .field textarea{resize:vertical;min-height:60px;}
+.field textarea.autoscale-ta{resize:none;overflow:hidden;}
 .field-row{display:flex;gap:8px;}
 .field-row > *{flex:1;}
+.field-label-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+.field-label-row label{margin-bottom:0;}
+.fs-controls{display:flex;align-items:center;gap:4px;}
+.fs-btn{width:18px;height:18px;line-height:16px;padding:0;text-align:center;border-radius:4px;background:var(--bg3);border:1px solid var(--line);color:var(--text-dim);cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;}
+.fs-btn:hover{color:var(--text);border-color:var(--accent);}
+.fs-val{font-size:10px;color:var(--text-dim);min-width:28px;text-align:center;}
 .hint-block{border:1px solid var(--line);border-radius:6px;padding:8px;margin-bottom:8px;background:var(--bg3);}
 .list-item{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
 .list-item input{flex:1;}
