@@ -408,8 +408,21 @@ var NODE_TYPES = {
     // in app.js). Clicking a hotspot in the player behaves like picking a
     // Choice option — it reuses pv_action_selectChoice/the choiceSelected
     // condition, just with the hotspot id standing in for an option id.
+    // body/buttons/buttonLayout behave exactly like Story Block's own
+    // fields (same shape, same [data-opt]/back-navigation handling in
+    // wirePreviewNodeInteractions) — a creator can give this node
+    // narrative framing text and/or extra completion buttons below the
+    // image, on top of (not instead of) clicking a hotspot.
+    // hotspotGlow: whether hotspots get a hover/click highlight in the
+    // player (see renderClickableImageBlock) — true by default so existing
+    // behavior is unchanged; a creator can turn it off for a truly hidden,
+    // no-affordance hidden-object feel.
     defaultContent: function () {
-      return { hotspotMediaUrl: "", hotspotMediaType: "image", caption: "", hotspots: [] };
+      return {
+        hotspotMediaUrl: "", hotspotMediaType: "image", caption: "", hotspots: [],
+        body: "", buttons: [{ id: uid("btn"), label: "Back", kind: "back" }], buttonLayout: "vertical",
+        hotspotGlow: true
+      };
     },
     summary: function (c) {
       var n = (c.hotspots || []).length;
@@ -1291,7 +1304,12 @@ function renderClickableImageBlock(c) {
     var pts = (h.points || []).map(function (p) { return p[0] + "," + p[1]; }).join(" ");
     return '<polygon points="' + pts + '" data-opt="' + esc(h.id) + '" class="pv-hotspot-poly"><title>' + esc(h.name || "") + '</title></polygon>';
   }).join("");
-  var html = '<div class="pv-hotspot-wrap">' + mediaTag +
+  // hotspotGlow (default true) toggles the hover/click highlight via a CSS
+  // custom property read by .pv-hotspot-poly:hover/:active in styles.css —
+  // set to 0 here disables it without needing a second, near-duplicate
+  // stylesheet rule.
+  var glowStyle = c.hotspotGlow === false ? ' style="--pv-hotspot-glow-opacity:0"' : "";
+  var html = '<div class="pv-hotspot-wrap"' + glowStyle + '>' + mediaTag +
     '<svg class="pv-hotspot-svg" viewBox="0 0 1 1" preserveAspectRatio="none">' + polys + '</svg></div>';
   if (c.caption) html += '<div class="pv-image-caption">' + esc(c.caption) + '</div>';
   return html;
@@ -1554,7 +1572,24 @@ function renderPreviewNode(session, n, ctl) {
     var fbFu = session.state.feedback[n.id];
     if (fbFu === "correct") html += '<div class="pv-feedback correct">✓ Power restored.</div>';
   } else if (n.type === "clickableImage") {
+    if (c.body) html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
     html += renderClickableImageBlock(c);
+    // Buttons below the image — identical shape/rendering to Story Block's
+    // own buttons (see the "storyBlock" branch above), just optional here:
+    // a hotspot click alone is enough to complete this node, buttons are
+    // an extra way to route/navigate on top of that, not a replacement.
+    var ciHorizontal = c.buttonLayout === "horizontal";
+    var ciBtnBaseStyle = ciHorizontal ? "" : "max-width:220px;margin-top:6px";
+    var ciBtnsHtml = "";
+    (c.buttons || []).forEach(function (b) {
+      if (b.kind === "back") {
+        var prevCi = previousConnectingNode(session.hunt, n.id);
+        if (prevCi) ciBtnsHtml += pvItemButton("pv-choice-btn pv-back-btn", 'data-back-target="' + esc(prevCi.id) + '"', b.label || "← Back", b.fontSize, ciBtnBaseStyle);
+      } else {
+        ciBtnsHtml += pvItemButton("pv-choice-btn", 'data-opt="' + esc(b.id) + '"', b.label || "Continue", b.fontSize, ciBtnBaseStyle);
+      }
+    });
+    if (ciBtnsHtml) html += ciHorizontal ? '<div class="pv-btn-row">' + ciBtnsHtml + '</div>' : ciBtnsHtml;
     var fbCk = session.state.feedback[n.id];
     if (fbCk === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   }

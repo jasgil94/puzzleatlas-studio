@@ -649,16 +649,32 @@ function computeLayout() {
   var colX = [], run = 0;
   columns.forEach(function (_, ci) { colX[ci] = run; run += colWidths[ci]; });
 
-  // Lane heights: tall enough to stack every node in that lane's fullest
-  // column, or the creator's manually-dragged height if taller — same
-  // grow-only rule as column widths, above.
+  // Lane heights: tall enough to fit whatever's actually in that lane's
+  // fullest column, or the creator's manually-dragged height if taller —
+  // same grow-only rule as column widths, above. This has to mirror the
+  // placement loop below node-for-node rather than just summing every
+  // node's height as one neat stack: a node with a manual n.cellPos may
+  // sit beside its cellmates instead of under them, so only the nodes
+  // still auto-stacking (no cellPos) actually need stacked height —
+  // otherwise a lane with a few freely-arranged nodes gets forced open
+  // far taller than what they actually occupy, while a node dragged low
+  // in its cell still needs the lane grown enough to reach it.
   var laneHeights = LANES.map(function (l, li) {
     var h = LANE_H_BASE;
     columns.forEach(function (_, ci) {
       var cell = buckets[li][ci];
       if (!cell.length) return;
-      var stackH = CELL_PAD_TOP * 2 + cell.reduce(function (sum, n) { return sum + nodeSize(n).h; }, 0) + STACK_GAP * (cell.length - 1);
-      h = Math.max(h, stackH);
+      var y = CELL_PAD_TOP, maxBottom = 0;
+      cell.forEach(function (n) {
+        var sz = nodeSize(n);
+        if (n.cellPos) {
+          maxBottom = Math.max(maxBottom, n.cellPos.y + sz.h);
+        } else {
+          maxBottom = Math.max(maxBottom, y + sz.h);
+          y += sz.h + STACK_GAP;
+        }
+      });
+      h = Math.max(h, maxBottom + CELL_PAD_TOP);
     });
     var manual = hunt.laneHeights && hunt.laneHeights[l.id];
     if (manual && manual > h) h = manual;
@@ -890,6 +906,16 @@ function studioIssues(hunt) {
             level: "warning",
             title: "Unassigned hotspot",
             detail: '"' + n.title + '" has a hotspot ("' + (h.name || "Hotspot") + '") that isn\'t assigned to a connection yet — it won\'t lead anywhere.',
+            nodeId: n.id
+          });
+        }
+      });
+      (n.content.buttons || []).forEach(function (b) {
+        if (b.kind !== "back" && !b.connectionId) {
+          issues.push({
+            level: "warning",
+            title: "Unassigned button",
+            detail: '"' + n.title + '" has a button ("' + (b.label || "Continue") + '") that isn\'t assigned to a connection yet — it won\'t lead anywhere.',
             nodeId: n.id
           });
         }
@@ -2146,20 +2172,24 @@ function wireImageRevealFields(c) {
   }
 }
 
-/* Clickable Image (Hotspots) — bespoke inspector: upload the background
-   image/video the hotspots will be drawn over (c.hotspotMediaUrl/
-   hotspotMediaType — this node's own primary media, distinct from the
-   shared background-media fields appended by buildMediaFields), an
-   optional caption, and the "Open Hotspot Builder" entry point. Drawing,
-   naming and deleting the hotspots themselves happens in that full-screen
+/* Clickable Image (Hotspots) — bespoke inspector: an optional body text
+   field (same player-text component, with font-size controls, that Story
+   Block/Scene use), the background image/video the hotspots will be drawn
+   over (c.hotspotMediaUrl/hotspotMediaType — this node's own primary
+   media, distinct from the shared background-media fields appended by
+   buildMediaFields), a caption, a toggle for the hotspots' hover/click
+   highlight, and the "Open Hotspot Builder" entry point. Drawing, naming
+   and deleting the hotspots themselves happens in that full-screen
    builder (see openHotspotBuilder below) — this panel only shows a
    read-only summary list so a creator can see at a glance what's been
    drawn without leaving the main inspector. Connecting each hotspot to a
-   route is handled separately, in the Completion section (see
-   buildClickableImageHotspotsEditor), exactly like Story Block's buttons. */
+   route, and adding optional buttons below the image, are both handled in
+   the Completion section (see buildClickableImageHotspotsEditor and the
+   reused buildStoryBlockButtonsEditor). */
 function buildClickableImageFields(c) {
   c.hotspots = c.hotspots || [];
-  var html = '<div class="field"><label>Background image or video</label>' +
+  var html = playerTextField("Body text (player-visible)", "fBody", "bodyFontSize", c.body || "", c.bodyFontSize);
+  html += '<div class="field"><label>Background image or video</label>' +
     '<input type="file" id="fHotspotMedia" accept="image/*,video/*" style="display:none" />' +
     '<button class="small-btn" id="btnHotspotMediaUpload">⬆ Upload image/video</button>' +
     (c.hotspotMediaUrl ? ' <button class="small-btn" id="btnHotspotMediaClear" style="color:var(--danger)">✕ Remove</button>' : '') +
@@ -2171,6 +2201,7 @@ function buildClickableImageFields(c) {
       : '<img src="' + esc(c.hotspotMediaUrl) + '" class="pv-image" style="max-height:160px;width:100%;object-fit:contain;background:#000" />') + '</div>';
   }
   html += fieldWrap("Caption (player-visible, optional)", '<input type="text" id="fHotspotCaption" value="' + esc(c.caption || "") + '" />');
+  html += fieldWrap("Highlight hotspots on hover/click", '<select id="fHotspotGlow"><option value="1"' + (c.hotspotGlow !== false ? " selected" : "") + '>Yes</option><option value="0"' + (c.hotspotGlow === false ? " selected" : "") + '>No — fully hidden</option></select>');
 
   html += '<div class="field"><label>Hotspots (' + c.hotspots.length + ')</label><div id="hsSummaryList">' +
     (c.hotspots.length ? c.hotspots.map(function (h, i) {
@@ -2182,6 +2213,11 @@ function buildClickableImageFields(c) {
 
 function wireClickableImageFields(c) {
   var byId = function (id) { return document.getElementById(id); };
+  if (byId("fBody")) {
+    byId("fBody").oninput = function (e) { c.body = e.target.value; };
+    byId("fBody").onblur = function () { afterEdit(); };
+  }
+  if (byId("fHotspotGlow")) byId("fHotspotGlow").onchange = function (e) { c.hotspotGlow = e.target.value === "1"; afterEdit(false); };
   if (byId("btnHotspotMediaUpload")) byId("btnHotspotMediaUpload").onclick = function () { byId("fHotspotMedia").click(); };
   if (byId("fHotspotMedia")) byId("fHotspotMedia").onchange = function (e) {
     var file = e.target.files && e.target.files[0];
@@ -2588,7 +2624,7 @@ function defaultCompletionSummary(n) {
   if (isAutoType(n.type)) return "it becomes available (fires automatically)";
   if (n.type === "choice") return "the player picks an option";
   if (n.type === "storyBlock") return "the player presses one of its buttons";
-  if (n.type === "clickableImage") return "the player clicks a hotspot";
+  if (n.type === "clickableImage") return "the player clicks a hotspot or presses a button";
   if (BUTTON_LABEL_TYPES[n.type] && (n.type === "scene" || n.type === "imageReveal" || n.type === "locationPlaceholder")) return "the player presses the button";
   return "the player submits a correct answer/solution";
 }
@@ -2600,13 +2636,20 @@ function defaultCompletionSummary(n) {
 // Hint nodes, which have no completion concept (see buildNodeInspector).
 // Story Block doesn't fit the single-button-label pattern (it can have
 // several buttons), so it gets its own buttons editor instead — see
-// buildStoryBlockButtonsEditor.
+// buildStoryBlockButtonsEditor. Clickable Image reuses that exact same
+// buttons editor for its own optional bottom buttons (buildStoryBlockButtonsEditor
+// only ever touches n.content.buttons/buttonLayout, with no type check of
+// its own, so it works unchanged for either node type) — shown alongside
+// its hotspot-to-connection list, since a hotspot click and a button press
+// are two different ways to complete the same node, not alternatives.
 function buildCompletionEditor(n) {
   var html = '<div class="section-title">Completion</div>';
   if (n.type === "storyBlock") {
     html += buildStoryBlockButtonsEditor(n);
   } else if (n.type === "clickableImage") {
     html += buildClickableImageHotspotsEditor(n);
+    html += '<div class="section-title" style="margin-top:14px">Buttons (optional, shown below the image)</div>';
+    html += buildStoryBlockButtonsEditor(n);
   } else if (BUTTON_LABEL_TYPES[n.type]) {
     html += playerButtonField('Button label (blank = default "' + esc(DEFAULT_BUTTON_LABEL[n.type]) + '") — player-visible',
       "fButtonLabel", "node:buttonLabelFontSize", n.buttonLabel || "", n.buttonLabelFontSize, DEFAULT_BUTTON_LABEL[n.type]);
@@ -2803,7 +2846,7 @@ function wireClickableImageHotspotsEditor(n) {
 function wireCompletionEditor(n) {
   var byId = function (id) { return document.getElementById(id); };
   if (n.type === "storyBlock") wireStoryBlockButtonsEditor(n);
-  if (n.type === "clickableImage") wireClickableImageHotspotsEditor(n);
+  if (n.type === "clickableImage") { wireClickableImageHotspotsEditor(n); wireStoryBlockButtonsEditor(n); }
   if (byId("fButtonLabel")) {
     byId("fButtonLabel").oninput = function (e) { n.buttonLabel = e.target.value; };
     byId("fButtonLabel").onblur = function () { afterEdit(false); };
