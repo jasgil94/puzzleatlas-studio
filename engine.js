@@ -380,6 +380,25 @@ var NODE_TYPES = {
     defaultContent: function () { return { body: "Write the found document's text here.", documentStyle: "letter" }; },
     summary: function (c) { return c.body ? c.body.slice(0, 60) : ""; }
   },
+  pdfReveal: {
+    family: "media", label: "PDF Document Reader", icon: "📕",
+    defaultTitle: "New PDF Document",
+    // pdfAsset: the uploaded PDF itself, stored as a data URI (see
+    // wirePdfRevealFields in app.js — same "stash it as a data URI on the
+    // node, no backend" pattern as imageAsset). pageCount: authored by hand
+    // rather than parsed from the file — this is a zero-dependency, offline,
+    // single-file app (see the header comment at the top of this file), and
+    // real PDF page-counting/rasterizing needs a parser like pdf.js that
+    // isn't vendored here, so the creator just types in how many pages their
+    // PDF has, same spirit as e.g. Sliding Tile's hand-set gridSize. At
+    // player-time the PDF is shown via the browser's own built-in PDF
+    // viewer (an <iframe> onto the data URI with a #page=N fragment — see
+    // renderPdfRevealBlock/wirePdfReveal below); swiping/dragging
+    // left-right or tapping the arrow buttons turns pages with a CSS 3D
+    // page-turn animation layered on top.
+    defaultContent: function () { return { pdfAsset: "", caption: "", pageCount: 1 }; },
+    summary: function (c) { return c.pdfAsset ? "PDF — " + (Number(c.pageCount) || 1) + " page(s)" + (c.caption ? " — " + c.caption : "") : "No PDF uploaded"; }
+  },
   mapDisplay: {
     family: "media", label: "Map Display", icon: "🗺️",
     defaultTitle: "New Map Display",
@@ -1111,7 +1130,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage"];
+  "imageReveal", "fusePanel", "clickableImage", "pdfReveal"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -1121,7 +1140,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // inspector doesn't offer a button-label field for those either (see
 // BUTTON_LABEL_TYPES export).
 var DEFAULT_BUTTON_LABEL = {
-  scene: "Continue →", imageReveal: "Continue →", locationPlaceholder: "Continue →",
+  scene: "Continue →", imageReveal: "Continue →", locationPlaceholder: "Continue →", pdfReveal: "Continue →",
   answerEntry: "Submit", cipher: "Submit", mathLogic: "Submit", anagram: "Submit", crossReferenceLookup: "Submit",
   ordering: "Submit order", matching: "Submit matches",
   multiPartAnswer: "Submit all parts", physicalLockCode: "Unlock"
@@ -1277,6 +1296,97 @@ function renderImageRevealBlock(c) {
   return html;
 }
 
+// PDF Document Reader — shows the node's uploaded PDF (c.pdfAsset, a data
+// URI) via the browser's own built-in PDF viewer, one page at a time. There's
+// no rasterizing/parsing library vendored in this zero-dependency app (see
+// the pdfReveal entry in NODE_TYPES above), so page navigation works by
+// pointing an <iframe> at the same data URI with a "#page=N" fragment —
+// supported by Chrome/Edge's built-in viewer; Safari/Firefox support for the
+// page fragment on a data: URI is inconsistent, a disclosed limitation of
+// this approach. `enterCls` is a one-shot CSS class (see wirePdfReveal
+// below) that plays a "swinging into place" entrance animation on the sheet
+// right after a page turn, continuing the motion of the turn-away animation
+// that wirePdfReveal plays directly on the previous DOM before re-rendering.
+function renderPdfRevealBlock(c, pageNum, enterCls) {
+  c = c || {};
+  var pages = Math.max(1, Number(c.pageCount) || 1);
+  var page = Math.min(Math.max(1, Number(pageNum) || 1), pages);
+  var html = '<div class="pv-pdf-reader">';
+  if (!c.pdfAsset) {
+    html += '<div class="pv-pdf-empty">No PDF uploaded</div>';
+  } else {
+    var src = c.pdfAsset + "#page=" + page + "&toolbar=0&navpanes=0&scrollbar=0&view=FitH";
+    html += '<div class="pv-pdf-viewport" data-pdf-pages="' + pages + '">' +
+      '<div class="pv-pdf-sheet' + (enterCls ? " " + enterCls : "") + '" id="pvPdfSheet">' +
+        '<iframe class="pv-pdf-frame" id="pvPdfFrame" src="' + esc(src) + '" title="PDF page ' + page + ' of ' + pages + '"></iframe>' +
+      '</div>' +
+      '<div class="pv-pdf-swipe-catcher" id="pvPdfCatcher"></div>' +
+      '<button class="pv-pdf-arrow pv-pdf-arrow-left" id="pvPdfPrev" aria-label="Previous page"' + (page <= 1 ? " disabled" : "") + '>‹</button>' +
+      '<button class="pv-pdf-arrow pv-pdf-arrow-right" id="pvPdfNext" aria-label="Next page"' + (page >= pages ? " disabled" : "") + '>›</button>' +
+    '</div>' +
+    '<div class="pv-pdf-pagectr">Page ' + page + ' of ' + pages + '</div>';
+  }
+  if (c.caption) html += '<div class="pv-image-caption">' + esc(c.caption) + '</div>';
+  html += '</div>';
+  return html;
+}
+
+// Wires swipe (touch)/click-drag (mouse) and the prev/next arrow buttons for
+// a PDF Reader node. A transparent .pv-pdf-swipe-catcher div sits over the
+// iframe to capture the gesture — dragging directly on an <iframe> doesn't
+// work, since once the pointer is over it, mouse/touch events land in the
+// iframe's own document instead of bubbling to this one. Uses Pointer Events
+// + setPointerCapture (same pattern as wireLockDials/wireCryptexInteractions
+// above) so a drag that ends outside the catcher still resolves correctly,
+// with no listener attached outside `root` to clean up. The page turn itself
+// is animated directly on the live DOM (classList, like the cryptex's shake)
+// rather than through ctl.render(), which only runs once the turn-away
+// animation finishes, to swap in the new page and play its entrance
+// animation — see renderPdfRevealBlock's `enterCls`.
+function wirePdfReveal(root, ctl, session, n) {
+  var viewport = root.querySelector(".pv-pdf-viewport");
+  if (!viewport) return;
+  var pages = Math.max(1, Number(n.content.pageCount) || 1);
+  var current = ctl.pdfPageDraft[n.id] || 1;
+  var TURN_MS = 320;
+
+  function goTo(next, dir) {
+    next = Math.min(Math.max(1, next), pages);
+    if (next === current) return;
+    var sheet = root.querySelector("#pvPdfSheet");
+    if (sheet) sheet.classList.add(dir > 0 ? "pv-pdf-turn-fwd" : "pv-pdf-turn-back");
+    setTimeout(function () {
+      ctl.pdfPageDraft[n.id] = next;
+      ctl.pdfEnterAnim[n.id] = dir > 0 ? "pv-pdf-sheet-enter-fwd" : "pv-pdf-sheet-enter-back";
+      ctl.render();
+    }, sheet ? TURN_MS : 0);
+  }
+
+  var prevBtn = root.querySelector("#pvPdfPrev");
+  var nextBtn = root.querySelector("#pvPdfNext");
+  if (prevBtn) prevBtn.onclick = function () { goTo(current - 1, -1); };
+  if (nextBtn) nextBtn.onclick = function () { goTo(current + 1, 1); };
+
+  var catcher = root.querySelector("#pvPdfCatcher");
+  if (!catcher) return;
+  var startX = 0, startY = 0, dragging = false;
+  var THRESHOLD = 40;
+  catcher.onpointerdown = function (e) {
+    dragging = true; startX = e.clientX; startY = e.clientY;
+    try { catcher.setPointerCapture(e.pointerId); } catch (err) { /* older browsers: drag still tracks via direct listeners */ }
+  };
+  function finish(e) {
+    if (!dragging) return;
+    dragging = false;
+    var dx = e.clientX - startX, dy = e.clientY - startY;
+    if (Math.abs(dx) > THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) goTo(current + 1, 1); else goTo(current - 1, -1);
+    }
+  }
+  catcher.onpointerup = finish;
+  catcher.onpointercancel = function () { dragging = false; };
+}
+
 // Clickable Image (Hotspots) — the node's own uploaded image/video
 // (c.hotspotMediaUrl) with one or more polygon hotspots drawn over it (see
 // openHotspotBuilder in app.js). Hotspot corners are stored normalised 0–1
@@ -1421,6 +1531,14 @@ function renderPreviewNode(session, n, ctl) {
     html += pvPrimaryButton(n, "pvContinue", "max-width:200px");
     var fbIr = session.state.feedback[n.id];
     if (fbIr === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
+  } else if (n.type === "pdfReveal") {
+    var pdfPage = ctl.pdfPageDraft[n.id] || 1;
+    var pdfEnterCls = ctl.pdfEnterAnim[n.id] || "";
+    ctl.pdfEnterAnim[n.id] = ""; // one-shot — only plays right after the turn that set it
+    html += renderPdfRevealBlock(c, pdfPage, pdfEnterCls);
+    html += pvPrimaryButton(n, "pvContinue", "max-width:200px");
+    var fbPdf = session.state.feedback[n.id];
+    if (fbPdf === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "locationPlaceholder") {
     html += '<div class="pv-scene-body">' + esc(c.placeholderNote) + '</div>' + pvPrimaryButton(n, "pvContinue", "max-width:200px");
     var fbLp = session.state.feedback[n.id];
@@ -1986,6 +2104,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireLockDials(root, ctl, session, n);
   wireCryptexInteractions(root, ctl, session, n);
   wireTextSubmitAction(root, ctl, session, n, "pvCrossRefInput", "pvSubmitCrossRef", pv_action_submitCrossReferenceAnswer);
+  wirePdfReveal(root, ctl, session, n);
 
   // Sequence / Pattern — tap swatches in order; auto-validates once the
   // attempt is as long as the target sequence, resetting on a miss.
@@ -2102,6 +2221,7 @@ function createPreviewController(mainEl, sideEl) {
     session: null, expandedNodeId: null, showState: false,
     orderingDraft: {}, matchingDraft: {},
     sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {}, fuseDraft: {},
+    pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
     laneListId: null, laneListSceneId: null, // set when a lane tab (Leads/Inventory/Hints) asks to show its scene-wide options list instead of a single node
@@ -2317,6 +2437,7 @@ return {
   wireHintButtons: wireHintButtons,
   wrapWithMedia: wrapWithMedia,
   renderImageRevealBlock: renderImageRevealBlock,
+  renderPdfRevealBlock: renderPdfRevealBlock,
   renderClickableImageBlock: renderClickableImageBlock,
   renderPreviewNode: renderPreviewNode,
   wirePreviewNodeInteractions: wirePreviewNodeInteractions,

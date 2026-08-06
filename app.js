@@ -26,6 +26,7 @@ var IMAGE_ASPECT_RATIOS = PAEngine.IMAGE_ASPECT_RATIOS;
 var IMAGE_FRAME_STYLES = PAEngine.IMAGE_FRAME_STYLES;
 var LOCK_STYLES = PAEngine.LOCK_STYLES;
 var renderImageRevealBlock = PAEngine.renderImageRevealBlock;
+var renderPdfRevealBlock = PAEngine.renderPdfRevealBlock;
 
 var STYLE_PACK_SCHEMA_VERSION = PAEngine.STYLE_PACK_SCHEMA_VERSION;
 var STYLE_PACKS = PAEngine.STYLE_PACKS;
@@ -470,7 +471,7 @@ var SUGGESTED_LANE = {
   hintUnlockCost: "hints",
   // Media nodes are content reveals like Scene, so they default to Story;
   // Map Display is the one exception since it's literally a map.
-  imageReveal: "story", audioReveal: "story", videoReveal: "story", documentReveal: "story", gallery: "story",
+  imageReveal: "story", audioReveal: "story", videoReveal: "story", documentReveal: "story", gallery: "story", pdfReveal: "story",
   mapDisplay: "map",
   // Clickable Image is an interactive decision point (the player's click
   // picks a route, like Choice/Story Block), not a passive content reveal,
@@ -1986,6 +1987,9 @@ function buildTypeSpecificFields(n) {
     case "imageReveal":
       html += buildImageRevealFields(c);
       break;
+    case "pdfReveal":
+      html += buildPdfRevealFields(c);
+      break;
     case "clickableImage":
       html += buildClickableImageFields(c);
       break;
@@ -2046,6 +2050,63 @@ function buildImageRevealFields(c) {
   html += fieldWrap("Caption (optional)", '<input type="text" id="fImageCaption" value="' + esc(c.caption || "") + '" />');
   html += fieldWrap("Let player zoom the image", '<select id="fImageZoomable"><option value="1"' + (c.zoomable !== false ? " selected" : "") + '>Yes</option><option value="0"' + (c.zoomable === false ? " selected" : "") + '>No</option></select>');
   return html;
+}
+
+/* PDF Document Reader — bespoke inspector: upload the PDF the player will
+   read, hand-set how many pages it has, and an optional caption. There's no
+   PDF parser vendored in this single-file, zero-dependency app (see the
+   pdfReveal entry in NODE_TYPES in engine.js), so page count is authored by
+   hand rather than read off the file — same spirit as e.g. Sliding Tile's
+   hand-set gridSize. Reuses readImageFileCompressed for the upload even
+   though a PDF isn't an image: for any file whose type doesn't start with
+   "image/" it already just reads the raw bytes as a data URI with no
+   recompression, which is exactly what a PDF needs. */
+function buildPdfRevealFields(c) {
+  var html = '<div class="field"><label>PDF file</label>' +
+    '<input type="file" id="fPdfAsset" accept="application/pdf" style="display:none" />' +
+    '<button class="small-btn" id="btnPdfAssetUpload">⬆ Upload PDF</button>' +
+    (c.pdfAsset ? ' <button class="small-btn" id="btnPdfAssetClear" style="color:var(--danger)">✕ Remove PDF</button>' : '') +
+    '</div>';
+
+  html += fieldWrap("Number of pages", '<input type="number" id="fPdfPageCount" min="1" step="1" value="' + (Number(c.pageCount) || 1) + '" />');
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Set this to however many pages your PDF has — there’s no PDF parser in this offline app to count them automatically.</p>';
+
+  if (c.pdfAsset) {
+    html += '<div class="field"><label>Preview (page 1 — swiping/turning only works in the live Player preview)</label><div style="max-width:200px">' + renderPdfRevealBlock(c, 1, "") + '</div></div>';
+  } else {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Upload a PDF above to preview it here.</p>';
+  }
+
+  html += fieldWrap("Caption (optional)", '<input type="text" id="fPdfCaption" value="' + esc(c.caption || "") + '" />');
+  return html;
+}
+
+function wirePdfRevealFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+  if (byId("btnPdfAssetUpload")) byId("btnPdfAssetUpload").onclick = function () { byId("fPdfAsset").click(); };
+  if (byId("fPdfAsset")) byId("fPdfAsset").onchange = function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    readImageFileCompressed(file, function (dataUrl) {
+      if (!dataUrl) { toast("Couldn't read that PDF file."); return; }
+      c.pdfAsset = dataUrl;
+      afterEdit(); renderInspector();
+      toast("PDF attached.");
+    });
+  };
+  if (byId("btnPdfAssetClear")) byId("btnPdfAssetClear").onclick = function () {
+    c.pdfAsset = ""; afterEdit(); renderInspector();
+  };
+
+  if (byId("fPdfPageCount")) {
+    byId("fPdfPageCount").oninput = function (e) { c.pageCount = Math.max(1, Number(e.target.value) || 1); };
+    byId("fPdfPageCount").onblur = function () { afterEdit(); renderInspector(); };
+  }
+
+  if (byId("fPdfCaption")) {
+    byId("fPdfCaption").oninput = function (e) { c.caption = e.target.value; };
+    byId("fPdfCaption").onblur = function () { afterEdit(); };
+  }
 }
 
 /* Background media — standard on every node type. When set, the node's
@@ -2500,6 +2561,9 @@ function wireNodeInspector(n) {
     case "imageReveal":
       wireImageRevealFields(c);
       break;
+    case "pdfReveal":
+      wirePdfRevealFields(c);
+      break;
     case "clickableImage":
       wireClickableImageFields(c);
       break;
@@ -2625,7 +2689,7 @@ function defaultCompletionSummary(n) {
   if (n.type === "choice") return "the player picks an option";
   if (n.type === "storyBlock") return "the player presses one of its buttons";
   if (n.type === "clickableImage") return "the player clicks a hotspot or presses a button";
-  if (BUTTON_LABEL_TYPES[n.type] && (n.type === "scene" || n.type === "imageReveal" || n.type === "locationPlaceholder")) return "the player presses the button";
+  if (BUTTON_LABEL_TYPES[n.type] && (n.type === "scene" || n.type === "imageReveal" || n.type === "pdfReveal" || n.type === "locationPlaceholder")) return "the player presses the button";
   return "the player submits a correct answer/solution";
 }
 
