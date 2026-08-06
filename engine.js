@@ -1255,12 +1255,40 @@ function wireHintButtons(session, root, ctl) {
 // type's player screen and by the ending screen, so background media is a
 // standard option regardless of node type. Returns innerHtml unchanged
 // when no media is set.
+// Background media brightness is stored as a plain percentage on the
+// content (100 = unchanged). Shared by wrapWithMedia below and by the
+// Studio inspector's live preview thumbnail (buildMediaFields in app.js,
+// which reads this via the PAEngine export) so undefined/invalid values
+// fall back to 100 consistently in both places.
+function mediaBrightnessOf(c) {
+  var b = Number(c && c.mediaBrightness);
+  return isFinite(b) && b > 0 ? b : 100;
+}
+
+// Builds the CSS filter string for a node's background media from its
+// mediaBlur/mediaBrightness fields (set via the Studio inspector's
+// background-adjustments row — see buildMediaFields in app.js). Returns
+// "" when there's nothing to apply. blurPx lets callers use a smaller
+// radius for small preview thumbnails than for the full-bleed player.
+function mediaAdjustFilterCss(c, blurPx) {
+  var parts = [];
+  if (c && c.mediaBlur) parts.push("blur(" + (blurPx || 14) + "px)");
+  var brightness = mediaBrightnessOf(c);
+  if (brightness !== 100) parts.push("brightness(" + (brightness / 100) + ")");
+  return parts.join(" ");
+}
+
 function wrapWithMedia(c, innerHtml) {
   if (!c || !c.mediaUrl) return innerHtml;
   var mediaTag = c.mediaType === "video"
     ? '<video class="pv-scene-media" src="' + esc(c.mediaUrl) + '" autoplay loop muted playsinline></video>'
     : '<img class="pv-scene-media" src="' + esc(c.mediaUrl) + '" alt="" />';
-  return '<div class="pv-scene-media-wrap">' + mediaTag + '<div class="pv-scene-textpane">' + innerHtml + '</div></div>';
+  // Blur/brightness are applied on a wrapper around just the media, not
+  // on .pv-scene-media-wrap itself, so the adjustment never touches the
+  // .pv-scene-textpane content pinned on top of it.
+  var filterCss = mediaAdjustFilterCss(c);
+  var adjustStyle = filterCss ? ' style="filter:' + filterCss + '"' : "";
+  return '<div class="pv-scene-media-wrap"><div class="pv-scene-media-adjust"' + adjustStyle + '>' + mediaTag + '</div><div class="pv-scene-textpane">' + innerHtml + '</div></div>';
 }
 
 // Builds the framed/cropped markup for an Image Reveal node's own uploaded
@@ -2436,6 +2464,8 @@ return {
   renderLaneOptionsList: renderLaneOptionsList,
   wireHintButtons: wireHintButtons,
   wrapWithMedia: wrapWithMedia,
+  mediaBrightnessOf: mediaBrightnessOf,
+  mediaAdjustFilterCss: mediaAdjustFilterCss,
   renderImageRevealBlock: renderImageRevealBlock,
   renderPdfRevealBlock: renderPdfRevealBlock,
   renderClickableImageBlock: renderClickableImageBlock,

@@ -27,6 +27,8 @@ var IMAGE_FRAME_STYLES = PAEngine.IMAGE_FRAME_STYLES;
 var LOCK_STYLES = PAEngine.LOCK_STYLES;
 var renderImageRevealBlock = PAEngine.renderImageRevealBlock;
 var renderPdfRevealBlock = PAEngine.renderPdfRevealBlock;
+var mediaBrightnessOf = PAEngine.mediaBrightnessOf;
+var mediaAdjustFilterCss = PAEngine.mediaAdjustFilterCss;
 
 var STYLE_PACK_SCHEMA_VERSION = PAEngine.STYLE_PACK_SCHEMA_VERSION;
 var STYLE_PACKS = PAEngine.STYLE_PACKS;
@@ -2126,9 +2128,21 @@ function buildMediaFields(c) {
     '<button class="small-btn" id="btnMediaUpload">⬆ Upload file</button>' +
     (c.mediaUrl ? ' <button class="small-btn" id="btnMediaClear" style="color:var(--danger)">✕ Remove media</button>' : '') + '</div>';
   if (c.mediaUrl) {
+    var previewFilter = mediaAdjustFilterCss(c, 6);
+    var previewStyle = "max-height:140px;width:100%;object-fit:cover" + (previewFilter ? ";filter:" + previewFilter : "");
     html += c.mediaType === "video"
-      ? '<video src="' + esc(c.mediaUrl) + '" class="pv-image" style="max-height:140px;width:100%;object-fit:cover" muted controls></video>'
-      : '<img src="' + esc(c.mediaUrl) + '" class="pv-image" style="max-height:140px;width:100%;object-fit:cover" />';
+      ? '<video src="' + esc(c.mediaUrl) + '" class="pv-image" style="' + previewStyle + '" muted controls></video>'
+      : '<img src="' + esc(c.mediaUrl) + '" class="pv-image" style="' + previewStyle + '" />';
+    var brightness = mediaBrightnessOf(c);
+    html += '<div class="field"><label>Background adjustments</label><div class="media-adjust-row">' +
+      '<button type="button" class="small-btn' + (c.mediaBlur ? " active" : "") + '" id="btnMediaBlurToggle">' +
+        (c.mediaBlur ? "🌫 Blurred — click to unblur" : "🌫 Blur background") +
+      '</button>' +
+      '<div class="fs-controls" style="margin-left:auto">' +
+        '<button type="button" class="fs-btn" id="btnMediaBrightnessDown" title="Darken">▼</button>' +
+        '<span class="fs-val" style="min-width:36px">' + brightness + '%</span>' +
+        '<button type="button" class="fs-btn" id="btnMediaBrightnessUp" title="Brighten">▲</button>' +
+      '</div></div></div>';
   }
   return html;
 }
@@ -2157,6 +2171,15 @@ function wireMediaFields(c) {
   };
   if (byId("btnMediaClear")) byId("btnMediaClear").onclick = function () {
     c.mediaUrl = ""; afterEdit(); renderInspector();
+  };
+  if (byId("btnMediaBlurToggle")) byId("btnMediaBlurToggle").onclick = function () {
+    c.mediaBlur = !c.mediaBlur; afterEdit(); renderInspector();
+  };
+  if (byId("btnMediaBrightnessUp")) byId("btnMediaBrightnessUp").onclick = function () {
+    c.mediaBrightness = Math.min(180, mediaBrightnessOf(c) + 10); afterEdit(); renderInspector();
+  };
+  if (byId("btnMediaBrightnessDown")) byId("btnMediaBrightnessDown").onclick = function () {
+    c.mediaBrightness = Math.max(20, mediaBrightnessOf(c) - 10); afterEdit(); renderInspector();
   };
 }
 
