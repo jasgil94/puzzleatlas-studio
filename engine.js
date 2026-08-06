@@ -79,7 +79,7 @@ var NODE_TYPES = {
       return { body: "What does the player choose?", options: [
         { id: uid("opt"), label: "Option A" },
         { id: uid("opt"), label: "Option B" }
-      ] };
+      ], showBackButton: false };
     },
     summary: function (c) { return (c.options || []).map(function (o) { return o.label; }).join(" / "); }
   },
@@ -91,15 +91,17 @@ var NODE_TYPES = {
     // (routes via an outgoing connection from this node, chosen in the
     // Studio inspector's Completion tab — see buildStoryBlockButtonsEditor
     // in app.js) or kind "back" (pure navigation, like Simple Text's back
-    // button — no connection involved). A single "Back" button is included
-    // by default and can be deleted. buttonLayout: "vertical" (top to
-    // bottom, default) or "horizontal" (left to right, buttons share a row
-    // — see the pv-btn-row styling in renderPreviewNode/styles.css).
+    // button — no connection involved). Starts empty; a creator adds a
+    // "Back" button (or any other button) via the Studio inspector's
+    // Completion tab — off by default, like every other node type's back
+    // button. buttonLayout: "vertical" (top to bottom, default) or
+    // "horizontal" (left to right, buttons share a row — see the
+    // pv-btn-row styling in renderPreviewNode/styles.css).
     defaultContent: function () {
       return {
         body: "Write the narrative text the player sees here.",
         mediaUrl: "", mediaType: "image",
-        buttons: [{ id: uid("btn"), label: "Back", kind: "back" }],
+        buttons: [],
         buttonLayout: "vertical"
       };
     },
@@ -118,7 +120,8 @@ var NODE_TYPES = {
         prompt: "Describe the puzzle prompt.", acceptedAnswers: ["ANSWER"], caseSensitive: false,
         imageAsset: "", caption: "", zoomable: true,
         aspectRatio: "original", frameStyle: "none",
-        cropZoom: 1, focalX: 50, focalY: 50
+        cropZoom: 1, focalX: 50, focalY: 50,
+        showBackButton: false
       };
     },
     summary: function (c) { return "Answer: " + (c.acceptedAnswers || []).join(", "); }
@@ -131,7 +134,8 @@ var NODE_TYPES = {
       return {
         prompt: "Put these in the correct order.",
         items: [{ id: a, label: "First item" }, { id: b, label: "Second item" }, { id: c, label: "Third item" }],
-        correctOrder: [a, b, c]
+        correctOrder: [a, b, c],
+        showBackButton: false
       };
     },
     summary: function (c) { return (c.items || []).length + " items to order"; }
@@ -145,7 +149,8 @@ var NODE_TYPES = {
         prompt: "Match each item on the left to the right.",
         left: [{ id: l1, label: "Left A" }, { id: l2, label: "Left B" }],
         right: [{ id: r1, label: "Right A" }, { id: r2, label: "Right B" }],
-        correctPairs: [[l1, r1], [l2, r2]]
+        correctPairs: [[l1, r1], [l2, r2]],
+        showBackButton: false
       };
     },
     summary: function (c) { return (c.left || []).length + " pairs to match"; }
@@ -154,46 +159,46 @@ var NODE_TYPES = {
     family: "puzzle", label: "Cipher / Cryptogram", icon: "🔐",
     defaultTitle: "New Cipher Puzzle",
     defaultContent: function () {
-      return { cipherType: "caesar", ciphertext: "Enter the ciphertext here.", key: "", acceptedAnswers: ["ANSWER"] };
+      return { cipherType: "caesar", ciphertext: "Enter the ciphertext here.", key: "", acceptedAnswers: ["ANSWER"], showBackButton: false };
     },
     summary: function (c) { return (c.cipherType || "cipher") + " — " + (c.acceptedAnswers || []).join(", "); }
   },
   mathLogic: {
     family: "puzzle", label: "Math / Logic Puzzle", icon: "🧮",
     defaultTitle: "New Math / Logic Puzzle",
-    defaultContent: function () { return { prompt: "Describe the math or logic puzzle.", expectedValue: "", tolerance: 0, unit: "" }; },
+    defaultContent: function () { return { prompt: "Describe the math or logic puzzle.", expectedValue: "", tolerance: 0, unit: "", showBackButton: false }; },
     summary: function (c) { return "Answer: " + c.expectedValue + (c.unit ? " " + c.unit : ""); }
   },
   anagram: {
     family: "puzzle", label: "Anagram / Word Puzzle", icon: "🔤",
     defaultTitle: "New Anagram Puzzle",
-    defaultContent: function () { return { scrambled: "TENISL", acceptedAnswers: ["LISTEN"] }; },
+    defaultContent: function () { return { scrambled: "TENISL", acceptedAnswers: ["LISTEN"], showBackButton: false }; },
     summary: function (c) { return "Scrambled: " + c.scrambled; }
   },
   sequencePattern: {
     family: "puzzle", label: "Sequence / Pattern (Simon-style)", icon: "🎹",
     defaultTitle: "New Sequence Puzzle",
-    defaultContent: function () { return { sequence: ["red", "blue", "green"], inputMode: "playerRepeats" }; },
+    defaultContent: function () { return { sequence: ["red", "blue", "green"], inputMode: "playerRepeats", showBackButton: false }; },
     summary: function (c) { return (c.sequence || []).length + "-step sequence"; }
   },
   slidingTile: {
     family: "puzzle", label: "Sliding Tile / Jigsaw", icon: "🔲",
     defaultTitle: "New Sliding Tile Puzzle",
-    defaultContent: function () { return { imageAsset: "", gridSize: 3, solvedState: "" }; },
+    defaultContent: function () { return { imageAsset: "", gridSize: 3, solvedState: "", showBackButton: false }; },
     summary: function (c) { return c.gridSize + "×" + c.gridSize + " tile puzzle"; }
   },
   multiPartAnswer: {
     family: "puzzle", label: "Multi-Part Answer", icon: "🧷",
     defaultTitle: "New Multi-Part Answer",
     defaultContent: function () {
-      return { parts: [{ id: uid("part"), prompt: "Part 1 prompt", acceptedAnswers: ["A"] }, { id: uid("part"), prompt: "Part 2 prompt", acceptedAnswers: ["B"] }], combineRule: "concatenate" };
+      return { parts: [{ id: uid("part"), prompt: "Part 1 prompt", acceptedAnswers: ["A"] }, { id: uid("part"), prompt: "Part 2 prompt", acceptedAnswers: ["B"] }], combineRule: "concatenate", showBackButton: false };
     },
     summary: function (c) { return (c.parts || []).length + " parts to combine"; }
   },
   physicalLockCode: {
     family: "puzzle", label: "Physical Lock Code Entry", icon: "🔒",
     defaultTitle: "New Lock Code Entry",
-    defaultContent: function () { return { codeLength: 4, codeFormat: "numeric", acceptedCode: "1234", lockStyle: "classicBrass" }; },
+    defaultContent: function () { return { codeLength: 4, codeFormat: "numeric", acceptedCode: "1234", lockStyle: "classicBrass", showBackButton: false }; },
     summary: function (c) {
       var style = LOCK_STYLES[c.lockStyle] || LOCK_STYLES.classicBrass;
       return style.label + " lock — " + c.codeFormat + " code, length " + c.codeLength;
@@ -208,13 +213,13 @@ var NODE_TYPES = {
     // (checkTextAnswer/pv_action_submitAnswer) — see renderCryptexSvg/
     // wireCryptexInteractions below. acceptedAnswers holds one or more
     // 3-letter combinations, same shape as Answer Entry.
-    defaultContent: function () { return { acceptedAnswers: ["CAT"] }; },
+    defaultContent: function () { return { acceptedAnswers: ["CAT"], showBackButton: false }; },
     summary: function (c) { return "Combination: " + (c.acceptedAnswers || []).join(", "); }
   },
   crossReferenceLookup: {
     family: "puzzle", label: "Cross-Reference Lookup", icon: "🔍",
     defaultTitle: "New Cross-Reference Lookup",
-    defaultContent: function () { return { sourceNodeIds: [], prompt: "Combine information from the referenced nodes.", acceptedAnswers: ["ANSWER"] }; },
+    defaultContent: function () { return { sourceNodeIds: [], prompt: "Combine information from the referenced nodes.", acceptedAnswers: ["ANSWER"], showBackButton: false }; },
     summary: function (c) { return "Refs " + (c.sourceNodeIds || []).length + " node(s)"; }
   },
   fusePanel: {
@@ -235,7 +240,7 @@ var NODE_TYPES = {
       for (var i = 0; i < 12; i++) {
         switches.push({ id: uid("sw"), label: "CKT " + (i + 1 < 10 ? "0" : "") + (i + 1), onLabel: "A", offLabel: "B", requiredOn: false });
       }
-      return { prompt: "Set each switch to the position that matches the code.", switches: switches };
+      return { prompt: "Set each switch to the position that matches the code.", switches: switches, showBackButton: false };
     },
     summary: function (c) {
       var switches = c.switches || [];
@@ -357,7 +362,8 @@ var NODE_TYPES = {
       return {
         imageAsset: "", caption: "", zoomable: true,
         aspectRatio: "original", frameStyle: "none",
-        cropZoom: 1, focalX: 50, focalY: 50
+        cropZoom: 1, focalX: 50, focalY: 50,
+        showBackButton: false
       };
     },
     summary: function (c) { return c.caption || "Image reveal"; }
@@ -396,7 +402,7 @@ var NODE_TYPES = {
     // renderPdfRevealBlock/wirePdfReveal below); swiping/dragging
     // left-right or tapping the arrow buttons turns pages with a CSS 3D
     // page-turn animation layered on top.
-    defaultContent: function () { return { pdfAsset: "", caption: "", pageCount: 1 }; },
+    defaultContent: function () { return { pdfAsset: "", caption: "", pageCount: 1, showBackButton: false }; },
     summary: function (c) { return c.pdfAsset ? "PDF — " + (Number(c.pageCount) || 1) + " page(s)" + (c.caption ? " — " + c.caption : "") : "No PDF uploaded"; }
   },
   mapDisplay: {
@@ -429,9 +435,9 @@ var NODE_TYPES = {
     // condition, just with the hotspot id standing in for an option id.
     // body/buttons/buttonLayout behave exactly like Story Block's own
     // fields (same shape, same [data-opt]/back-navigation handling in
-    // wirePreviewNodeInteractions) — a creator can give this node
-    // narrative framing text and/or extra completion buttons below the
-    // image, on top of (not instead of) clicking a hotspot.
+    // wirePreviewNodeInteractions, starts empty by default) — a creator can
+    // give this node narrative framing text and/or extra completion buttons
+    // below the image, on top of (not instead of) clicking a hotspot.
     // hotspotGlow: whether hotspots get a hover/click highlight in the
     // player (see renderClickableImageBlock) — true by default so existing
     // behavior is unchanged; a creator can turn it off for a truly hidden,
@@ -439,7 +445,7 @@ var NODE_TYPES = {
     defaultContent: function () {
       return {
         hotspotMediaUrl: "", hotspotMediaType: "image", caption: "", hotspots: [],
-        body: "", buttons: [{ id: uid("btn"), label: "Back", kind: "back" }], buttonLayout: "vertical",
+        body: "", buttons: [], buttonLayout: "vertical",
         hotspotGlow: true
       };
     },
@@ -475,7 +481,7 @@ var NODE_TYPES = {
   locationPlaceholder: {
     family: "stub", label: "Location Placeholder (stub)", icon: "📍",
     defaultTitle: "Location (stub)",
-    defaultContent: function () { return { placeholderNote: "Location/GPS logic is out of scope for this Phase 1 prototype. This node is a structural stub only." }; },
+    defaultContent: function () { return { placeholderNote: "Location/GPS logic is out of scope for this Phase 1 prototype. This node is a structural stub only.", showBackButton: false }; },
     summary: function () { return "GPS/map out of scope — stub only"; }
   }
 };
@@ -695,10 +701,11 @@ function varName(hunt, id) { var v = (hunt.variables || []).find(function (x) { 
 function itemName(hunt, id) { var it = (hunt.items || []).find(function (x) { return x.id === id; }); return it ? it.name : "(unset)"; }
 
 // The node directly upstream of `nodeId`, via whichever incoming connection
-// comes first in hunt.connections — used by Simple Text's and Story Block's
-// Back button (both to decide, in the Studio inspector, whether Back makes
-// sense to offer, and at runtime to know which node to peek back to). A
-// node can have several incoming connections (e.g. a convergence); this
+// comes first in hunt.connections — used by every node type's optional Back
+// button (both to decide, in the Studio inspector, whether Back makes sense
+// to offer, and at runtime to know which node to peek back to; see
+// BACK_BUTTON_TYPES above the NODE_TYPES registry). A node can have several
+// incoming connections (e.g. a convergence); this
 // deliberately just picks one deterministic "previous" node rather than
 // modeling branching history.
 function previousConnectingNode(hunt, nodeId) {
@@ -1131,6 +1138,22 @@ function pv_action_revealHint(session, hintNodeId) {
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
   "imageReveal", "fusePanel", "clickableImage", "pdfReveal"];
+
+// Node types offering a generic, opt-in "← Back" button — every
+// PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
+// handling, above the NODE_TYPES registry), Story Block/Clickable Image
+// (back is one of their own connection buttons instead — see their
+// defaultContent) and Ending (a terminal screen — there's nowhere to
+// continue on to, so "back" doesn't apply). Off by default on every type
+// here; a creator opts in per node in the Studio inspector, and it's only
+// ever shown at player-time when previousConnectingNode(hunt, nodeId)
+// actually resolves to something to return to. See the generic render
+// block at the end of renderPreviewNode's node-type if/else chain, and
+// buildTypeSpecificFields/wireNodeInspector in app.js for the matching
+// Studio inspector field.
+var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
+  "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -1738,6 +1761,18 @@ function renderPreviewNode(session, n, ctl) {
     if (ciBtnsHtml) html += ciHorizontal ? '<div class="pv-btn-row">' + ciBtnsHtml + '</div>' : ciBtnsHtml;
     var fbCk = session.state.feedback[n.id];
     if (fbCk === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
+  }
+  // Generic optional Back button — every BACK_BUTTON_TYPES node type gets
+  // this same "← Back" affordance as Simple Text's showBackButton, off by
+  // default and only rendered when there's actually an upstream node to
+  // return to. Story Block/Clickable Image opt into their own back button
+  // via their buttons list instead (handled in their branches above), and
+  // Simple Text handles its own showBackButton at the top of this chain.
+  if (c.showBackButton && BACK_BUTTON_TYPES.indexOf(n.type) !== -1) {
+    var prevGeneric = previousConnectingNode(session.hunt, n.id);
+    if (prevGeneric) {
+      html += '<button class="pv-choice-btn pv-back-btn" data-back-target="' + esc(prevGeneric.id) + '" style="max-width:200px;margin-top:8px">← Back</button>';
+    }
   }
   if (hints.length) {
     html += '<div style="margin-top:14px">';
@@ -2454,6 +2489,7 @@ return {
   pv_action_revealHint: pv_action_revealHint,
 
   PLAYER_SCREEN_TYPES: PLAYER_SCREEN_TYPES,
+  BACK_BUTTON_TYPES: BACK_BUTTON_TYPES,
   DEFAULT_BUTTON_LABEL: DEFAULT_BUTTON_LABEL,
   BUTTON_LABEL_TYPES: BUTTON_LABEL_TYPES,
   buttonLabelFor: buttonLabelFor,

@@ -46,6 +46,7 @@ var nodeTitle = PAEngine.nodeTitle;
 var varName = PAEngine.varName;
 var itemName = PAEngine.itemName;
 var previousConnectingNode = PAEngine.previousConnectingNode;
+var BACK_BUTTON_TYPES = PAEngine.BACK_BUTTON_TYPES;
 
 var collectConditionRefs = PAEngine.collectConditionRefs;
 var validateHunt = PAEngine.validateHunt;
@@ -1999,6 +2000,22 @@ function buildTypeSpecificFields(n) {
       html += buildGenericContentFields(n);
       break;
   }
+  // Optional Back button — shared field for every BACK_BUTTON_TYPES node
+  // type (everything except Simple Text, which has its own copy of this
+  // block above since its wording differs slightly, and Story Block/
+  // Clickable Image, which offer back as one of their own completion
+  // buttons instead). Off by default; only offered once another node
+  // actually connects into this one — see previousConnectingNode.
+  if (BACK_BUTTON_TYPES.indexOf(n.type) !== -1) {
+    var prevForBack = previousConnectingNode(hunt, n.id);
+    if (prevForBack) {
+      html += fieldWrap("Back button", '<select id="fShowBackButton"><option value="0"' + (!c.showBackButton ? " selected" : "") + '>No</option><option value="1"' + (c.showBackButton ? " selected" : "") + '>Yes — let the player return to "' + esc(prevForBack.title) + '"</option></select>');
+    } else if (c.showBackButton) {
+      html += '<p class="lane-warn-note">⚠ Back button is enabled, but this node no longer has an incoming connection to return to. <button class="small-btn" id="btnClearBackButton" style="margin-left:6px">Clear</button></p>';
+    } else {
+      html += '<p style="font-size:11px;color:var(--text-dim)">Back button is only offered once another node connects into this one.</p>';
+    }
+  }
   html += buildMediaFields(c);
   return html;
 }
@@ -2345,7 +2362,9 @@ function buildGenericContentFields(n) {
   var c = n.content || {}, html = "";
   // mediaUrl/mediaType are handled by the shared buildMediaFields section
   // (appended after this) rather than shown again generically here.
-  Object.keys(c).filter(function (key) { return key !== "mediaUrl" && key !== "mediaType"; }).forEach(function (key) {
+  // showBackButton is handled by its own shared field, appended after the
+  // switch in buildTypeSpecificFields, so it isn't duplicated here either.
+  Object.keys(c).filter(function (key) { return key !== "mediaUrl" && key !== "mediaType" && key !== "showBackButton"; }).forEach(function (key) {
     var v = c[key], label = genericFieldLabel(key);
     if (typeof v === "string") {
       var longField = v.length > 60 || /body|prompt|instruction|note|final/i.test(key);
@@ -2435,8 +2454,6 @@ function wireNodeInspector(n) {
     case "scene": case "ending":
       bindText("fBody", "body");
       if (n.type === "ending") bindText("fResultName", "resultName");
-      if (byId("fShowBackButton")) byId("fShowBackButton").onchange = function (e) { c.showBackButton = e.target.value === "1"; afterEdit(); };
-      if (byId("btnClearBackButton")) byId("btnClearBackButton").onclick = function () { c.showBackButton = false; afterEdit(); renderInspector(); };
       break;
     case "storyBlock":
       bindText("fBody", "body");
@@ -2594,6 +2611,13 @@ function wireNodeInspector(n) {
       wireGenericContentFields(n);
       break;
   }
+
+  // Optional Back button — shared wiring for Simple Text and every
+  // BACK_BUTTON_TYPES node type (see the matching field markup in
+  // buildTypeSpecificFields). Story Block/Clickable Image aren't wired
+  // here — their back button is one of their own completion buttons.
+  if (byId("fShowBackButton")) byId("fShowBackButton").onchange = function (e) { c.showBackButton = e.target.value === "1"; afterEdit(); };
+  if (byId("btnClearBackButton")) byId("btnClearBackButton").onclick = function () { c.showBackButton = false; afterEdit(); renderInspector(); };
 
   // player-visible text fields: +/- font-size buttons and auto-grow boxes
   wireFontSizeButtons(n);
