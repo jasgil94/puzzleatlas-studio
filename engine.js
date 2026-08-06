@@ -714,6 +714,41 @@ function previousConnectingNode(hunt, nodeId) {
   return (hunt.nodes || []).find(function (n) { return n.id === conn.sourceId; }) || null;
 }
 
+// Returns an independent deep copy of `node`, ready to insert into
+// hunt.nodes as a brand-new node: a fresh id, "copy" appended to the title,
+// and any manual canvas placement (cellPos — see computeLayout in app.js)
+// cleared so Studio auto-stacks it rather than sitting exactly on top of the
+// original. Every other feature — content, effects, creator notes, lane/
+// scene placement — comes across untouched.
+//
+// The one deliberate exception is connections: hunt.connections is a flat,
+// hunt-level list, so the copy naturally starts with none (nothing here
+// touches hunt.connections). But two node-content fields — Story Block/
+// Clickable Image completion buttons and Clickable Image hotspots — each
+// carry their own connectionId pointing at one specific Connection object
+// owned by the original node (see setStoryButtonConnection/openHotspotBuilder
+// in app.js). Left alone those would dangle (the id would no longer belong
+// to a connection sourced from this node), so they're reset to unassigned
+// here too — the button/hotspot itself (its label, order, points) is still
+// copied, only its connection assignment is cleared.
+function duplicateNode(node) {
+  var copy = clone(node);
+  copy.id = uid("n");
+  var def = NODE_TYPES[node.type];
+  copy.title = (node.title || (def && def.defaultTitle) || "Node") + " copy";
+  delete copy.cellPos;
+  var c = copy.content;
+  if (c) {
+    if (Array.isArray(c.buttons)) {
+      c.buttons.forEach(function (b) { if (b.kind !== "back") b.connectionId = ""; });
+    }
+    if (Array.isArray(c.hotspots)) {
+      c.hotspots.forEach(function (h) { h.connectionId = ""; });
+    }
+  }
+  return copy;
+}
+
 /* ---------------------------------------------------------------------
    Validation engine — structural graph checks over the canonical model.
    Studio runs this continuously while authoring; a Player app can run it
@@ -2458,6 +2493,7 @@ return {
   varName: varName,
   itemName: itemName,
   previousConnectingNode: previousConnectingNode,
+  duplicateNode: duplicateNode,
 
   collectConditionRefs: collectConditionRefs,
   validateHunt: validateHunt,

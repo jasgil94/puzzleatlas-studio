@@ -348,6 +348,21 @@ var Store = {
     this.pushHistory();
   },
 
+  // Copies a node (all its content/effects/notes/placement — see
+  // PAEngine.duplicateNode) and drops the copy right after the original in
+  // hunt.nodes, so it lands in the same lane/scene cell and auto-stacks just
+  // below it. Deliberately not added to entryPointIds and starts with no
+  // connections at all — connections are never copied.
+  duplicateNode: function (id) {
+    var n = this.getNode(id);
+    if (!n) return null;
+    var copy = PAEngine.duplicateNode(n);
+    var idx = this.hunt.nodes.indexOf(n);
+    this.hunt.nodes.splice(idx + 1, 0, copy);
+    this.pushHistory();
+    return copy;
+  },
+
   removeNodes: function (ids) {
     var self = this;
     ids.forEach(function (id) {
@@ -1844,7 +1859,7 @@ function buildNodeInspector(n) {
   html += buildEffectsEditor(n);
   html += '<div class="section-title">Creator-only notes (never shown to player)</div>';
   html += '<div class="creator-note-box">' + fieldWrap("Notes / solution reasoning", '<textarea id="fNotes">' + esc(n.creatorNotes) + '</textarea>') + '</div>';
-  html += '<div class="section-title"></div><button class="small-btn" id="btnDeleteNode" style="color:var(--danger)">Delete this node</button>';
+  html += '<div class="section-title"></div><button class="small-btn" id="btnDuplicateNode">Duplicate this node</button> <button class="small-btn" id="btnDeleteNode" style="color:var(--danger)">Delete this node</button>';
   return html;
 }
 
@@ -2646,6 +2661,14 @@ function wireNodeInspector(n) {
     byId("fNotes").oninput = function (e) { n.creatorNotes = e.target.value; };
     byId("fNotes").onblur = function () { afterEdit(false); };
   }
+
+  if (byId("btnDuplicateNode")) byId("btnDuplicateNode").onclick = function () {
+    var copy = Store.duplicateNode(n.id);
+    if (!copy) return;
+    Store.select("node", copy.id);
+    render();
+    toast("Node duplicated.");
+  };
 
   if (byId("btnDeleteNode")) byId("btnDeleteNode").onclick = function () {
     if (!confirm('Delete "' + (n.title || "this node") + '"? Its connections will also be removed.')) return;
