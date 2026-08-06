@@ -176,6 +176,35 @@
       </div>
     </div>
 
+    <!-- Hotspot Builder overlay — opens over the canvas from a Clickable Image node's inspector -->
+    <div id="hotspotBuilderOverlay" class="overlay hidden">
+      <div class="hb-window">
+        <div class="hb-header">
+          <div class="hb-toolbar">
+            <button class="btn small hb-tool-btn" id="hbToolDraw" data-tool="draw" title="Draw: move corners, click an edge to add a corner">✏️ Draw</button>
+            <button class="btn small hb-tool-btn" id="hbToolSelect" data-tool="select" title="Select: click a hotspot to make it active">🖱️ Select</button>
+            <span class="sep"></span>
+            <button class="btn small" id="hbBtnNewHotspot">＋ New Hotspot</button>
+          </div>
+          <div class="hb-title" id="hbTitle">Hotspot Builder</div>
+          <div>
+            <button class="btn small" id="hbBtnExit">✕ Exit</button>
+            <button class="btn small primary-btn" id="hbBtnSave">💾 Save</button>
+          </div>
+        </div>
+        <div class="hb-body">
+          <div class="hb-canvas-wrap" id="hbCanvasWrap">
+            <div class="hb-media-inner" id="hbMediaInner"></div>
+            <div class="hb-hint" id="hbHint">Drag a background onto this node first, back in the inspector.</div>
+          </div>
+          <aside class="hb-side">
+            <div class="hb-side-title">Hotspots</div>
+            <div id="hbHotspotList"></div>
+          </aside>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Style Builder screen: craft/edit a style pack, separate from the Hunt canvas -->

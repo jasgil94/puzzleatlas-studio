@@ -472,6 +472,10 @@ var SUGGESTED_LANE = {
   // Map Display is the one exception since it's literally a map.
   imageReveal: "story", audioReveal: "story", videoReveal: "story", documentReveal: "story", gallery: "story",
   mapDisplay: "map",
+  // Clickable Image is an interactive decision point (the player's click
+  // picks a route, like Choice/Story Block), not a passive content reveal,
+  // so it defaults to Leads alongside them rather than Story.
+  clickableImage: "leads",
   // Real-world input nodes are Location Placeholder's siblings, so they
   // default to the same Map lane.
   photoUploadVerification: "map", geolocationCheckIn: "map", qrNfcScan: "map", gameMasterCheckIn: "map"
@@ -868,6 +872,24 @@ function studioIssues(hunt) {
             level: "warning",
             title: "Unassigned Story Block button",
             detail: '"' + n.title + '" has a button ("' + (b.label || "Continue") + '") that isn\'t assigned to a connection yet — it won\'t lead anywhere.',
+            nodeId: n.id
+          });
+        }
+      });
+    }
+    if (n.type === "clickableImage") {
+      if (!n.content.hotspotMediaUrl) {
+        issues.push({ level: "warning", title: "No background media", detail: '"' + n.title + '" has no background image or video set.', nodeId: n.id });
+      }
+      if (!(n.content.hotspots || []).length) {
+        issues.push({ level: "warning", title: "No hotspots drawn", detail: '"' + n.title + '" has no hotspots yet — open its Hotspot Builder to draw some.', nodeId: n.id });
+      }
+      (n.content.hotspots || []).forEach(function (h) {
+        if (!h.connectionId) {
+          issues.push({
+            level: "warning",
+            title: "Unassigned hotspot",
+            detail: '"' + n.title + '" has a hotspot ("' + (h.name || "Hotspot") + '") that isn\'t assigned to a connection yet — it won\'t lead anywhere.',
             nodeId: n.id
           });
         }
@@ -1938,6 +1960,9 @@ function buildTypeSpecificFields(n) {
     case "imageReveal":
       html += buildImageRevealFields(c);
       break;
+    case "clickableImage":
+      html += buildClickableImageFields(c);
+      break;
     default:
       html += buildGenericContentFields(n);
       break;
@@ -1945,6 +1970,17 @@ function buildTypeSpecificFields(n) {
   html += buildMediaFields(c);
   return html;
 }
+
+/* Hotspots on a Clickable Image node cycle through this fixed 6-colour
+   sequence (green, red, blue, yellow, magenta, cyan) by their index in the
+   hotspots array — a Studio-only authoring aid used in the hotspot list
+   (below), the Completion section's connection rows, and the Hotspot
+   Builder's canvas + side panel. Players never see these colours — the
+   player-facing hotspot polygons are invisible until hover (see
+   .pv-hotspot-poly in styles.css), since distinguishing hotspots by colour
+   only matters while authoring, not while playing a hidden-object puzzle. */
+var HOTSPOT_COLORS = ["#43a047", "#e53935", "#1e88e5", "#fdd835", "#d81bd8", "#00acc1"];
+function hotspotColor(idx) { return HOTSPOT_COLORS[idx % HOTSPOT_COLORS.length]; }
 
 /* Image Reveal — bespoke inspector: upload the image the player will see,
    choose how it's framed (aspect ratio + crop/pan/zoom) and presented
@@ -2108,6 +2144,71 @@ function wireImageRevealFields(c) {
       document.addEventListener("mouseup", up);
     };
   }
+}
+
+/* Clickable Image (Hotspots) — bespoke inspector: upload the background
+   image/video the hotspots will be drawn over (c.hotspotMediaUrl/
+   hotspotMediaType — this node's own primary media, distinct from the
+   shared background-media fields appended by buildMediaFields), an
+   optional caption, and the "Open Hotspot Builder" entry point. Drawing,
+   naming and deleting the hotspots themselves happens in that full-screen
+   builder (see openHotspotBuilder below) — this panel only shows a
+   read-only summary list so a creator can see at a glance what's been
+   drawn without leaving the main inspector. Connecting each hotspot to a
+   route is handled separately, in the Completion section (see
+   buildClickableImageHotspotsEditor), exactly like Story Block's buttons. */
+function buildClickableImageFields(c) {
+  c.hotspots = c.hotspots || [];
+  var html = '<div class="field"><label>Background image or video</label>' +
+    '<input type="file" id="fHotspotMedia" accept="image/*,video/*" style="display:none" />' +
+    '<button class="small-btn" id="btnHotspotMediaUpload">⬆ Upload image/video</button>' +
+    (c.hotspotMediaUrl ? ' <button class="small-btn" id="btnHotspotMediaClear" style="color:var(--danger)">✕ Remove</button>' : '') +
+    '</div>';
+  html += fieldWrap("Media URL (or upload above)", '<input type="text" id="fHotspotMediaUrl" placeholder="https://… or upload a file above" value="' + esc(c.hotspotMediaUrl || "") + '" />');
+  if (c.hotspotMediaUrl) {
+    html += '<div class="field">' + (c.hotspotMediaType === "video"
+      ? '<video src="' + esc(c.hotspotMediaUrl) + '" class="pv-image" style="max-height:160px;width:100%;object-fit:contain;background:#000" muted controls></video>'
+      : '<img src="' + esc(c.hotspotMediaUrl) + '" class="pv-image" style="max-height:160px;width:100%;object-fit:contain;background:#000" />') + '</div>';
+  }
+  html += fieldWrap("Caption (player-visible, optional)", '<input type="text" id="fHotspotCaption" value="' + esc(c.caption || "") + '" />');
+
+  html += '<div class="field"><label>Hotspots (' + c.hotspots.length + ')</label><div id="hsSummaryList">' +
+    (c.hotspots.length ? c.hotspots.map(function (h, i) {
+      return '<div class="list-item"><span class="hb-hs-swatch" style="background:' + hotspotColor(i) + '"></span><span style="flex:1;font-size:12.5px">' + esc(h.name) + '</span></div>';
+    }).join("") : '<p style="font-size:11.5px;color:var(--text-dim);margin:0">No hotspots yet — open the builder below to draw some.</p>') +
+    '</div><button type="button" class="small-btn" id="btnOpenHotspotBuilder" style="margin-top:6px">🎯 Open Hotspot Builder</button></div>';
+  return html;
+}
+
+function wireClickableImageFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+  if (byId("btnHotspotMediaUpload")) byId("btnHotspotMediaUpload").onclick = function () { byId("fHotspotMedia").click(); };
+  if (byId("fHotspotMedia")) byId("fHotspotMedia").onchange = function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    c.hotspotMediaType = /^video\//.test(file.type) ? "video" : "image";
+    readImageFileCompressed(file, function (dataUrl) {
+      if (!dataUrl) { toast("Couldn't read that file."); return; }
+      c.hotspotMediaUrl = dataUrl;
+      afterEdit(); renderInspector();
+      toast("Background attached.");
+    });
+  };
+  if (byId("btnHotspotMediaClear")) byId("btnHotspotMediaClear").onclick = function () {
+    c.hotspotMediaUrl = ""; afterEdit(); renderInspector();
+  };
+  if (byId("fHotspotMediaUrl")) {
+    byId("fHotspotMediaUrl").oninput = function (e) { c.hotspotMediaUrl = e.target.value; };
+    byId("fHotspotMediaUrl").onblur = function () { afterEdit(); renderInspector(); };
+  }
+  if (byId("fHotspotCaption")) {
+    byId("fHotspotCaption").oninput = function (e) { c.caption = e.target.value; };
+    byId("fHotspotCaption").onblur = function () { afterEdit(false); };
+  }
+  if (byId("btnOpenHotspotBuilder")) byId("btnOpenHotspotBuilder").onclick = function () {
+    var n = Store.selection.type === "node" ? Store.getNode(Store.selection.id) : null;
+    if (n) openHotspotBuilder(n.id);
+  };
 }
 
 /* Generic content editor for node types without a bespoke inspector layout
@@ -2363,6 +2464,9 @@ function wireNodeInspector(n) {
     case "imageReveal":
       wireImageRevealFields(c);
       break;
+    case "clickableImage":
+      wireClickableImageFields(c);
+      break;
     default:
       wireGenericContentFields(n);
       break;
@@ -2484,6 +2588,7 @@ function defaultCompletionSummary(n) {
   if (isAutoType(n.type)) return "it becomes available (fires automatically)";
   if (n.type === "choice") return "the player picks an option";
   if (n.type === "storyBlock") return "the player presses one of its buttons";
+  if (n.type === "clickableImage") return "the player clicks a hotspot";
   if (BUTTON_LABEL_TYPES[n.type] && (n.type === "scene" || n.type === "imageReveal" || n.type === "locationPlaceholder")) return "the player presses the button";
   return "the player submits a correct answer/solution";
 }
@@ -2500,6 +2605,8 @@ function buildCompletionEditor(n) {
   var html = '<div class="section-title">Completion</div>';
   if (n.type === "storyBlock") {
     html += buildStoryBlockButtonsEditor(n);
+  } else if (n.type === "clickableImage") {
+    html += buildClickableImageHotspotsEditor(n);
   } else if (BUTTON_LABEL_TYPES[n.type]) {
     html += playerButtonField('Button label (blank = default "' + esc(DEFAULT_BUTTON_LABEL[n.type]) + '") — player-visible',
       "fButtonLabel", "node:buttonLabelFontSize", n.buttonLabel || "", n.buttonLabelFontSize, DEFAULT_BUTTON_LABEL[n.type]);
@@ -2634,9 +2741,69 @@ function wireStoryBlockButtonsEditor(n) {
   };
 }
 
+// Clickable Image's hotspots — drawn and named in the Hotspot Builder (see
+// openHotspotBuilder), each assigned here to one of this node's outgoing
+// connections. Exactly the same mechanism as Story Block's buttons
+// (setStoryButtonConnection/buildStoryBlockButtonsEditor above): picking a
+// connection writes a "choiceSelected" condition onto it automatically, so
+// hotspot → route wiring never needs manual condition editing.
+function buildClickableImageHotspotsEditor(n) {
+  var c = n.content;
+  c.hotspots = c.hotspots || [];
+  if (!c.hotspots.length) {
+    return '<p style="font-size:11px;color:var(--text-dim)">No hotspots yet — open the Hotspot Builder (in Content, above) to draw some, then come back here to connect each one.</p>';
+  }
+  var outgoing = Store.hunt.connections.filter(function (cn) { return cn.sourceId === n.id; });
+  var html = '<div class="field"><label>Hotspots → connections</label><div id="hotspotConnList">';
+  c.hotspots.forEach(function (h, i) {
+    html += '<div class="list-item" data-hsid="' + h.id + '">' +
+      '<span class="hb-hs-swatch" style="background:' + hotspotColor(i) + '"></span>' +
+      '<span style="flex:1;font-size:12.5px">' + esc(h.name) + '</span>' +
+      '<select data-hsid="' + h.id + '" class="hsConnSelect" style="min-width:150px">' +
+        '<option value=""' + (!h.connectionId ? " selected" : "") + '>— choose connection —</option>' +
+        outgoing.map(function (cn) {
+          var t = Store.getNode(cn.targetId);
+          return '<option value="' + cn.id + '"' + (h.connectionId === cn.id ? " selected" : "") + '>→ ' + esc(t ? t.title : "?") + '</option>';
+        }).join("") + '</select>' +
+      '</div>';
+  });
+  html += '</div></div>';
+  if (!outgoing.length) {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Drag a connection out of this node on the canvas first, then assign it to a hotspot here.</p>';
+  }
+  return html;
+}
+
+function setHotspotConnection(n, h, newConnectionId) {
+  if (h.connectionId) {
+    var prevConn = Store.getConnection(h.connectionId);
+    if (prevConn && prevConn.condition && prevConn.condition.type === "choiceSelected" &&
+        prevConn.condition.nodeId === n.id && prevConn.condition.optionId === h.id) {
+      prevConn.condition = { type: "always" };
+    }
+  }
+  h.connectionId = newConnectionId || "";
+  if (h.connectionId) {
+    var conn = Store.getConnection(h.connectionId);
+    if (conn) conn.condition = { type: "choiceSelected", nodeId: n.id, optionId: h.id };
+  }
+}
+
+function wireClickableImageHotspotsEditor(n) {
+  var c = n.content;
+  Array.prototype.forEach.call(document.querySelectorAll(".hsConnSelect"), function (sel) {
+    sel.onchange = function (e) {
+      var h = (c.hotspots || []).find(function (x) { return x.id === sel.dataset.hsid; });
+      if (h) setHotspotConnection(n, h, e.target.value);
+      afterEdit(); renderInspector();
+    };
+  });
+}
+
 function wireCompletionEditor(n) {
   var byId = function (id) { return document.getElementById(id); };
   if (n.type === "storyBlock") wireStoryBlockButtonsEditor(n);
+  if (n.type === "clickableImage") wireClickableImageHotspotsEditor(n);
   if (byId("fButtonLabel")) {
     byId("fButtonLabel").oninput = function (e) { n.buttonLabel = e.target.value; };
     byId("fButtonLabel").onblur = function () { afterEdit(false); };
@@ -3738,6 +3905,355 @@ var BROKEN_HUNT = {
   ]
 };
 
+/* =========================================================================
+   Hotspot Builder — the full-screen polygon editor opened from a Clickable
+   Image node's inspector ("🎯 Open Hotspot Builder"). Works on a local
+   *working copy* of that node's hotspots array so Exit can discard
+   cleanly; Save writes the working copy back onto the real node and goes
+   through the normal Store.pushHistory()/afterEdit() path — the node's
+   own background media (hotspotMediaUrl/hotspotMediaType) is set in the
+   regular inspector, not here; this builder only ever touches hotspots.
+
+   Coordinate model: every hotspot corner is stored normalised 0–1 against
+   the background media's own rendered width/height. The builder measures
+   the actual on-screen pixel size of the media each time it (re)renders or
+   the window resizes, and converts normalised points to/from those pixels
+   for drawing and hit-testing — this keeps corner handles a constant,
+   precise on-screen size regardless of image aspect ratio or zoom, which
+   the much simpler player-view renderer (renderClickableImageBlock in
+   engine.js, a plain 0–1 viewBox with no vertex handles) doesn't need.
+   ========================================================================= */
+var HotspotBuilder = {
+  nodeId: null,
+  tool: "draw",       // "draw" | "select"
+  hotspots: [],        // working copy: [{ id, name, points:[[x,y],...], connectionId }]
+  activeId: null,
+  dirty: false,
+  _lastW: 0, _lastH: 0
+};
+var hbVertexDrag = null;   // { hotspotId, vertexIdx, moved }
+var hbJustDragged = false; // swallows the synthetic click that follows a real drag
+
+function openHotspotBuilder(nodeId) {
+  var n = Store.getNode(nodeId);
+  if (!n || n.type !== "clickableImage") return;
+  HotspotBuilder.nodeId = nodeId;
+  HotspotBuilder.tool = "draw";
+  HotspotBuilder.hotspots = clone(n.content.hotspots || []);
+  HotspotBuilder.activeId = HotspotBuilder.hotspots.length ? HotspotBuilder.hotspots[0].id : null;
+  HotspotBuilder.dirty = false;
+  hbVertexDrag = null; hbJustDragged = false;
+  document.getElementById("hbTitle").textContent = "Hotspot Builder — " + n.title;
+  document.getElementById("hotspotBuilderOverlay").classList.remove("hidden");
+  document.getElementById("hbMediaInner").dataset.src = "";
+  document.getElementById("hbMediaInner").dataset.type = "";
+  setHotspotBuilderTool("draw");
+}
+
+function closeHotspotBuilderDiscard() {
+  if (HotspotBuilder.dirty && !confirm("Discard unsaved hotspot changes?")) return;
+  document.getElementById("hotspotBuilderOverlay").classList.add("hidden");
+}
+
+function saveHotspotBuilder() {
+  var n = Store.getNode(HotspotBuilder.nodeId);
+  if (n) {
+    var oldHotspots = n.content.hotspots || [];
+    var newIds = HotspotBuilder.hotspots.map(function (h) { return h.id; });
+    // Any hotspot that existed before but was deleted in the builder may
+    // have had its connectionId's condition pointing at it (see
+    // setHotspotConnection) — reset that connection back to "always" so it
+    // doesn't silently keep a dangling choiceSelected condition referencing
+    // a hotspot that no longer exists. Mirrors Story Block button
+    // deletion's cleanup (setStoryButtonConnection). Done here at Save
+    // time, not when a hotspot is deleted in the builder's side panel, so
+    // Exit still discards cleanly with zero live mutation until Save.
+    oldHotspots.forEach(function (h) {
+      if (h.connectionId && newIds.indexOf(h.id) === -1) {
+        var conn = Store.getConnection(h.connectionId);
+        if (conn && conn.condition && conn.condition.type === "choiceSelected" &&
+            conn.condition.nodeId === n.id && conn.condition.optionId === h.id) {
+          conn.condition = { type: "always" };
+        }
+      }
+    });
+    n.content.hotspots = clone(HotspotBuilder.hotspots);
+    afterEdit();
+    renderInspector();
+    toast("Hotspots saved.");
+  }
+  document.getElementById("hotspotBuilderOverlay").classList.add("hidden");
+}
+
+function setHotspotBuilderTool(tool) {
+  HotspotBuilder.tool = tool;
+  document.getElementById("hbToolDraw").classList.toggle("active", tool === "draw");
+  document.getElementById("hbToolSelect").classList.toggle("active", tool === "select");
+  var hint = document.getElementById("hbHint");
+  if (hint) hint.textContent = tool === "draw"
+    ? "Drag a corner to move it. Click elsewhere to add a corner on the nearest edge. Double-click a corner to remove it."
+    : "Click a hotspot to select it. Name and manage hotspots in the side panel.";
+  renderHotspotBuilder();
+}
+
+function renderHotspotBuilder() {
+  var n = Store.getNode(HotspotBuilder.nodeId);
+  var mediaInner = document.getElementById("hbMediaInner");
+  var hint = document.getElementById("hbHint");
+  if (!n) return;
+  var c = n.content;
+
+  if (!c.hotspotMediaUrl) {
+    mediaInner.innerHTML = '<div style="width:480px;height:320px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);border:1px dashed var(--line);border-radius:8px;text-align:center;padding:20px">No background media set yet.<br>Close this builder and add one in the node inspector first.</div>';
+    if (hint) hint.style.visibility = "hidden";
+    renderHotspotSidePanel();
+    return;
+  }
+  if (hint) hint.style.visibility = "visible";
+
+  var needsMedia = mediaInner.dataset.src !== c.hotspotMediaUrl || mediaInner.dataset.type !== c.hotspotMediaType;
+  if (needsMedia) {
+    mediaInner.dataset.src = c.hotspotMediaUrl;
+    mediaInner.dataset.type = c.hotspotMediaType;
+    var tag = c.hotspotMediaType === "video"
+      ? '<video class="hb-media-el" src="' + esc(c.hotspotMediaUrl) + '" muted loop playsinline autoplay></video>'
+      : '<img class="hb-media-el" src="' + esc(c.hotspotMediaUrl) + '" />';
+    mediaInner.innerHTML = tag + '<svg class="hb-svg" id="hbSvg"></svg>';
+    var mediaEl = mediaInner.querySelector(".hb-media-el");
+    var ready = function () { hbSyncOverlay(); };
+    if (c.hotspotMediaType === "video") {
+      mediaEl.addEventListener("loadedmetadata", ready);
+      mediaEl.addEventListener("loadeddata", ready);
+    } else if (mediaEl.complete) {
+      ready();
+    } else {
+      mediaEl.addEventListener("load", ready);
+    }
+  }
+  hbSyncOverlay();
+  renderHotspotSidePanel();
+}
+
+function hbSyncOverlay() {
+  var mediaInner = document.getElementById("hbMediaInner");
+  var mediaEl = mediaInner && mediaInner.querySelector(".hb-media-el");
+  var svg = document.getElementById("hbSvg");
+  if (!mediaEl || !svg) return;
+  var w = mediaEl.offsetWidth, h = mediaEl.offsetHeight;
+  if (!w || !h) return; // media not laid out yet — the load/loadedmetadata handler will retry
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h);
+  svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+  svg.classList.toggle("tool-select", HotspotBuilder.tool === "select");
+  HotspotBuilder._lastW = w;
+  HotspotBuilder._lastH = h;
+  renderHotspotSvgShapes();
+}
+
+function renderHotspotSvgShapes() {
+  var svg = document.getElementById("hbSvg");
+  if (!svg) return;
+  var w = HotspotBuilder._lastW, h = HotspotBuilder._lastH;
+  var html = "";
+  HotspotBuilder.hotspots.forEach(function (hs, i) {
+    var color = hotspotColor(i);
+    var active = hs.id === HotspotBuilder.activeId;
+    var pts = hs.points.map(function (p) { return (p[0] * w) + "," + (p[1] * h); }).join(" ");
+    html += '<polygon points="' + pts + '" class="hb-poly' + (active ? " active" : "") + '" data-hs="' + hs.id + '" style="fill:' + color + ';stroke:' + color + '"></polygon>';
+  });
+  if (HotspotBuilder.tool === "draw") {
+    HotspotBuilder.hotspots.forEach(function (hs, i) {
+      var color = hotspotColor(i);
+      hs.points.forEach(function (p, vi) {
+        html += '<circle class="hb-vertex" data-hs="' + hs.id + '" data-vi="' + vi + '" cx="' + (p[0] * w) + '" cy="' + (p[1] * h) + '" r="6" style="fill:' + color + ';stroke:#fff;stroke-width:1.5"></circle>';
+      });
+    });
+  }
+  svg.innerHTML = html;
+  wireHotspotSvgShapeEvents();
+}
+
+function hbEventToNormalizedPoint(e) {
+  var svg = document.getElementById("hbSvg");
+  if (!svg) return null;
+  var rect = svg.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  var x = (e.clientX - rect.left) / rect.width;
+  var y = (e.clientY - rect.top) / rect.height;
+  return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+}
+
+function pointSegDistSq(px, py, ax, ay, bx, by) {
+  var dx = bx - ax, dy = by - ay;
+  var lenSq = dx * dx + dy * dy;
+  var t = lenSq > 0 ? ((px - ax) * dx + (py - ay) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  var cx = ax + t * dx, cy = ay + t * dy;
+  var ddx = px - cx, ddy = py - cy;
+  return ddx * ddx + ddy * ddy;
+}
+
+// Starts a fresh, already-closed starter triangle centred on (cx,cy)
+// (normalised 0–1) — "complete shape" from the first click, per spec: no
+// need to click back to a starting point to close the loop.
+function hbCreateNewHotspot(cx, cy) {
+  cx = cx == null ? 0.5 : cx;
+  cy = cy == null ? 0.5 : cy;
+  var r = 0.1;
+  var pts = [
+    [cx, Math.max(0.02, cy - r)],
+    [Math.min(0.98, cx + r * 0.87), Math.min(0.98, cy + r * 0.5)],
+    [Math.max(0.02, cx - r * 0.87), Math.min(0.98, cy + r * 0.5)]
+  ];
+  var hs = { id: uid("hs"), name: "Hotspot " + (HotspotBuilder.hotspots.length + 1), points: pts, connectionId: "" };
+  HotspotBuilder.hotspots.push(hs);
+  HotspotBuilder.activeId = hs.id;
+  HotspotBuilder.dirty = true;
+  renderHotspotSvgShapes();
+  renderHotspotSidePanel();
+}
+
+// Draw-mode click-anywhere behaviour: with no hotspots yet, the click starts
+// one; otherwise it inserts a new corner into whichever existing edge (across
+// *all* hotspots) is geometrically closest to the click, so refining any
+// shape's boundary is always just "click near where the edge should bend".
+function hbInsertOrCreateAt(pt) {
+  if (!HotspotBuilder.hotspots.length) { hbCreateNewHotspot(pt.x, pt.y); return; }
+  var w = HotspotBuilder._lastW || 1, h = HotspotBuilder._lastH || 1;
+  var px = pt.x * w, py = pt.y * h, best = null;
+  HotspotBuilder.hotspots.forEach(function (hs) {
+    var n = hs.points.length;
+    for (var i = 0; i < n; i++) {
+      var a = hs.points[i], b = hs.points[(i + 1) % n];
+      var d = pointSegDistSq(px, py, a[0] * w, a[1] * h, b[0] * w, b[1] * h);
+      if (!best || d < best.d) best = { d: d, hotspotId: hs.id, afterIdx: i };
+    }
+  });
+  if (!best) return;
+  var hs = HotspotBuilder.hotspots.find(function (h) { return h.id === best.hotspotId; });
+  hs.points.splice(best.afterIdx + 1, 0, [pt.x, pt.y]);
+  HotspotBuilder.activeId = hs.id;
+  HotspotBuilder.dirty = true;
+  renderHotspotSvgShapes();
+  renderHotspotSidePanel();
+}
+
+function wireHotspotSvgShapeEvents() {
+  var svg = document.getElementById("hbSvg");
+  if (!svg) return;
+
+  Array.prototype.forEach.call(svg.querySelectorAll(".hb-vertex"), function (v) {
+    v.onpointerdown = function (e) {
+      if (HotspotBuilder.tool !== "draw") return;
+      e.stopPropagation();
+      e.preventDefault();
+      hbVertexDrag = { hotspotId: v.dataset.hs, vertexIdx: +v.dataset.vi, moved: false };
+    };
+    v.onclick = function (e) { e.stopPropagation(); }; // a plain (non-drag) click on a corner does nothing
+    v.ondblclick = function (e) {
+      e.stopPropagation();
+      if (HotspotBuilder.tool !== "draw") return;
+      var hs = HotspotBuilder.hotspots.find(function (h) { return h.id === v.dataset.hs; });
+      if (!hs) return;
+      if (hs.points.length <= 3) { toast("A hotspot needs at least 3 corners."); return; }
+      hs.points.splice(+v.dataset.vi, 1);
+      HotspotBuilder.dirty = true;
+      renderHotspotSvgShapes();
+    };
+  });
+
+  Array.prototype.forEach.call(svg.querySelectorAll(".hb-poly"), function (p) {
+    p.onclick = function (e) {
+      if (HotspotBuilder.tool === "select") {
+        HotspotBuilder.activeId = p.dataset.hs;
+        e.stopPropagation();
+        renderHotspotSvgShapes();
+        renderHotspotSidePanel();
+      }
+      // in draw mode the click is left to bubble up to svg.onclick below,
+      // which performs the "insert a corner on the nearest edge" behaviour.
+    };
+  });
+
+  svg.onclick = function (e) {
+    if (hbJustDragged) { hbJustDragged = false; return; }
+    if (HotspotBuilder.tool !== "draw") return;
+    var pt = hbEventToNormalizedPoint(e);
+    if (pt) hbInsertOrCreateAt(pt);
+  };
+}
+
+// Vertex dragging is tracked with window-level listeners (not per-element)
+// because the pointer can move faster than the cursor stays over the small
+// circle handle.
+function initHotspotBuilderPointerEvents() {
+  window.addEventListener("pointermove", function (e) {
+    if (!hbVertexDrag) return;
+    var pt = hbEventToNormalizedPoint(e);
+    if (!pt) return;
+    var hs = HotspotBuilder.hotspots.find(function (h) { return h.id === hbVertexDrag.hotspotId; });
+    if (!hs) { hbVertexDrag = null; return; }
+    hs.points[hbVertexDrag.vertexIdx] = [pt.x, pt.y];
+    hbVertexDrag.moved = true;
+    HotspotBuilder.dirty = true;
+    renderHotspotSvgShapes();
+  });
+  window.addEventListener("pointerup", function () {
+    if (!hbVertexDrag) return;
+    if (hbVertexDrag.moved) hbJustDragged = true;
+    hbVertexDrag = null;
+  });
+}
+
+function renderHotspotSidePanel() {
+  var list = document.getElementById("hbHotspotList");
+  if (!list) return;
+  if (!HotspotBuilder.hotspots.length) {
+    list.innerHTML = '<div class="hb-empty">No hotspots yet. Click "+ New Hotspot", or click directly on the image.</div>';
+    return;
+  }
+  list.innerHTML = HotspotBuilder.hotspots.map(function (hs, i) {
+    var active = hs.id === HotspotBuilder.activeId;
+    return '<div class="hb-hs-row' + (active ? " active" : "") + '" data-hs="' + hs.id + '">' +
+      '<span class="hb-hs-swatch" style="background:' + hotspotColor(i) + '"></span>' +
+      '<input type="text" value="' + esc(hs.name) + '" data-hs="' + hs.id + '" class="hbNameInput" />' +
+      '<button type="button" class="small-btn hbDeleteHs" data-hs="' + hs.id + '">✕</button>' +
+      '</div>';
+  }).join("");
+  wireHotspotSidePanelEvents();
+}
+
+function wireHotspotSidePanelEvents() {
+  var list = document.getElementById("hbHotspotList");
+  Array.prototype.forEach.call(list.querySelectorAll(".hb-hs-row"), function (row) {
+    row.onclick = function (e) {
+      if (e.target.tagName === "INPUT" || e.target.classList.contains("hbDeleteHs")) return;
+      HotspotBuilder.activeId = row.dataset.hs;
+      renderHotspotSvgShapes();
+      renderHotspotSidePanel();
+    };
+  });
+  Array.prototype.forEach.call(list.querySelectorAll(".hbNameInput"), function (inp) {
+    inp.onclick = function (e) { e.stopPropagation(); };
+    inp.oninput = function (e) {
+      var hs = HotspotBuilder.hotspots.find(function (h) { return h.id === inp.dataset.hs; });
+      if (hs) { hs.name = e.target.value; HotspotBuilder.dirty = true; }
+    };
+  });
+  Array.prototype.forEach.call(list.querySelectorAll(".hbDeleteHs"), function (btn) {
+    btn.onclick = function (e) {
+      e.stopPropagation();
+      HotspotBuilder.hotspots = HotspotBuilder.hotspots.filter(function (h) { return h.id !== btn.dataset.hs; });
+      if (HotspotBuilder.activeId === btn.dataset.hs) {
+        HotspotBuilder.activeId = HotspotBuilder.hotspots.length ? HotspotBuilder.hotspots[0].id : null;
+      }
+      HotspotBuilder.dirty = true;
+      renderHotspotSvgShapes();
+      renderHotspotSidePanel();
+    };
+  });
+}
+
 /* ---------------------------------------------------------------------
    Bootstrap
 --------------------------------------------------------------------- */
@@ -3807,6 +4323,16 @@ function init() {
 
   document.getElementById("btnMockRestart").onclick = function () { LiveMock.open(Store.hunt); toast("Player view restarted."); };
   document.getElementById("btnMockState").onclick = function () { LiveMock.showState = !LiveMock.showState; LiveMock.render(); };
+
+  initHotspotBuilderPointerEvents();
+  document.getElementById("hbToolDraw").onclick = function () { setHotspotBuilderTool("draw"); };
+  document.getElementById("hbToolSelect").onclick = function () { setHotspotBuilderTool("select"); };
+  document.getElementById("hbBtnNewHotspot").onclick = function () { hbCreateNewHotspot(); };
+  document.getElementById("hbBtnExit").onclick = closeHotspotBuilderDiscard;
+  document.getElementById("hbBtnSave").onclick = saveHotspotBuilder;
+  window.addEventListener("resize", function () {
+    if (!document.getElementById("hotspotBuilderOverlay").classList.contains("hidden")) hbSyncOverlay();
+  });
 
   // Library screen controls
   document.getElementById("btnNewHunt").onclick = createNewHuntAndOpen;

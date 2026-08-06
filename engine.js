@@ -392,6 +392,30 @@ var NODE_TYPES = {
     defaultContent: function () { return { images: [], layout: "grid" }; },
     summary: function (c) { return (c.images || []).length + " image(s)"; }
   },
+  clickableImage: {
+    family: "media", label: "Clickable Image (Hotspots)", icon: "🖱️",
+    defaultTitle: "New Clickable Image",
+    // hotspotMediaUrl/hotspotMediaType hold this node's own primary image or
+    // video — named distinctly from the shared background-media fields
+    // (mediaUrl/mediaType, see buildMediaFields in app.js/wrapWithMedia
+    // below) since those play full-bleed *behind* this node's content,
+    // whereas hotspotMediaUrl IS the content. hotspots: an array of
+    // { id, name, points, connectionId }, each points a normalised-0–1
+    // polygon (drawn in the Studio's Hotspot Builder — see
+    // openHotspotBuilder in app.js) and connectionId an outgoing connection
+    // from this node, assigned in the Studio inspector's Completion section
+    // exactly like Story Block's buttons (see buildClickableImageHotspotsEditor
+    // in app.js). Clicking a hotspot in the player behaves like picking a
+    // Choice option — it reuses pv_action_selectChoice/the choiceSelected
+    // condition, just with the hotspot id standing in for an option id.
+    defaultContent: function () {
+      return { hotspotMediaUrl: "", hotspotMediaType: "image", caption: "", hotspots: [] };
+    },
+    summary: function (c) {
+      var n = (c.hotspots || []).length;
+      return n + " hotspot" + (n === 1 ? "" : "s") + (c.hotspotMediaUrl ? "" : " — no image/video set");
+    }
+  },
   photoUploadVerification: {
     family: "input", label: "Photo Upload Verification", icon: "📸",
     defaultTitle: "New Photo Upload",
@@ -429,7 +453,7 @@ var CONDITION_TYPES = {
   nodeComplete:       { label: "Node is complete" },
   allComplete:        { label: "All of these nodes are complete" },
   anyNComplete:       { label: "Any N of these nodes are complete" },
-  choiceSelected:     { label: "A specific choice option or story block button was selected" },
+  choiceSelected:     { label: "A specific choice option, story block button, or hotspot was selected" },
   variableEquals:     { label: "Variable equals value" },
   variableAtLeast:    { label: "Variable is at least value" },
   itemHeld:           { label: "Player holds item" }
@@ -1074,7 +1098,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel"];
+  "imageReveal", "fusePanel", "clickableImage"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -1237,6 +1261,39 @@ function renderImageRevealBlock(c) {
   }
   if (c.caption) html += '<div class="pv-image-caption">' + esc(c.caption) + '</div>';
   html += '</div>';
+  return html;
+}
+
+// Clickable Image (Hotspots) — the node's own uploaded image/video
+// (c.hotspotMediaUrl) with one or more polygon hotspots drawn over it (see
+// openHotspotBuilder in app.js). Hotspot corners are stored normalised 0–1
+// against the media's own width/height; an SVG with viewBox "0 0 1 1" and
+// preserveAspectRatio="none" maps them onto the rendered media with zero
+// pixel math, which is safe here (unlike the Studio's Hotspot Builder,
+// which draws real, fixed-size vertex handles and does need actual pixel
+// geometry) because the player only ever needs click hit-testing, not
+// precise on-screen handle sizing. .pv-hotspot-wrap sizes itself exactly to
+// the media's own rendered box (width:fit-content — see styles.css) so the
+// two never drift apart regardless of viewport width or aspect ratio.
+// Each polygon carries data-opt="<hotspotId>" — the exact same attribute
+// Choice options and Story Block buttons use — so the generic [data-opt]
+// click wiring already in wirePreviewNodeInteractions (below) picks these
+// up for free; no bespoke wire function needed for this node type.
+function renderClickableImageBlock(c) {
+  c = c || {};
+  if (!c.hotspotMediaUrl) {
+    return '<div class="pv-hotspot-empty">No image or video has been set for this node yet.</div>';
+  }
+  var mediaTag = c.hotspotMediaType === "video"
+    ? '<video class="pv-hotspot-media" src="' + esc(c.hotspotMediaUrl) + '" autoplay muted loop playsinline></video>'
+    : '<img class="pv-hotspot-media" src="' + esc(c.hotspotMediaUrl) + '" alt="" />';
+  var polys = (c.hotspots || []).map(function (h) {
+    var pts = (h.points || []).map(function (p) { return p[0] + "," + p[1]; }).join(" ");
+    return '<polygon points="' + pts + '" data-opt="' + esc(h.id) + '" class="pv-hotspot-poly"><title>' + esc(h.name || "") + '</title></polygon>';
+  }).join("");
+  var html = '<div class="pv-hotspot-wrap">' + mediaTag +
+    '<svg class="pv-hotspot-svg" viewBox="0 0 1 1" preserveAspectRatio="none">' + polys + '</svg></div>';
+  if (c.caption) html += '<div class="pv-image-caption">' + esc(c.caption) + '</div>';
   return html;
 }
 
@@ -1496,6 +1553,10 @@ function renderPreviewNode(session, n, ctl) {
     html += '</div>';
     var fbFu = session.state.feedback[n.id];
     if (fbFu === "correct") html += '<div class="pv-feedback correct">✓ Power restored.</div>';
+  } else if (n.type === "clickableImage") {
+    html += renderClickableImageBlock(c);
+    var fbCk = session.state.feedback[n.id];
+    if (fbCk === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   }
   if (hints.length) {
     html += '<div style="margin-top:14px">';
@@ -2221,6 +2282,7 @@ return {
   wireHintButtons: wireHintButtons,
   wrapWithMedia: wrapWithMedia,
   renderImageRevealBlock: renderImageRevealBlock,
+  renderClickableImageBlock: renderClickableImageBlock,
   renderPreviewNode: renderPreviewNode,
   wirePreviewNodeInteractions: wirePreviewNodeInteractions,
   renderPinnedNode: renderPinnedNode,
