@@ -694,4 +694,20 @@ button{font-family:inherit;cursor:pointer;}
 .hb-hs-row .small-btn{flex-shrink:0;}
 .hb-empty{color:var(--text-dim);font-size:12px;padding:6px 2px;}
 
+/* Lumen Puzzle Builder — the full-screen counterpart of the inline hex-grid
+   designer in the node inspector (opened via "⛶ Open in Larger Pane"), same
+   window chrome as the Hotspot Builder above (.hb-window/.hb-header/.hb-body)
+   but with its own three-column body: a left rail for grid/field-shape
+   settings, the (much bigger) canvas in the middle, and the existing
+   .lumen-props panel on the right for the selected piece. */
+.lb-window{width:min(1400px,97vw);height:min(880px,94vh);}
+.lb-header{flex-wrap:wrap;row-gap:6px;}
+.lb-toolbar{flex-wrap:wrap;}
+.lb-body{overflow:hidden;}
+.lb-side-left{width:230px;border-left:none;border-right:1px solid var(--line);}
+.lb-side-right{width:260px;}
+.lb-canvas-wrap{flex-direction:column;gap:10px;}
+.lb-design-canvas{width:100%;max-width:720px;height:auto;aspect-ratio:1/1;border-radius:8px;touch-action:none;cursor:default;display:block;background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);}
+.lb-summary{font-size:12px;color:var(--text-dim);text-align:center;}
+
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}
