@@ -205,6 +205,50 @@
       </div>
     </div>
 
+    <!-- Lumen Puzzle Builder overlay — the same hex-grid designer as the inline
+         inspector copy (prefix "lb" vs. "lumen", see wireLumenDesigner in
+         app.js), opened for room to work in from a Lumen Beam Puzzle node's
+         inspector ("⛶ Open in Larger Pane"), same idea as the Hotspot Builder
+         above. Edits write straight into the node, same as the inline copy —
+         there's no separate save/discard step, just Done. -->
+    <div id="lumenBuilderOverlay" class="overlay hidden">
+      <div class="hb-window lb-window">
+        <div class="hb-header lb-header">
+          <div class="hb-toolbar lb-toolbar">
+            <button type="button" class="btn small hb-tool-btn lbToolBtn active" data-tool="select">🖱️ Select / Rotate</button>
+            <button type="button" class="btn small hb-tool-btn lbToolBtn" data-tool="source">☀️ Light Source</button>
+            <button type="button" class="btn small hb-tool-btn lbToolBtn" data-tool="mirror">🪞 Mirror</button>
+            <button type="button" class="btn small hb-tool-btn lbToolBtn" data-tool="lens">🔍 Lens</button>
+            <button type="button" class="btn small hb-tool-btn lbToolBtn" data-tool="target">🎯 Target</button>
+            <button type="button" class="btn small hb-tool-btn lbToolBtn" data-tool="wall">🧱 Wall Hex</button>
+            <button type="button" class="btn small hb-tool-btn lbToolBtn" data-tool="card">🃏 Opaque Card</button>
+            <button type="button" class="btn small hb-tool-btn lbToolBtn" data-tool="erase">🧽 Erase</button>
+          </div>
+          <div class="hb-title" id="lbTitle">Lumen Puzzle Builder</div>
+          <div>
+            <button class="btn small primary-btn" id="lbBtnDone">✓ Done</button>
+          </div>
+        </div>
+        <div class="hb-body lb-body">
+          <aside class="hb-side lb-side-left">
+            <div class="hb-side-title">Field</div>
+            <div class="field"><label>Grid size (zoom) — hexes per side: <span id="lbGridSizeVal">8</span></label><input type="range" id="lbGridSize" min="3" max="15" step="1" value="8" /></div>
+            <div class="field"><label>Field shape<select id="lbFieldShape"><option value="square">Square</option><option value="circle">Circle</option></select></label></div>
+            <p style="font-size:11px;color:var(--text-dim);line-height:1.5">Place a light source, then mirrors/lenses/targets. Walls block light entirely; opaque cards block one hex edge. Drag a piece to rotate, click it to bump 15°, or type an exact angle on the right.</p>
+            <button type="button" class="small-btn" style="color:var(--danger)" id="lbBtnClear">Clear level</button>
+          </aside>
+          <div class="hb-canvas-wrap lb-canvas-wrap" id="lbCanvasWrap">
+            <canvas id="lbDesignCanvas" class="lb-design-canvas"></canvas>
+            <div id="lbPlaytestSummary" class="lb-summary"></div>
+          </div>
+          <aside class="hb-side lb-side-right">
+            <div class="hb-side-title">Selected piece</div>
+            <div id="lbPropsPanel" class="lumen-props"></div>
+          </aside>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Style Builder screen: craft/edit a style pack, separate from the Hunt canvas -->

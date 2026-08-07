@@ -2041,6 +2041,7 @@ function buildTypeSpecificFields(n) {
       html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
       html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Design the level below: place a light source, then mirrors/lenses/targets on the hex grid. Walls block light entirely; opaque cards block it along one hex edge only. At player-time only mirrors and lenses can be rotated — sources, targets, walls and cards are fixed by this design.</p>';
       html += '<div class="field"><label>Grid size (zoom) — hexes per side: <span id="lumenGridSizeVal">' + (c.gridSize || 8) + '</span></label><input type="range" id="lumenGridSize" min="3" max="15" step="1" value="' + (c.gridSize || 8) + '" /></div>';
+      html += fieldWrap("Field shape", '<select id="lumenFieldShape"><option value="square"' + (c.fieldShape !== "circle" ? " selected" : "") + '>Square</option><option value="circle"' + (c.fieldShape === "circle" ? " selected" : "") + '>Circle</option></select>');
       html += '<div class="lumen-palette">' +
         [["select", "Select / Rotate"], ["source", "Light Source"], ["mirror", "Mirror"], ["lens", "Lens"], ["target", "Target"], ["wall", "Wall Hex"], ["card", "Opaque Card"], ["erase", "Erase"]].map(function (t) {
           return '<button type="button" class="small-btn lumenToolBtn' + (t[0] === "select" ? " active" : "") + '" data-tool="' + t[0] + '">' + esc(t[1]) + '</button>';
@@ -2048,7 +2049,8 @@ function buildTypeSpecificFields(n) {
       html += '<div class="lumen-stage"><canvas id="lumenDesignCanvas" class="lumen-design-canvas"></canvas></div>';
       html += '<div id="lumenPlaytestSummary" class="lumen-playtest-summary"></div>';
       html += '<div class="field"><label>Selected piece</label><div id="lumenPropsPanel" class="lumen-props"></div></div>';
-      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="btnLumenClear">Clear level</button>';
+      html += '<button type="button" class="small-btn" id="btnOpenLumenBuilder" style="margin-bottom:8px">⛶ Open in Larger Pane</button>';
+      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="lumenBtnClear">Clear level</button>';
       break;
     case "awardItem":
       html += fieldWrap("Item to award", '<select id="fItemId">' + selectOptions(hunt.items, "id", "name", c.itemId, "— choose item —") + '</select>');
@@ -2554,20 +2556,35 @@ function lumenUiState(n) {
 // tracks the player's live rotation as transient draft state), every edit
 // here writes straight into n.content — the creator's edits ARE the saved
 // level, same as every other node type's inspector fields.
-function wireLumenDesigner(n) {
+//
+// Designed to be wired twice for the same node: once against the compact
+// inline copy embedded in the main inspector (prefix "lumen", the original
+// element ids), and once against the full-screen Lumen Puzzle Builder
+// overlay (prefix "lb" — see openLumenBuilder/closeLumenBuilder below,
+// mirroring how Clickable Image gets both an inline summary and a
+// full-screen Hotspot Builder). Every element id and the toolbar buttons'
+// selector class are derived from `prefix` so the two copies never collide
+// even though both can be present in the DOM at once (the inline copy
+// stays mounted, just visually covered, while the overlay is open) — a
+// bare document.getElementById("lumenAngle") would otherwise always
+// resolve to whichever copy comes first in document order.
+function wireLumenDesigner(n, prefix) {
+  prefix = prefix || "lumen";
+  var eid = function (suffix) { return prefix + suffix; };
   var c = n.content;
   c.sources = c.sources || []; c.pieces = c.pieces || []; c.targets = c.targets || []; c.walls = c.walls || []; c.cards = c.cards || [];
-  var canvas = document.getElementById("lumenDesignCanvas");
+  var canvas = document.getElementById(eid("DesignCanvas"));
   if (!canvas) return;
   var ctx = canvas.getContext("2d");
   var ui = lumenUiState(n);
-  var geom = lumenComputeGeometry(c.gridSize);
+  var geom = lumenComputeGeometry(c.gridSize, c.fieldShape);
   canvas.width = geom.width; canvas.height = geom.height;
 
-  var gridInput = document.getElementById("lumenGridSize");
-  var gridVal = document.getElementById("lumenGridSizeVal");
-  var propsPanel = document.getElementById("lumenPropsPanel");
-  var summaryEl = document.getElementById("lumenPlaytestSummary");
+  var gridInput = document.getElementById(eid("GridSize"));
+  var gridVal = document.getElementById(eid("GridSizeVal"));
+  var shapeSelect = document.getElementById(eid("FieldShape"));
+  var propsPanel = document.getElementById(eid("PropsPanel"));
+  var summaryEl = document.getElementById(eid("PlaytestSummary"));
 
   function currentLevel() { return { sources: c.sources, pieces: c.pieces, targets: c.targets, walls: c.walls, cards: c.cards }; }
   function selectedObj() {
@@ -2595,21 +2612,22 @@ function wireLumenDesigner(n) {
     var html = "";
     if (isTarget) {
       var modeLabels = { atleast: "At least…", atmost: "At most…", between: "Between…", exact: "Approximately…" };
-      html += '<label style="font-size:11px;color:var(--text-dim)">Condition<select id="lumenTargetMode">' +
+      html += '<label style="font-size:11px;color:var(--text-dim)">Condition<select id="' + eid("TargetMode") + '">' +
         Object.keys(modeLabels).map(function (m) { return '<option value="' + m + '"' + (sel.mode === m ? " selected" : "") + '>' + modeLabels[m] + '</option>'; }).join("") +
         '</select></label>';
-      if (sel.mode === "atleast" || sel.mode === "between") html += '<label style="font-size:11px;color:var(--text-dim)">Minimum intensity<input type="number" step="0.05" min="0" id="lumenTargetMin" value="' + sel.min + '" /></label>';
-      if (sel.mode === "atmost" || sel.mode === "between") html += '<label style="font-size:11px;color:var(--text-dim)">Maximum intensity<input type="number" step="0.05" min="0" id="lumenTargetMax" value="' + sel.max + '" /></label>';
+      if (sel.mode === "atleast" || sel.mode === "between") html += '<label style="font-size:11px;color:var(--text-dim)">Minimum intensity<input type="number" step="0.05" min="0" id="' + eid("TargetMin") + '" value="' + sel.min + '" /></label>';
+      if (sel.mode === "atmost" || sel.mode === "between") html += '<label style="font-size:11px;color:var(--text-dim)">Maximum intensity<input type="number" step="0.05" min="0" id="' + eid("TargetMax") + '" value="' + sel.max + '" /></label>';
       if (sel.mode === "exact") {
-        html += '<label style="font-size:11px;color:var(--text-dim)">Target value<input type="number" step="0.05" min="0" id="lumenTargetValue" value="' + sel.value + '" /></label>';
-        html += '<label style="font-size:11px;color:var(--text-dim)">Tolerance (±)<input type="number" step="0.01" min="0" id="lumenTargetTol" value="' + sel.tolerance + '" /></label>';
+        html += '<label style="font-size:11px;color:var(--text-dim)">Target value<input type="number" step="0.05" min="0" id="' + eid("TargetValue") + '" value="' + sel.value + '" /></label>';
+        html += '<label style="font-size:11px;color:var(--text-dim)">Tolerance (±)<input type="number" step="0.01" min="0" id="' + eid("TargetTol") + '" value="' + sel.tolerance + '" /></label>';
       }
       html += '<p style="font-size:10.5px;color:var(--text-dim)">If several beams land on the same target, their intensities add together.</p>';
-      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="lumenDeleteSel">Remove this target</button>';
+      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="' + eid("DeleteSel") + '">Remove this target</button>';
     } else {
       var pieceLabel = isSource ? "Light source angle (°)" : (sel.type === "lens" ? "Lens angle (°)" : "Mirror angle (°)");
-      html += '<label style="font-size:11px;color:var(--text-dim)">' + esc(pieceLabel) + '<input type="number" step="1" min="0" max="359" id="lumenAngle" value="' + Math.round(lumenNorm360(sel.angle)) + '" /></label>';
-      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="lumenDeleteSel">Remove' + (isSource ? " this source" : "") + '</button>';
+      html += '<label style="font-size:11px;color:var(--text-dim)">' + esc(pieceLabel) + '<input type="number" step="1" min="0" max="359" id="' + eid("Angle") + '" value="' + Math.round(lumenNorm360(sel.angle)) + '" /></label>';
+      html += '<p style="font-size:10.5px;color:var(--text-dim)">Drag the piece on the grid to rotate it, click it to bump 15°, or type an exact angle here.</p>';
+      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="' + eid("DeleteSel") + '">Remove' + (isSource ? " this source" : "") + '</button>';
     }
     propsPanel.innerHTML = html;
     wireProps(sel, isTarget);
@@ -2618,16 +2636,16 @@ function wireLumenDesigner(n) {
   function wireProps(sel, isTarget) {
     var byId = function (id) { return document.getElementById(id); };
     if (isTarget) {
-      if (byId("lumenTargetMode")) byId("lumenTargetMode").onchange = function (e) { sel.mode = e.target.value; afterEdit(false); renderProps(); redraw(); };
-      if (byId("lumenTargetMin")) { byId("lumenTargetMin").oninput = function (e) { sel.min = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId("lumenTargetMin").onblur = function () { afterEdit(false); }; }
-      if (byId("lumenTargetMax")) { byId("lumenTargetMax").oninput = function (e) { sel.max = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId("lumenTargetMax").onblur = function () { afterEdit(false); }; }
-      if (byId("lumenTargetValue")) { byId("lumenTargetValue").oninput = function (e) { sel.value = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId("lumenTargetValue").onblur = function () { afterEdit(false); }; }
-      if (byId("lumenTargetTol")) { byId("lumenTargetTol").oninput = function (e) { sel.tolerance = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId("lumenTargetTol").onblur = function () { afterEdit(false); }; }
-    } else if (byId("lumenAngle")) {
-      byId("lumenAngle").oninput = function (e) { sel.angle = lumenNorm360(parseFloat(e.target.value) || 0); redraw(); };
-      byId("lumenAngle").onblur = function () { afterEdit(false); };
+      if (byId(eid("TargetMode"))) byId(eid("TargetMode")).onchange = function (e) { sel.mode = e.target.value; afterEdit(false); renderProps(); redraw(); };
+      if (byId(eid("TargetMin"))) { byId(eid("TargetMin")).oninput = function (e) { sel.min = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId(eid("TargetMin")).onblur = function () { afterEdit(false); }; }
+      if (byId(eid("TargetMax"))) { byId(eid("TargetMax")).oninput = function (e) { sel.max = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId(eid("TargetMax")).onblur = function () { afterEdit(false); }; }
+      if (byId(eid("TargetValue"))) { byId(eid("TargetValue")).oninput = function (e) { sel.value = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId(eid("TargetValue")).onblur = function () { afterEdit(false); }; }
+      if (byId(eid("TargetTol"))) { byId(eid("TargetTol")).oninput = function (e) { sel.tolerance = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId(eid("TargetTol")).onblur = function () { afterEdit(false); }; }
+    } else if (byId(eid("Angle"))) {
+      byId(eid("Angle")).oninput = function (e) { sel.angle = lumenNorm360(parseFloat(e.target.value) || 0); redraw(); };
+      byId(eid("Angle")).onblur = function () { afterEdit(false); };
     }
-    if (byId("lumenDeleteSel")) byId("lumenDeleteSel").onclick = function () {
+    if (byId(eid("DeleteSel"))) byId(eid("DeleteSel")).onclick = function () {
       c.sources = c.sources.filter(function (x) { return x !== sel; });
       c.pieces = c.pieces.filter(function (x) { return x !== sel; });
       c.targets = c.targets.filter(function (x) { return x !== sel; });
@@ -2636,28 +2654,41 @@ function wireLumenDesigner(n) {
     };
   }
 
-  Array.prototype.forEach.call(document.querySelectorAll(".lumenToolBtn"), function (btn) {
+  var toolBtnClass = eid("ToolBtn");
+  Array.prototype.forEach.call(document.querySelectorAll("." + toolBtnClass), function (btn) {
     btn.onclick = function () {
-      Array.prototype.forEach.call(document.querySelectorAll(".lumenToolBtn"), function (b) { b.classList.remove("active"); });
+      Array.prototype.forEach.call(document.querySelectorAll("." + toolBtnClass), function (b) { b.classList.remove("active"); });
       btn.classList.add("active");
       ui.tool = btn.dataset.tool;
       if (ui.tool !== "select") { ui.selectedKey = null; renderProps(); redraw(); }
     };
   });
 
+  function recomputeGeometry() {
+    geom = lumenComputeGeometry(c.gridSize, c.fieldShape);
+    canvas.width = geom.width; canvas.height = geom.height;
+    redraw();
+  }
+
   if (gridInput) {
     gridInput.oninput = function (e) {
       var val = Math.max(3, Math.min(15, Math.round(Number(e.target.value) || 8)));
       if (gridVal) gridVal.textContent = val;
       c.gridSize = val;
-      geom = lumenComputeGeometry(val);
-      canvas.width = geom.width; canvas.height = geom.height;
-      redraw();
+      recomputeGeometry();
     };
     gridInput.onchange = function () { afterEdit(false); };
   }
 
-  var clearBtn = document.getElementById("btnLumenClear");
+  if (shapeSelect) {
+    shapeSelect.onchange = function (e) {
+      c.fieldShape = e.target.value === "circle" ? "circle" : "square";
+      recomputeGeometry();
+      afterEdit(false);
+    };
+  }
+
+  var clearBtn = document.getElementById(eid("BtnClear"));
   if (clearBtn) clearBtn.onclick = function () {
     if (!confirm("Clear all pieces, sources, targets, walls and cards from this level?")) return;
     c.sources = []; c.pieces = []; c.targets = []; c.walls = []; c.cards = [];
@@ -2758,14 +2789,14 @@ function wireLumenDesigner(n) {
     var snapped = Math.round(rawAngle / 15) * 15 % 360;
     lumenSetPieceTargetAngle(activeDrag, snapped);
     redraw();
-    var angleInput = document.getElementById("lumenAngle");
+    var angleInput = document.getElementById(eid("Angle"));
     if (angleInput) angleInput.value = Math.round(lumenNorm360(activeDrag.angle));
   };
   function endDrag() {
     if (activeDrag) {
       if (!dragMoved) lumenSetPieceTargetAngle(activeDrag, activeDrag.angle + 15);
       redraw();
-      var angleInput = document.getElementById("lumenAngle");
+      var angleInput = document.getElementById(eid("Angle"));
       if (angleInput) angleInput.value = Math.round(lumenNorm360(activeDrag.angle));
       afterEdit(false);
     }
@@ -2776,6 +2807,49 @@ function wireLumenDesigner(n) {
 
   redraw();
   renderProps();
+}
+
+// Lumen Puzzle Builder — the full-screen counterpart of the inline designer,
+// opened from a Lumen Beam Puzzle node's inspector ("⛶ Open in Larger Pane"),
+// mirroring openHotspotBuilder's overlay for Clickable Image. Unlike the
+// Hotspot Builder, there's no working-copy/save/discard step: the inline
+// designer already writes straight into n.content on every edit (see the
+// comment above wireLumenDesigner), and this overlay is wired against that
+// same content via wireLumenDesigner(n, "lb") — Done just closes it and
+// refreshes the inspector so the inline copy shows whatever was last edited
+// here.
+var LumenBuilder = { nodeId: null };
+
+function openLumenBuilder(nodeId) {
+  var n = Store.getNode(nodeId);
+  if (!n || n.type !== "lumenPuzzle") return;
+  LumenBuilder.nodeId = nodeId;
+  document.getElementById("lbTitle").textContent = "Lumen Puzzle Builder — " + n.title;
+  document.getElementById("lumenBuilderOverlay").classList.remove("hidden");
+  renderLumenBuilder();
+}
+
+function closeLumenBuilder() {
+  document.getElementById("lumenBuilderOverlay").classList.add("hidden");
+  LumenBuilder.nodeId = null;
+  renderInspector();
+}
+
+function renderLumenBuilder() {
+  var n = Store.getNode(LumenBuilder.nodeId);
+  if (!n) return;
+  var c = n.content;
+  var ui = lumenUiState(n);
+  var gridInput = document.getElementById("lbGridSize");
+  var gridVal = document.getElementById("lbGridSizeVal");
+  var shapeSelect = document.getElementById("lbFieldShape");
+  if (gridInput) gridInput.value = c.gridSize || 8;
+  if (gridVal) gridVal.textContent = c.gridSize || 8;
+  if (shapeSelect) shapeSelect.value = c.fieldShape === "circle" ? "circle" : "square";
+  Array.prototype.forEach.call(document.querySelectorAll(".lbToolBtn"), function (btn) {
+    btn.classList.toggle("active", btn.dataset.tool === ui.tool);
+  });
+  wireLumenDesigner(n, "lb");
 }
 
 function wireNodeInspector(n) {
@@ -2967,6 +3041,7 @@ function wireNodeInspector(n) {
     case "lumenPuzzle":
       bindText("fPrompt", "prompt");
       wireLumenDesigner(n);
+      if (byId("btnOpenLumenBuilder")) byId("btnOpenLumenBuilder").onclick = function () { openLumenBuilder(n.id); };
       break;
     case "awardItem":
       bindChange("fItemId", function (v) { c.itemId = v; });
@@ -4893,6 +4968,8 @@ function init() {
   window.addEventListener("resize", function () {
     if (!document.getElementById("hotspotBuilderOverlay").classList.contains("hidden")) hbSyncOverlay();
   });
+
+  document.getElementById("lbBtnDone").onclick = closeLumenBuilder;
 
   // Library screen controls
   document.getElementById("btnNewHunt").onclick = createNewHuntAndOpen;

@@ -317,6 +317,13 @@ var NODE_TYPES = {
       return {
         prompt: "Rotate the mirrors and lenses to route the beam onto every target.",
         gridSize: 8,
+        // fieldShape: "square" (default, every hex in the N×N offset field) or
+        // "circle" (only hexes within radius of the field's center hex — see
+        // lumenForEachGridHex/lumenHexCubeDistance below). Purely a level-design
+        // choice; doesn't change the coordinate system pieces are stored in, so
+        // switching it after placing pieces is safe (some may just end up
+        // outside the new field, same as shrinking gridSize already allows).
+        fieldShape: "square",
         sources: [{ id: uid("lsrc"), q: 0, r: 4, kind: "center", idx: 0, angle: 0 }],
         pieces: [{ id: uid("lpc"), type: "mirror", q: 1, r: 2, kind: "center", idx: 0, angle: 45 }],
         targets: [{ id: uid("ltg"), q: 4, r: 4, kind: "center", idx: 0, mode: "atleast", min: 0.8, max: 3, value: 1.5, tolerance: 0.15 }],
@@ -2626,20 +2633,43 @@ function lumenHexEdges(cx, cy, size) {
 // Square field of hexes built from offset (row,col) coordinates — raw axial
 // q/r ranges form a rhombus, so each row's columns get a per-row offset to
 // yield a rectangular field instead. Same approach as the prototype.
-function lumenForEachGridHex(N, cb) {
-  for (var rr = 0; rr < N; rr++) {
+//
+// shape "circle" keeps exactly the same (row,col)->axial mapping — so a
+// piece's stored q/r means the same physical hex regardless of which shape
+// is active — but only visits hexes within lumenHexCubeDistance of the
+// field's own center hex, giving a hex-disk instead of the full rectangle.
+function lumenForEachGridHex(N, shape, cb) {
+  var rr, cc;
+  var centerR = Math.floor((N - 1) / 2);
+  var centerRowOffset = Math.floor(centerR / 2);
+  var centerQ = Math.floor((N - 1) / 2) - centerRowOffset;
+  var radius = (N - 1) / 2;
+  for (rr = 0; rr < N; rr++) {
     var rowOffset = Math.floor(rr / 2);
-    for (var cc = 0; cc < N; cc++) cb(cc - rowOffset, rr);
+    for (cc = 0; cc < N; cc++) {
+      var q = cc - rowOffset, r = rr;
+      if (shape === "circle" && lumenHexCubeDistance(q, r, centerQ, centerR) > radius) continue;
+      cb(q, r);
+    }
   }
 }
+// Standard cube-coordinate hex distance (axial q/r converted to cube x/z/-x-z),
+// used to trim the square offset field down to a disk for "circle" fields.
+function lumenHexCubeDistance(q1, r1, q2, r2) {
+  var x1 = q1, z1 = r1, y1 = -x1 - z1;
+  var x2 = q2, z2 = r2, y2 = -x2 - z2;
+  return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2), Math.abs(z1 - z2));
+}
 
-// Builds the render/anchor geometry for a level purely from its grid size —
-// independent of what's actually placed on it, so it only needs recomputing
-// when gridSize changes (not on every piece rotation).
-function lumenComputeGeometry(gridSize) {
+// Builds the render/anchor geometry for a level purely from its grid size and
+// field shape — independent of what's actually placed on it, so it only
+// needs recomputing when gridSize/fieldShape change (not on every piece
+// rotation).
+function lumenComputeGeometry(gridSize, fieldShape) {
   var N = Math.max(3, Math.min(15, Math.round(lumenNum(gridSize, 8))));
+  var shape = fieldShape === "circle" ? "circle" : "square";
   var xs = [], ys = [];
-  lumenForEachGridHex(N, function (q, r) {
+  lumenForEachGridHex(N, shape, function (q, r) {
     var c = lumenAxialLocal(1, q, r);
     lumenHexVerts(c.x, c.y, 1).forEach(function (v) { xs.push(v.x); ys.push(v.y); });
   });
@@ -2648,7 +2678,7 @@ function lumenComputeGeometry(gridSize) {
   var w0 = maxXu - minXu, h0 = maxYu - minYu;
   var scale = (LUMEN_STAGE_SIZE / Math.min(w0, h0)) * LUMEN_OVERSCAN;
 
-  var L = { gridSize: N };
+  var L = { gridSize: N, fieldShape: shape };
   L.hexR = scale;
   L.k = scale / 36;
   L.lensR = scale * 0.4;
@@ -2665,7 +2695,7 @@ function lumenComputeGeometry(gridSize) {
 
   L.hexList = [];
   L.anchors = [];
-  lumenForEachGridHex(N, function (q, r) {
+  lumenForEachGridHex(N, shape, function (q, r) {
     var c = lumenHexPx(L, q, r);
     L.hexList.push({ q: q, r: r, x: c.x, y: c.y });
     L.anchors.push({ x: c.x, y: c.y, q: q, r: r, kind: "center", idx: 0 });
@@ -2778,7 +2808,7 @@ function lumenConditionLabel(t) {
   return "";
 }
 
-function lumenTraceSingleBeam(geom, level, src, blockerSegs, boundaryEdges) {
+function lumenTraceSingleBeam(geom, level, src, blockerSegs, boundary) {
   var O0 = lumenAnchorPx(geom, src);
   var O = { x: O0.x, y: O0.y };
   var D = { x: Math.cos(lumenRad(src.angle)), y: Math.sin(lumenRad(src.angle)) };
@@ -2791,10 +2821,18 @@ function lumenTraceSingleBeam(geom, level, src, blockerSegs, boundaryEdges) {
 
   for (var bounce = 0; bounce < 60; bounce++) {
     var best = null;
-    boundaryEdges.forEach(function (seg) {
-      var h = lumenSegIntersect(O, D, seg[0], seg[1], eps);
-      if (h && (!best || h.t < best.t)) best = { t: h.t, type: "boundary", x: h.x, y: h.y };
-    });
+    if (boundary.type === "circle") {
+      // O is always inside the field circle, so lumenCircleIntersect's
+      // "entry" (its first forward root) is really the far side — exactly
+      // the point where the beam leaves the field.
+      var bh = lumenCircleIntersect(O, D, { x: boundary.cx, y: boundary.cy }, boundary.r, eps);
+      if (bh) best = { t: bh.tEntry, type: "boundary", x: bh.xEntry, y: bh.yEntry };
+    } else {
+      boundary.edges.forEach(function (seg) {
+        var h = lumenSegIntersect(O, D, seg[0], seg[1], eps);
+        if (h && (!best || h.t < best.t)) best = { t: h.t, type: "boundary", x: h.x, y: h.y };
+      });
+    }
     blockerSegs.forEach(function (seg) {
       var h = lumenSegIntersect(O, D, seg[0], seg[1], eps);
       if (h && (!best || h.t < best.t)) best = { t: h.t, type: "wall", x: h.x, y: h.y };
@@ -2860,12 +2898,21 @@ function lumenTraceSingleBeam(geom, level, src, blockerSegs, boundaryEdges) {
 }
 
 function lumenTraceAllBeams(geom, level) {
-  var boundaryEdges = [
-    [{ x: 0, y: 0 }, { x: geom.width, y: 0 }],
-    [{ x: geom.width, y: 0 }, { x: geom.width, y: geom.height }],
-    [{ x: geom.width, y: geom.height }, { x: 0, y: geom.height }],
-    [{ x: 0, y: geom.height }, { x: 0, y: 0 }]
-  ];
+  // Square fields stop beams at the canvas rectangle (with a little
+  // overscan overflow, same as the standalone prototype); circle fields
+  // stop them at a circle inscribed in that same square, centered on the
+  // stage, so the playable boundary actually matches the disk of hexes
+  // drawn on screen instead of leaking out to the square canvas corners.
+  var boundary = geom.fieldShape === "circle"
+    ? { type: "circle", cx: geom.width / 2, cy: geom.height / 2, r: Math.min(geom.width, geom.height) / 2 }
+    : {
+        type: "rect", edges: [
+          [{ x: 0, y: 0 }, { x: geom.width, y: 0 }],
+          [{ x: geom.width, y: 0 }, { x: geom.width, y: geom.height }],
+          [{ x: geom.width, y: geom.height }, { x: 0, y: geom.height }],
+          [{ x: 0, y: geom.height }, { x: 0, y: 0 }]
+        ]
+      };
   var blockerSegs = lumenGetBlockerSegs(geom, level);
 
   var segments = [];
@@ -2876,7 +2923,7 @@ function lumenTraceAllBeams(geom, level) {
   var emittingSources = {};
 
   (level.sources || []).forEach(function (src) {
-    var r = lumenTraceSingleBeam(geom, level, src, blockerSegs, boundaryEdges);
+    var r = lumenTraceSingleBeam(geom, level, src, blockerSegs, boundary);
     segments = segments.concat(r.segments);
     Object.keys(r.activated).forEach(function (id) { activated[id] = true; });
     Object.keys(r.closeness).forEach(function (id) { closeness[id] = Math.max(closeness[id] || 0, r.closeness[id]); });
@@ -3236,7 +3283,7 @@ function wireLumenPuzzleInteractions(root, ctl, session, n) {
   var c = n.content;
 
   ctl.lumenGeom = ctl.lumenGeom || {};
-  if (!ctl.lumenGeom[n.id]) ctl.lumenGeom[n.id] = lumenComputeGeometry(c.gridSize);
+  if (!ctl.lumenGeom[n.id]) ctl.lumenGeom[n.id] = lumenComputeGeometry(c.gridSize, c.fieldShape);
   var geom = ctl.lumenGeom[n.id];
 
   ctl.lumenDraft = ctl.lumenDraft || {};
@@ -3352,7 +3399,7 @@ function lumenDrawReadOnly(ctl, n) {
   var canvas = wrap.querySelector(".pv-lumen-canvas");
   var c = n.content;
   ctl.lumenGeom = ctl.lumenGeom || {};
-  if (!ctl.lumenGeom[n.id]) ctl.lumenGeom[n.id] = lumenComputeGeometry(c.gridSize);
+  if (!ctl.lumenGeom[n.id]) ctl.lumenGeom[n.id] = lumenComputeGeometry(c.gridSize, c.fieldShape);
   var geom = ctl.lumenGeom[n.id];
   var level = (ctl.lumenDraft && ctl.lumenDraft[n.id]) || { sources: c.sources || [], pieces: c.pieces || [], targets: c.targets || [], walls: c.walls || [], cards: c.cards || [] };
   canvas.width = geom.width; canvas.height = geom.height;
