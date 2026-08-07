@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lumen — Light, Lens & Mirror Puzzle (Beta v2)</title>
+<title>Hex Grid Lumen Puzzle (Beta v3)</title>
 <style>
   :root{
     --bg-a:#0a0e1a; --bg-b:#131c33; --panel:#141b2e; --panel-b:#1c2740;
@@ -16,10 +16,10 @@
     background:radial-gradient(1200px 700px at 50% -10%, #1a2544 0%, var(--bg-a) 55%, #060811 100%);
     color:var(--text); display:flex; justify-content:center; padding:28px 16px 60px;
   }
-  .wrap{ width:100%; max-width:900px; }
+  .wrap{ width:100%; max-width:940px; }
   header{ text-align:center; margin-bottom:18px; }
   h1{
-    margin:0 0 4px; font-size:28px; letter-spacing:1px; font-weight:700;
+    margin:0 0 4px; font-size:26px; letter-spacing:1px; font-weight:700;
     background:linear-gradient(90deg,#bfe9ff,#ffe6b0);
     -webkit-background-clip:text; background-clip:text; color:transparent;
     text-shadow:0 0 30px rgba(127,216,255,0.25);
@@ -103,9 +103,9 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Lumen</h1>
-    <p>A light, lens &amp; mirror puzzle</p>
-    <span class="badge">Beta v2 — free rotation</span>
+    <h1>Hex Grid Lumen Puzzle</h1>
+    <p>A light, lens &amp; mirror puzzle — now on a hexagonal grid</p>
+    <span class="badge">Beta v3 — hex grid</span>
   </header>
 
   <div class="levelNav" id="levelNav"></div>
@@ -135,7 +135,7 @@
     <div class="item"><span class="swatch sw-source"></span> Light source — drag its cylinder to aim the slit</div>
     <div class="item"><span class="swatch sw-mirror"></span> Mirror — drag to rotate</div>
     <div class="item"><span class="swatch sw-lens"></span> Lens — drag to rotate &amp; focus</div>
-    <div class="item"><span class="swatch sw-wall"></span> Wall — blocks light</div>
+    <div class="item"><span class="swatch sw-wall"></span> Wall hex — blocks light</div>
     <div class="item"><span class="swatch sw-target"></span> Receiver</div>
   </div>
 
@@ -146,60 +146,78 @@
 (function(){
   "use strict";
 
-  const CELL = 64, PAD = 24, EPS = 0.75;
+  const HEX_R = 36, EPS = 0.75;
   const LENS_BOOST = 1.6, LENS_PENALTY = 0.9;
-  const LENS_R = CELL*0.22, MIRROR_HALF = CELL*0.33, TARGET_R = CELL*0.22;
+  const LENS_R = HEX_R*0.4, MIRROR_HALF = HEX_R*0.6, TARGET_R = HEX_R*0.4;
+  const CYL_OUTER = HEX_R*0.66, CYL_INNER = HEX_R*0.5, SLIT_HALF_DEG = 20;
+  const MARGIN = HEX_R*2.2;
 
   function rad(d){ return d*Math.PI/180; }
   function norm360(d){ return ((d%360)+360)%360; }
 
+  // axial (pointy-top) hex -> local pixel, before level offset
+  function axialLocal(q,r){
+    return { x: HEX_R*Math.sqrt(3)*(q+r/2), y: HEX_R*1.5*r };
+  }
+  function hexVerts(cx,cy,size){
+    const v=[];
+    for(let i=0;i<6;i++){
+      const a = rad(60*i-30);
+      v.push({x:cx+size*Math.cos(a), y:cy+size*Math.sin(a)});
+    }
+    return v;
+  }
+  function hexEdges(cx,cy,size){
+    const v = hexVerts(cx,cy,size);
+    const e = [];
+    for(let i=0;i<6;i++) e.push([v[i], v[(i+1)%6]]);
+    return e;
+  }
+
+  // ---- level definitions (axial q,r coordinates) ----
   const LEVELS = [
     {
       name:"1. First Light",
-      hint:"Aim the source cylinder's slit toward the lens, then align the lens with the beam.",
-      rows:4, cols:6,
-      source:{r:1,c:0,angle:105},
-      target:{r:1,c:5,threshold:1.5},
+      hint:"Aim the source cylinder's slit east, then rotate the lens to line up with the beam.",
+      source:{q:0,r:0,angle:105},
+      target:{q:4,r:0,threshold:1.5},
       walls:[],
-      pieces:[{type:'lens',r:1,c:3,angle:60}]
+      pieces:[{type:'lens',q:2,r:0,angle:90}]
     },
     {
       name:"2. Bend It",
-      hint:"Aim the source, rotate the mirror to send the beam downward, then align the lens.",
-      rows:5, cols:6,
-      source:{r:1,c:0,angle:255},
-      target:{r:3,c:3,threshold:1.4},
+      hint:"Aim the source, turn the mirror to send the beam down the next hex row, then align the lens.",
+      source:{q:0,r:0,angle:105},
+      target:{q:2,r:2,threshold:1.4},
       walls:[],
-      pieces:[{type:'mirror',r:1,c:3,angle:150},{type:'lens',r:2,c:3,angle:30}]
+      pieces:[{type:'mirror',q:2,r:0,angle:120},{type:'lens',q:2,r:1,angle:165}]
     },
     {
       name:"3. Double Boost",
-      hint:"Aim the source east, then route the beam up and across through two lenses before sending it back down.",
-      rows:6, cols:8,
-      source:{r:2,c:0,angle:180},
-      target:{r:2,c:6,threshold:2.3},
+      hint:"Aim the source, zig-zag up and across through two lenses, then dive back down to the receiver.",
+      source:{q:0,r:3,angle:105},
+      target:{q:7,r:2,threshold:2.3},
       walls:[],
       pieces:[
-        {type:'mirror',r:2,c:1,angle:90},
-        {type:'mirror',r:1,c:1,angle:0},
-        {type:'lens',r:1,c:2,angle:60},
-        {type:'lens',r:1,c:4,angle:150},
-        {type:'mirror',r:1,c:6,angle:120}
+        {type:'mirror',q:2,r:3,angle:210},
+        {type:'mirror',q:2,r:1,angle:225},
+        {type:'lens',q:3,r:1,angle:120},
+        {type:'lens',q:5,r:1,angle:135},
+        {type:'mirror',q:7,r:1,angle:180}
       ]
     },
     {
       name:"4. Obstacle Course",
-      hint:"A wall blocks the direct path — aim the source, climb around it, gather two boosts, then dive back down.",
-      rows:7, cols:9,
-      source:{r:3,c:0,angle:330},
-      target:{r:5,c:7,threshold:2.4},
-      walls:[[3,3],[3,4],[3,5]],
+      hint:"A wall of hexes blocks the direct path — aim the source, climb around it, gather two boosts, then dive back down.",
+      source:{q:0,r:4,angle:105},
+      target:{q:7,r:5,threshold:2.4},
+      walls:[[3,4],[4,4],[5,4]],
       pieces:[
-        {type:'mirror',r:3,c:2,angle:75},
-        {type:'mirror',r:1,c:2,angle:165},
-        {type:'lens',r:1,c:3,angle:45},
-        {type:'lens',r:1,c:5,angle:105},
-        {type:'mirror',r:1,c:7,angle:15}
+        {type:'mirror',q:2,r:4,angle:210},
+        {type:'mirror',q:2,r:2,angle:225},
+        {type:'lens',q:3,r:2,angle:120},
+        {type:'lens',q:5,r:2,angle:135},
+        {type:'mirror',q:7,r:2,angle:180}
       ]
     }
   ];
@@ -226,30 +244,51 @@
   function cloneLevel(idx){
     const L = JSON.parse(JSON.stringify(LEVELS[idx]));
     L.pieces.forEach(p=>{
-      p.id = p.r+'_'+p.c;
+      p.id = p.q+'_'+p.r;
       p.angle = norm360(p.angle);
       p.targetAngle = p.angle;
     });
     L.source.id = 'source';
     L.source.angle = norm360(L.source.angle);
     L.source.targetAngle = L.source.angle;
-    L.wallRects = L.walls.map(([r,c])=>{
-      const x0=PAD+c*CELL, y0=PAD+r*CELL, x1=x0+CELL, y1=y0+CELL;
-      return { edges:[
-        [{x:x0,y:y0},{x:x1,y:y0}],
-        [{x:x1,y:y0},{x:x1,y:y1}],
-        [{x:x1,y:y1},{x:x0,y:y1}],
-        [{x:x0,y:y1},{x:x0,y:y0}]
-      ]};
+
+    // bounding box (local pixel space) over every used hex, plus margin
+    const pts = [
+      axialLocal(L.source.q, L.source.r),
+      axialLocal(L.target.q, L.target.r),
+      ...L.pieces.map(p=>axialLocal(p.q,p.r)),
+      ...L.walls.map(([q,r])=>axialLocal(q,r))
+    ];
+    const xs = pts.map(p=>p.x), ys = pts.map(p=>p.y);
+    const x0 = Math.min(...xs)-MARGIN, x1 = Math.max(...xs)+MARGIN;
+    const y0 = Math.min(...ys)-MARGIN, y1 = Math.max(...ys)+MARGIN;
+    L.offsetX = -x0; L.offsetY = -y0;
+    L.width = x1-x0; L.height = y1-y0;
+
+    // axial range for background hex tiling
+    const qs = [L.source.q, L.target.q, ...L.pieces.map(p=>p.q), ...L.walls.map(w=>w[0])];
+    const rs = [L.source.r, L.target.r, ...L.pieces.map(p=>p.r), ...L.walls.map(w=>w[1])];
+    L.qMin = Math.min(...qs)-2; L.qMax = Math.max(...qs)+2;
+    L.rMin = Math.min(...rs)-2; L.rMax = Math.max(...rs)+2;
+
+    L.wallEdges = L.walls.map(([q,r])=>{
+      const p = hexPx(L,q,r);
+      return hexEdges(p.x,p.y,HEX_R);
     });
+
     return L;
+  }
+
+  function hexPx(L,q,r){
+    const p = axialLocal(q,r);
+    return { x: p.x+L.offsetX, y: p.y+L.offsetY };
   }
 
   function initLevel(idx){
     currentIndex = idx;
     level = cloneLevel(idx);
-    canvas.width = level.cols*CELL + PAD*2;
-    canvas.height = level.rows*CELL + PAD*2;
+    canvas.width = level.width;
+    canvas.height = level.height;
     lastSolved = false;
     draggingPiece = null;
     hoverPiece = null;
@@ -270,13 +309,15 @@
     });
   }
 
-  function centerPx(r,c){
-    return { x: PAD + (c+0.5)*CELL, y: PAD + (r+0.5)*CELL };
-  }
-
-  function findPiece(r,c){
-    if(level.source.r===r && level.source.c===c) return level.source;
-    return level.pieces.find(p=>p.r===r && p.c===c);
+  function findPieceNear(x,y){
+    const all = [level.source, ...level.pieces];
+    let best = null, bestD = HEX_R*0.95;
+    all.forEach(p=>{
+      const c = hexPx(level,p.q,p.r);
+      const d = Math.hypot(x-c.x, y-c.y);
+      if(d<bestD){ bestD=d; best=p; }
+    });
+    return best;
   }
 
   // ---- geometry ----
@@ -308,7 +349,7 @@
   }
 
   function traceBeam(){
-    const O0 = centerPx(level.source.r, level.source.c);
+    const O0 = hexPx(level, level.source.q, level.source.r);
     let O = {x:O0.x, y:O0.y};
     let D = {x:Math.cos(rad(level.source.angle)), y:Math.sin(rad(level.source.angle))};
     let intensity = 1.0;
@@ -318,10 +359,10 @@
     let hit=false, hitIntensity=0, blocked=false;
 
     const boundaryEdges = [
-      [{x:PAD,y:PAD},{x:PAD+level.cols*CELL,y:PAD}],
-      [{x:PAD+level.cols*CELL,y:PAD},{x:PAD+level.cols*CELL,y:PAD+level.rows*CELL}],
-      [{x:PAD+level.cols*CELL,y:PAD+level.rows*CELL},{x:PAD,y:PAD+level.rows*CELL}],
-      [{x:PAD,y:PAD+level.rows*CELL},{x:PAD,y:PAD}]
+      [{x:0,y:0},{x:canvas.width,y:0}],
+      [{x:canvas.width,y:0},{x:canvas.width,y:canvas.height}],
+      [{x:canvas.width,y:canvas.height},{x:0,y:canvas.height}],
+      [{x:0,y:canvas.height},{x:0,y:0}]
     ];
 
     for(let bounce=0; bounce<60; bounce++){
@@ -331,28 +372,28 @@
         const h = segIntersect(O,D,A,B,EPS);
         if(h && (!best || h.t<best.t)) best = {t:h.t, type:'boundary', x:h.x, y:h.y};
       });
-      level.wallRects.forEach(rect=>{
-        rect.edges.forEach(([A,B])=>{
+      level.wallEdges.forEach(edges=>{
+        edges.forEach(([A,B])=>{
           const h = segIntersect(O,D,A,B,EPS);
           if(h && (!best || h.t<best.t)) best = {t:h.t, type:'wall', x:h.x, y:h.y};
         });
       });
       level.pieces.forEach(p=>{
         if(p.type==='mirror'){
-          const c = centerPx(p.r,p.c);
+          const c = hexPx(level,p.q,p.r);
           const rA = rad(p.angle);
           const A = {x:c.x+Math.cos(rA)*MIRROR_HALF, y:c.y+Math.sin(rA)*MIRROR_HALF};
           const B = {x:c.x-Math.cos(rA)*MIRROR_HALF, y:c.y-Math.sin(rA)*MIRROR_HALF};
           const h = segIntersect(O,D,A,B,EPS);
           if(h && (!best || h.t<best.t)) best = {t:h.t, type:'mirror', piece:p, x:h.x, y:h.y};
         } else if(p.type==='lens'){
-          const c = centerPx(p.r,p.c);
+          const c = hexPx(level,p.q,p.r);
           const res = circleIntersect(O,D,c,LENS_R,EPS);
           if(res && (!best || res.tEntry<best.t)) best = {t:res.tEntry, type:'lens', piece:p, x:res.xEntry, y:res.yEntry, exitX:res.xExit, exitY:res.yExit};
         }
       });
       {
-        const c = centerPx(level.target.r, level.target.c);
+        const c = hexPx(level, level.target.q, level.target.r);
         const res = circleIntersect(O,D,c,TARGET_R,EPS);
         if(res && (!best || res.tEntry<best.t)) best = {t:res.tEntry, type:'target', x:res.xEntry, y:res.yEntry};
       }
@@ -413,23 +454,6 @@
     return `rgb(${r},${g},${bl})`;
   }
 
-  function pointInCell(px,py){
-    return { r: Math.floor((py-PAD)/CELL), c: Math.floor((px-PAD)/CELL) };
-  }
-
-  function drawGrid(){
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.045)';
-    ctx.lineWidth = 1;
-    for(let c=0;c<=level.cols;c++){
-      ctx.beginPath(); ctx.moveTo(PAD+c*CELL, PAD); ctx.lineTo(PAD+c*CELL, PAD+level.rows*CELL); ctx.stroke();
-    }
-    for(let r=0;r<=level.rows;r++){
-      ctx.beginPath(); ctx.moveTo(PAD, PAD+r*CELL); ctx.lineTo(PAD+level.cols*CELL, PAD+r*CELL); ctx.stroke();
-    }
-    ctx.restore();
-  }
-
   function roundRect(x,y,w,h,r){
     ctx.beginPath();
     ctx.moveTo(x+r,y);
@@ -440,18 +464,44 @@
     ctx.closePath();
   }
 
+  function drawHexPath(cx,cy,size){
+    const v = hexVerts(cx,cy,size);
+    ctx.beginPath();
+    ctx.moveTo(v[0].x,v[0].y);
+    for(let i=1;i<6;i++) ctx.lineTo(v[i].x,v[i].y);
+    ctx.closePath();
+  }
+
+  function drawGrid(){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    for(let q=level.qMin; q<=level.qMax; q++){
+      for(let r=level.rMin; r<=level.rMax; r++){
+        const p = hexPx(level,q,r);
+        if(p.x < -HEX_R || p.x > canvas.width+HEX_R || p.y < -HEX_R || p.y > canvas.height+HEX_R) continue;
+        drawHexPath(p.x,p.y,HEX_R*0.96);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   function drawWalls(){
-    level.walls.forEach(([r,c])=>{
-      const x = PAD+c*CELL, y = PAD+r*CELL;
+    level.walls.forEach(([q,r])=>{
+      const p = hexPx(level,q,r);
       ctx.save();
+      drawHexPath(p.x,p.y,HEX_R*0.92);
       ctx.fillStyle = '#241c1c';
-      roundRect(x+4,y+4,CELL-8,CELL-8,8);
       ctx.fill();
       ctx.clip();
       ctx.strokeStyle = 'rgba(120,70,70,0.5)';
       ctx.lineWidth = 3;
-      for(let i=-CELL;i<CELL*2;i+=10){
-        ctx.beginPath(); ctx.moveTo(x+i, y+CELL); ctx.lineTo(x+i+CELL, y); ctx.stroke();
+      for(let i=-HEX_R*2;i<HEX_R*3;i+=10){
+        ctx.beginPath();
+        ctx.moveTo(p.x+i-HEX_R, p.y+HEX_R);
+        ctx.lineTo(p.x+i+HEX_R, p.y-HEX_R);
+        ctx.stroke();
       }
       ctx.restore();
     });
@@ -480,28 +530,24 @@
     ctx.restore();
   }
 
-  const CYL_OUTER = CELL*0.40, CYL_INNER = CELL*0.30, SLIT_HALF_DEG = 20;
-
   function drawSourceCylinder(trace){
-    const {x,y} = centerPx(level.source.r, level.source.c);
+    const {x,y} = hexPx(level, level.source.q, level.source.r);
     const pulse = 1 + Math.sin(Date.now()/260)*0.08;
     const emitting = trace.segments.length>0;
 
     ctx.save();
     ctx.translate(x,y);
 
-    // glow bulb inside the cylinder
     ctx.shadowColor = '#ffd27f';
-    ctx.shadowBlur = 22;
-    const grad = ctx.createRadialGradient(0,0,2,0,0,13*pulse);
+    ctx.shadowBlur = 20;
+    const grad = ctx.createRadialGradient(0,0,2,0,0,11*pulse);
     grad.addColorStop(0,'#ffffff'); grad.addColorStop(0.5,'#ffe6b0'); grad.addColorStop(1,'rgba(255,210,127,0)');
     ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(0,0,13*pulse,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0,0,11*pulse,0,Math.PI*2); ctx.fill();
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#fff8e8';
-    ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0,0,5,0,Math.PI*2); ctx.fill();
 
-    // rotating cylinder wall with a slit gap facing the emission angle
     const a = rad(level.source.angle);
     const gapStart = a - rad(SLIT_HALF_DEG);
     const gapEnd = a + rad(SLIT_HALF_DEG);
@@ -521,17 +567,16 @@
     ctx.fill();
     ctx.restore();
 
-    // warm glow spilling out of the slit
     if(emitting){
       ctx.save();
       ctx.rotate(a);
-      const spillGrad = ctx.createRadialGradient(0,0,CYL_INNER,0,0,CYL_OUTER+10);
+      const spillGrad = ctx.createRadialGradient(0,0,CYL_INNER,0,0,CYL_OUTER+8);
       spillGrad.addColorStop(0,'rgba(255,230,176,0.85)');
       spillGrad.addColorStop(1,'rgba(255,230,176,0)');
       ctx.fillStyle = spillGrad;
       ctx.beginPath();
       ctx.moveTo(0,0);
-      ctx.arc(0,0,CYL_OUTER+10, -rad(SLIT_HALF_DEG), rad(SLIT_HALF_DEG));
+      ctx.arc(0,0,CYL_OUTER+8, -rad(SLIT_HALF_DEG), rad(SLIT_HALF_DEG));
       ctx.closePath();
       ctx.fill();
       ctx.restore();
@@ -540,7 +585,7 @@
   }
 
   function drawTarget(trace){
-    const {x,y} = centerPx(level.target.r, level.target.c);
+    const {x,y} = hexPx(level, level.target.q, level.target.r);
     const solved = trace.hit && trace.intensity >= level.target.threshold;
     let color, glow;
     if(solved){ color = '#6bffb0'; glow = '#6bffb0'; }
@@ -549,13 +594,10 @@
     const pulse = solved ? (1+Math.sin(Date.now()/200)*0.12) : 1;
 
     ctx.save();
-    ctx.translate(x,y);
-    ctx.rotate(Math.PI/4);
     ctx.shadowColor = glow;
-    ctx.shadowBlur = solved ? 30 : (trace.hit ? 14 : 0);
-    const s = 16*pulse;
+    ctx.shadowBlur = solved ? 28 : (trace.hit ? 14 : 0);
+    drawHexPath(x,y, (HEX_R*0.5)*pulse);
     ctx.fillStyle = color;
-    roundRect(-s,-s,s*2,s*2,6);
     ctx.fill();
     ctx.restore();
 
@@ -563,16 +605,16 @@
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.font = '10px Segoe UI, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('target', x, y+34);
+    ctx.fillText('target', x, y+HEX_R*0.9);
     ctx.restore();
   }
 
   function drawMirror(p, active){
-    const {x,y} = centerPx(p.r,p.c);
+    const {x,y} = hexPx(level,p.q,p.r);
     ctx.save();
     ctx.translate(x,y);
     ctx.rotate(rad(p.angle));
-    const len = MIRROR_HALF*2, w = 9;
+    const len = MIRROR_HALF*2, w = 8;
     ctx.shadowColor = active ? '#bfeaff' : 'transparent';
     ctx.shadowBlur = active ? 22 : 0;
     const grad = ctx.createLinearGradient(-len/2,0,len/2,0);
@@ -586,48 +628,47 @@
   }
 
   function drawLens(p, active, close){
-    const {x,y} = centerPx(p.r,p.c);
+    const {x,y} = hexPx(level,p.q,p.r);
     const t = active ? close : 0;
     ctx.save();
     ctx.translate(x,y);
     ctx.rotate(rad(p.angle));
     ctx.shadowColor = active ? lerpColor('#4a90c2','#ffbf5c', t) : 'transparent';
     ctx.shadowBlur = active ? (8 + t*26) : 0;
-    const grad = ctx.createLinearGradient(0,-16,0,16);
+    const grad = ctx.createLinearGradient(0,-HEX_R*0.42,0,HEX_R*0.42);
     grad.addColorStop(0, lerpColor('#bfeaff','#fff3d6', t));
     grad.addColorStop(1, lerpColor('#4a90c2','#ffbf5c', t));
     ctx.fillStyle = grad;
     ctx.globalAlpha = 0.9;
     ctx.beginPath();
-    ctx.ellipse(0,0, CELL*0.16, CELL*0.30, 0, 0, Math.PI*2);
+    ctx.ellipse(0,0, HEX_R*0.22, HEX_R*0.42, 0, 0, Math.PI*2);
     ctx.fill();
     ctx.globalAlpha = 1;
     ctx.strokeStyle = 'rgba(255,255,255,0.8)';
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0,-CELL*0.30); ctx.lineTo(0,CELL*0.30); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-HEX_R*0.42); ctx.lineTo(0,HEX_R*0.42); ctx.stroke();
     ctx.restore();
   }
 
   function drawHoverAndDrag(){
     if(hoverPiece && !draggingPiece){
-      const {x,y} = centerPx(hoverPiece.r, hoverPiece.c);
+      const {x,y} = hexPx(level, hoverPiece.q, hoverPiece.r);
       ctx.save();
       ctx.strokeStyle = 'rgba(255,255,255,0.3)';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4,4]);
-      ctx.beginPath(); ctx.arc(x,y,CELL*0.42,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x,y,HEX_R*0.78,0,Math.PI*2); ctx.stroke();
       ctx.restore();
     }
     if(draggingPiece){
-      const {x,y} = centerPx(draggingPiece.r, draggingPiece.c);
+      const {x,y} = hexPx(level, draggingPiece.q, draggingPiece.r);
       ctx.save();
       ctx.strokeStyle = 'rgba(255,210,127,0.55)';
       ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(x,y,CELL*0.44,0,Math.PI*2); ctx.stroke();
-      // 15deg tick marks
+      ctx.beginPath(); ctx.arc(x,y,HEX_R*0.82,0,Math.PI*2); ctx.stroke();
       for(let a=0;a<360;a+=15){
         const rA = rad(a);
-        const inner = CELL*0.44, outer = CELL*0.50;
+        const inner = HEX_R*0.82, outer = HEX_R*0.94;
         ctx.strokeStyle = 'rgba(255,255,255,0.18)';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -638,12 +679,11 @@
       const label = Math.round(norm360(draggingPiece.angle)) + '°';
       ctx.font = 'bold 13px Segoe UI, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#0a0e1a';
-      ctx.shadowColor = 'rgba(255,210,127,0.8)';
-      ctx.shadowBlur = 8;
-      const ty = y - CELL*0.62;
+      const ty = y - HEX_R*1.15;
       roundRect(x-22, ty-13, 44, 20, 6);
       ctx.fillStyle = '#ffd27f';
+      ctx.shadowColor = 'rgba(255,210,127,0.8)';
+      ctx.shadowBlur = 8;
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.fillStyle = '#0a0e1a';
@@ -734,8 +774,7 @@
 
   canvas.addEventListener('pointerdown', evt=>{
     const {x,y} = canvasCoords(evt);
-    const {r,c} = pointInCell(x,y);
-    const p = findPiece(r,c);
+    const p = findPieceNear(x,y);
     if(p){
       draggingPiece = p;
       dragMoved = false;
@@ -748,12 +787,11 @@
 
   canvas.addEventListener('pointermove', evt=>{
     const {x,y} = canvasCoords(evt);
-    const {r,c} = pointInCell(x,y);
 
     if(draggingPiece){
       const moveDist = Math.hypot(evt.clientX-dragStartClient.x, evt.clientY-dragStartClient.y);
       if(moveDist>3) dragMoved = true;
-      const center = centerPx(draggingPiece.r, draggingPiece.c);
+      const center = hexPx(level, draggingPiece.q, draggingPiece.r);
       const rawAngle = norm360(Math.atan2(y-center.y, x-center.x)*180/Math.PI);
       const snapped = Math.round(rawAngle/15)*15 % 360;
       if(snapped !== lastSnappedAngle){
@@ -763,7 +801,7 @@
       setPieceTargetAngle(draggingPiece, snapped);
       canvas.style.cursor = 'grabbing';
     } else {
-      hoverPiece = findPiece(r,c) || null;
+      hoverPiece = findPieceNear(x,y);
       canvas.style.cursor = hoverPiece ? 'grab' : 'default';
     }
   });

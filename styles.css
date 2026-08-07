@@ -241,6 +241,23 @@ button{font-family:inherit;cursor:pointer;}
 .rope-end-tag.rope-drop-target{box-shadow:0 0 0 2px var(--accent);}
 .rope-pair-indicator{flex:none;font-size:10.5px;color:var(--text-dim);white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis;}
 
+/* Lumen Puzzle inspector — the embedded hex-grid level designer
+   (buildTypeSpecificFields/wireNodeInspector's "lumenPuzzle" case and
+   wireLumenDesigner in app.js): a tool palette, a canvas the creator clicks
+   to place pieces on (or drags to rotate the selected one), and a
+   properties panel for whatever's currently selected. Reuses the same
+   dark/amber palette as the player-facing board (see .pv-lumen-* in the
+   player styles section) so the design-time and play-time views read as
+   the same object. */
+.lumen-palette{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin:6px 0 10px;}
+.lumen-palette .lumenToolBtn{padding:6px 4px;text-align:center;}
+.lumen-stage{background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;justify-content:center;margin-bottom:8px;}
+.lumen-design-canvas{width:100%;max-width:320px;height:auto;aspect-ratio:1/1;border-radius:6px;touch-action:none;cursor:default;display:block;}
+.lumen-playtest-summary{font-size:11.5px;color:var(--text-dim);text-align:center;margin:-2px 0 10px;}
+.lumen-props{background:var(--bg3);border:1px solid var(--line);border-radius:6px;padding:8px;}
+.lumen-props label{display:block;font-size:11px;color:var(--text-dim);margin-bottom:8px;}
+.lumen-props label input,.lumen-props label select{display:block;width:100%;margin-top:3px;}
+
 .media-adjust-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .section-title{font-size:11.5px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;border-top:1px solid var(--line);padding-top:12px;}
 .section-title:first-child{border-top:none;padding-top:0;margin-top:0;}
@@ -537,6 +554,20 @@ button{font-family:inherit;cursor:pointer;}
 
 .pv-hoist-success{background:#3f6b3a !important;border-color:#6fae5c !important;color:#eafbe6 !important;transition:background .15s ease,border-color .15s ease;}
 .pv-hoist-fail{background:#6b3a3a !important;border-color:#b8534a !important;color:#ffe6e2 !important;transition:background .15s ease,border-color .15s ease;}
+
+/* Lumen Beam Puzzle — a hex-grid light-routing board rendered onto a
+   <canvas> and drawn imperatively (see lumenRenderScene/
+   wireLumenPuzzleInteractions in engine.js), adapted from the standalone
+   lumen-puzzle-builder.html prototype. Deliberately hardcoded deep-space/
+   amber colours rather than --pv-* tokens (same choice as the Physical
+   Lock/Fuse Panel/Rope Tying props above) — the board is drawn straight
+   onto the canvas in these same colours regardless of the active style
+   pack, so this block only needs to style the wrapper chrome around it. */
+.pv-lumen-wrap{position:relative;width:100%;max-width:420px;margin:10px auto 0;border-radius:var(--pv-radius);background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);border:1px solid #2a3556;box-shadow:0 10px 30px rgba(0,0,0,.4);padding:8px;}
+.pv-lumen-canvas{display:block;width:100%;height:auto;aspect-ratio:1/1;border-radius:8px;touch-action:none;cursor:default;}
+.pv-lumen-toast{position:absolute;top:16px;left:50%;transform:translate(-50%,-14px);background:linear-gradient(90deg,#1c3d2c,#12261c);border:1px solid #6bffb0;color:#6bffb0;padding:6px 14px;border-radius:30px;font-weight:700;font-size:12px;letter-spacing:.4px;opacity:0;pointer-events:none;transition:all .35s ease;z-index:2;}
+.pv-lumen-toast.show{opacity:1;transform:translate(-50%,4px);}
+.pv-lumen-summary{margin-top:6px;font-size:12px;color:var(--pv-text-dim);text-align:center;}
 
 /* Image Reveal — framed/cropped display of the node's own uploaded image
    (c.imageAsset). Deliberately built as normal-flow content (not an inset

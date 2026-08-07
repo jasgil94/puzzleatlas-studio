@@ -68,6 +68,26 @@ var pv_action_submitOrdering = PAEngine.pv_action_submitOrdering;
 var pv_action_submitMatching = PAEngine.pv_action_submitMatching;
 var pv_action_revealHint = PAEngine.pv_action_revealHint;
 
+// Lumen Puzzle — hex geometry/beam-tracing math and canvas drawing shared
+// with engine.js's player runtime (see the comment above NODE_TYPES.lumenPuzzle
+// in engine.js), reused here to drive the inspector-embedded level designer
+// (buildTypeSpecificFields/wireNodeInspector's "lumenPuzzle" case, below).
+var lumenComputeGeometry = PAEngine.lumenComputeGeometry;
+var lumenAnchorPx = PAEngine.lumenAnchorPx;
+var lumenTraceAllBeams = PAEngine.lumenTraceAllBeams;
+var lumenEvaluateTarget = PAEngine.lumenEvaluateTarget;
+var lumenConditionLabel = PAEngine.lumenConditionLabel;
+var lumenRenderScene = PAEngine.lumenRenderScene;
+var lumenFindNearestAnchor = PAEngine.lumenFindNearestAnchor;
+var lumenFindNearestHex = PAEngine.lumenFindNearestHex;
+var lumenFindRotatableNear = PAEngine.lumenFindRotatableNear;
+var lumenFindTargetNear = PAEngine.lumenFindTargetNear;
+var lumenDistToSegment = PAEngine.lumenDistToSegment;
+var lumenSegKey = PAEngine.lumenSegKey;
+var lumenPointKeyFromPos = PAEngine.lumenPointKeyFromPos;
+var lumenSetPieceTargetAngle = PAEngine.lumenSetPieceTargetAngle;
+var lumenNorm360 = PAEngine.lumenNorm360;
+
 var PLAYER_SCREEN_TYPES = PAEngine.PLAYER_SCREEN_TYPES;
 var DEFAULT_BUTTON_LABEL = PAEngine.DEFAULT_BUTTON_LABEL;
 var BUTTON_LABEL_TYPES = PAEngine.BUTTON_LABEL_TYPES;
@@ -482,7 +502,7 @@ var SUGGESTED_LANE = {
   // puzzles in Leads; state-family goes to Inventory; the new Support
   // type goes to Hints, same as the existing Hint node.
   cipher: "leads", mathLogic: "leads", anagram: "leads", sequencePattern: "leads", slidingTile: "leads",
-  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads",
+  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads", lumenPuzzle: "leads",
   gate: "leads", randomizer: "leads", teamSplitMerge: "leads", metaPuzzleCombine: "leads",
   timer: "leads", attemptLimiter: "leads",
   combineCraftItem: "inventory", trade: "inventory",
@@ -2017,6 +2037,19 @@ function buildTypeSpecificFields(n) {
         }).join("") +
         '</div></div>';
       break;
+    case "lumenPuzzle":
+      html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+      html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Design the level below: place a light source, then mirrors/lenses/targets on the hex grid. Walls block light entirely; opaque cards block it along one hex edge only. At player-time only mirrors and lenses can be rotated — sources, targets, walls and cards are fixed by this design.</p>';
+      html += '<div class="field"><label>Grid size (zoom) — hexes per side: <span id="lumenGridSizeVal">' + (c.gridSize || 8) + '</span></label><input type="range" id="lumenGridSize" min="3" max="15" step="1" value="' + (c.gridSize || 8) + '" /></div>';
+      html += '<div class="lumen-palette">' +
+        [["select", "Select / Rotate"], ["source", "Light Source"], ["mirror", "Mirror"], ["lens", "Lens"], ["target", "Target"], ["wall", "Wall Hex"], ["card", "Opaque Card"], ["erase", "Erase"]].map(function (t) {
+          return '<button type="button" class="small-btn lumenToolBtn' + (t[0] === "select" ? " active" : "") + '" data-tool="' + t[0] + '">' + esc(t[1]) + '</button>';
+        }).join("") + '</div>';
+      html += '<div class="lumen-stage"><canvas id="lumenDesignCanvas" class="lumen-design-canvas"></canvas></div>';
+      html += '<div id="lumenPlaytestSummary" class="lumen-playtest-summary"></div>';
+      html += '<div class="field"><label>Selected piece</label><div id="lumenPropsPanel" class="lumen-props"></div></div>';
+      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="btnLumenClear">Clear level</button>';
+      break;
     case "awardItem":
       html += fieldWrap("Item to award", '<select id="fItemId">' + selectOptions(hunt.items, "id", "name", c.itemId, "— choose item —") + '</select>');
       break;
@@ -2499,6 +2532,252 @@ function buildEffectsEditor(n) {
   return html;
 }
 
+// Lumen Puzzle — per-node UI-only designer state (current tool, current
+// selection). Kept outside n.content since it's pure Studio authoring
+// state, not part of the saved hunt, but it does need to survive the full
+// renderInspector() rebuilds that grid-size changes and piece add/remove
+// trigger (those tear down and recreate #lumenDesignCanvas), so it lives at
+// module scope rather than as a wireLumenDesigner-local variable.
+var lumenDesignerUiState = {};
+function lumenUiState(n) {
+  if (!lumenDesignerUiState[n.id]) lumenDesignerUiState[n.id] = { tool: "select", selectedKey: null };
+  return lumenDesignerUiState[n.id];
+}
+
+// Lumen Puzzle — the inspector-embedded hex-grid level designer. Adapted
+// from the standalone lumen-puzzle-builder.html prototype's single-level
+// placement UI (palette + canvas + properties panel), condensed to fit the
+// inspector column and reusing the exact same geometry/beam-tracing/canvas-
+// drawing functions engine.js exports as PAEngine.lumen* (aliased at the
+// top of this file) — see the comment above NODE_TYPES.lumenPuzzle in
+// engine.js. Unlike the player-side wireLumenPuzzleInteractions (which
+// tracks the player's live rotation as transient draft state), every edit
+// here writes straight into n.content — the creator's edits ARE the saved
+// level, same as every other node type's inspector fields.
+function wireLumenDesigner(n) {
+  var c = n.content;
+  c.sources = c.sources || []; c.pieces = c.pieces || []; c.targets = c.targets || []; c.walls = c.walls || []; c.cards = c.cards || [];
+  var canvas = document.getElementById("lumenDesignCanvas");
+  if (!canvas) return;
+  var ctx = canvas.getContext("2d");
+  var ui = lumenUiState(n);
+  var geom = lumenComputeGeometry(c.gridSize);
+  canvas.width = geom.width; canvas.height = geom.height;
+
+  var gridInput = document.getElementById("lumenGridSize");
+  var gridVal = document.getElementById("lumenGridSizeVal");
+  var propsPanel = document.getElementById("lumenPropsPanel");
+  var summaryEl = document.getElementById("lumenPlaytestSummary");
+
+  function currentLevel() { return { sources: c.sources, pieces: c.pieces, targets: c.targets, walls: c.walls, cards: c.cards }; }
+  function selectedObj() {
+    if (!ui.selectedKey) return null;
+    return c.sources.concat(c.pieces).concat(c.targets).find(function (o) { return o.id === ui.selectedKey; }) || null;
+  }
+
+  function redraw() {
+    var trace = lumenRenderScene(ctx, geom, currentLevel(), ui.selectedKey);
+    var solvedCount = 0;
+    c.targets.forEach(function (t) { if (lumenEvaluateTarget(t, !!trace.targetHitAtAll[t.id], trace.targetIntensity[t.id] || 0)) solvedCount++; });
+    if (summaryEl) {
+      if (!c.sources.length) summaryEl.textContent = "No light source placed yet.";
+      else if (!c.targets.length) summaryEl.textContent = "No target placed yet.";
+      else summaryEl.textContent = solvedCount + " of " + c.targets.length + " target(s) currently solved, at the pieces' saved starting angles.";
+    }
+  }
+
+  function renderProps() {
+    if (!propsPanel) return;
+    var sel = selectedObj();
+    if (!sel) { propsPanel.innerHTML = '<p style="font-size:11px;color:var(--text-dim)">Select a piece, or choose a tool above to place a new one.</p>'; return; }
+    var isSource = c.sources.indexOf(sel) !== -1;
+    var isTarget = c.targets.indexOf(sel) !== -1;
+    var html = "";
+    if (isTarget) {
+      var modeLabels = { atleast: "At least…", atmost: "At most…", between: "Between…", exact: "Approximately…" };
+      html += '<label style="font-size:11px;color:var(--text-dim)">Condition<select id="lumenTargetMode">' +
+        Object.keys(modeLabels).map(function (m) { return '<option value="' + m + '"' + (sel.mode === m ? " selected" : "") + '>' + modeLabels[m] + '</option>'; }).join("") +
+        '</select></label>';
+      if (sel.mode === "atleast" || sel.mode === "between") html += '<label style="font-size:11px;color:var(--text-dim)">Minimum intensity<input type="number" step="0.05" min="0" id="lumenTargetMin" value="' + sel.min + '" /></label>';
+      if (sel.mode === "atmost" || sel.mode === "between") html += '<label style="font-size:11px;color:var(--text-dim)">Maximum intensity<input type="number" step="0.05" min="0" id="lumenTargetMax" value="' + sel.max + '" /></label>';
+      if (sel.mode === "exact") {
+        html += '<label style="font-size:11px;color:var(--text-dim)">Target value<input type="number" step="0.05" min="0" id="lumenTargetValue" value="' + sel.value + '" /></label>';
+        html += '<label style="font-size:11px;color:var(--text-dim)">Tolerance (±)<input type="number" step="0.01" min="0" id="lumenTargetTol" value="' + sel.tolerance + '" /></label>';
+      }
+      html += '<p style="font-size:10.5px;color:var(--text-dim)">If several beams land on the same target, their intensities add together.</p>';
+      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="lumenDeleteSel">Remove this target</button>';
+    } else {
+      var pieceLabel = isSource ? "Light source angle (°)" : (sel.type === "lens" ? "Lens angle (°)" : "Mirror angle (°)");
+      html += '<label style="font-size:11px;color:var(--text-dim)">' + esc(pieceLabel) + '<input type="number" step="1" min="0" max="359" id="lumenAngle" value="' + Math.round(lumenNorm360(sel.angle)) + '" /></label>';
+      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="lumenDeleteSel">Remove' + (isSource ? " this source" : "") + '</button>';
+    }
+    propsPanel.innerHTML = html;
+    wireProps(sel, isTarget);
+  }
+
+  function wireProps(sel, isTarget) {
+    var byId = function (id) { return document.getElementById(id); };
+    if (isTarget) {
+      if (byId("lumenTargetMode")) byId("lumenTargetMode").onchange = function (e) { sel.mode = e.target.value; afterEdit(false); renderProps(); redraw(); };
+      if (byId("lumenTargetMin")) { byId("lumenTargetMin").oninput = function (e) { sel.min = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId("lumenTargetMin").onblur = function () { afterEdit(false); }; }
+      if (byId("lumenTargetMax")) { byId("lumenTargetMax").oninput = function (e) { sel.max = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId("lumenTargetMax").onblur = function () { afterEdit(false); }; }
+      if (byId("lumenTargetValue")) { byId("lumenTargetValue").oninput = function (e) { sel.value = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId("lumenTargetValue").onblur = function () { afterEdit(false); }; }
+      if (byId("lumenTargetTol")) { byId("lumenTargetTol").oninput = function (e) { sel.tolerance = Math.max(0, parseFloat(e.target.value) || 0); redraw(); }; byId("lumenTargetTol").onblur = function () { afterEdit(false); }; }
+    } else if (byId("lumenAngle")) {
+      byId("lumenAngle").oninput = function (e) { sel.angle = lumenNorm360(parseFloat(e.target.value) || 0); redraw(); };
+      byId("lumenAngle").onblur = function () { afterEdit(false); };
+    }
+    if (byId("lumenDeleteSel")) byId("lumenDeleteSel").onclick = function () {
+      c.sources = c.sources.filter(function (x) { return x !== sel; });
+      c.pieces = c.pieces.filter(function (x) { return x !== sel; });
+      c.targets = c.targets.filter(function (x) { return x !== sel; });
+      ui.selectedKey = null;
+      afterEdit(false); redraw(); renderProps();
+    };
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll(".lumenToolBtn"), function (btn) {
+    btn.onclick = function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".lumenToolBtn"), function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      ui.tool = btn.dataset.tool;
+      if (ui.tool !== "select") { ui.selectedKey = null; renderProps(); redraw(); }
+    };
+  });
+
+  if (gridInput) {
+    gridInput.oninput = function (e) {
+      var val = Math.max(3, Math.min(15, Math.round(Number(e.target.value) || 8)));
+      if (gridVal) gridVal.textContent = val;
+      c.gridSize = val;
+      geom = lumenComputeGeometry(val);
+      canvas.width = geom.width; canvas.height = geom.height;
+      redraw();
+    };
+    gridInput.onchange = function () { afterEdit(false); };
+  }
+
+  var clearBtn = document.getElementById("btnLumenClear");
+  if (clearBtn) clearBtn.onclick = function () {
+    if (!confirm("Clear all pieces, sources, targets, walls and cards from this level?")) return;
+    c.sources = []; c.pieces = []; c.targets = []; c.walls = []; c.cards = [];
+    ui.selectedKey = null;
+    afterEdit(false); redraw(); renderProps();
+  };
+
+  function removeAnyPointAt(pos) {
+    var key = lumenPointKeyFromPos(pos);
+    c.sources = c.sources.filter(function (s) { return lumenPointKeyFromPos(lumenAnchorPx(geom, s)) !== key; });
+    c.targets = c.targets.filter(function (t) { return lumenPointKeyFromPos(lumenAnchorPx(geom, t)) !== key; });
+    c.pieces = c.pieces.filter(function (p) { return lumenPointKeyFromPos(lumenAnchorPx(geom, p)) !== key; });
+  }
+  function eraseNear(x, y) {
+    var candidates = [];
+    c.sources.forEach(function (s, i) { var p = lumenAnchorPx(geom, s); candidates.push({ kind: "source", idx: i, d: Math.hypot(x - p.x, y - p.y) }); });
+    c.targets.forEach(function (t, i) { var p = lumenAnchorPx(geom, t); candidates.push({ kind: "target", idx: i, d: Math.hypot(x - p.x, y - p.y) }); });
+    c.pieces.forEach(function (pc, i) { var p = lumenAnchorPx(geom, pc); candidates.push({ kind: "piece", idx: i, d: Math.hypot(x - p.x, y - p.y) }); });
+    candidates.sort(function (a, b) { return a.d - b.d; });
+    var best = candidates[0];
+    if (best && best.d <= geom.hexR * 0.75) {
+      if (best.kind === "source") { var rs = c.sources[best.idx]; c.sources.splice(best.idx, 1); if (ui.selectedKey === rs.id) ui.selectedKey = null; }
+      else if (best.kind === "target") { var rt = c.targets[best.idx]; c.targets.splice(best.idx, 1); if (ui.selectedKey === rt.id) ui.selectedKey = null; }
+      else if (best.kind === "piece") { var rp = c.pieces[best.idx]; c.pieces.splice(best.idx, 1); if (ui.selectedKey === rp.id) ui.selectedKey = null; }
+      return true;
+    }
+    var wIdx = -1, wBestD = geom.hexR * 0.75;
+    c.walls.forEach(function (w, i) { var p = lumenAnchorPx(geom, { q: w.q, r: w.r, kind: "center", idx: 0 }); var d = Math.hypot(x - p.x, y - p.y); if (d < wBestD) { wBestD = d; wIdx = i; } });
+    if (wIdx !== -1) { c.walls.splice(wIdx, 1); return true; }
+    var cardIdx = -1, cardBestD = geom.hexR * 0.5;
+    c.cards.forEach(function (cd, i) { var seg = PAEngine.lumenCardSegment(geom, cd); var d = lumenDistToSegment(x, y, seg[0], seg[1]); if (d < cardBestD) { cardBestD = d; cardIdx = i; } });
+    if (cardIdx !== -1) { c.cards.splice(cardIdx, 1); return true; }
+    return false;
+  }
+
+  var activeDrag = null, dragMoved = false, dragStartClient = null;
+  function canvasCoords(evt) {
+    var rect = canvas.getBoundingClientRect();
+    var scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    return { x: (evt.clientX - rect.left) * scaleX, y: (evt.clientY - rect.top) * scaleY };
+  }
+
+  canvas.onpointerdown = function (evt) {
+    var pos = canvasCoords(evt);
+    if (ui.tool === "select") {
+      var p = lumenFindRotatableNear(geom, currentLevel(), pos.x, pos.y);
+      if (p) {
+        ui.selectedKey = p.id; renderProps();
+        activeDrag = p; dragMoved = false;
+        dragStartClient = { x: evt.clientX, y: evt.clientY };
+        try { canvas.setPointerCapture(evt.pointerId); } catch (e) {}
+        evt.preventDefault();
+        return;
+      }
+      var t = lumenFindTargetNear(geom, currentLevel(), pos.x, pos.y);
+      ui.selectedKey = t ? t.id : null;
+      renderProps(); redraw();
+      return;
+    }
+    if (ui.tool === "source") {
+      var a1 = lumenFindNearestAnchor(geom, pos.x, pos.y, null);
+      if (a1) { removeAnyPointAt(a1); c.sources.push({ id: uid("lsrc"), q: a1.q, r: a1.r, kind: a1.kind, idx: a1.idx, angle: 0 }); afterEdit(false); redraw(); }
+    } else if (ui.tool === "mirror" || ui.tool === "lens") {
+      var a2 = lumenFindNearestAnchor(geom, pos.x, pos.y, null);
+      if (a2) { removeAnyPointAt(a2); c.pieces.push({ id: uid("lpc"), type: ui.tool, q: a2.q, r: a2.r, kind: a2.kind, idx: a2.idx, angle: 90 }); afterEdit(false); redraw(); }
+    } else if (ui.tool === "target") {
+      var a3 = lumenFindNearestAnchor(geom, pos.x, pos.y, null);
+      if (a3) { removeAnyPointAt(a3); c.targets.push({ id: uid("ltg"), q: a3.q, r: a3.r, kind: a3.kind, idx: a3.idx, mode: "atleast", min: 1.5, max: 3, value: 1.5, tolerance: 0.15 }); afterEdit(false); redraw(); }
+    } else if (ui.tool === "wall") {
+      var h = lumenFindNearestHex(geom, pos.x, pos.y);
+      if (h) {
+        var wi = -1;
+        c.walls.forEach(function (w, i) { if (w.q === h.q && w.r === h.r) wi = i; });
+        if (wi >= 0) c.walls.splice(wi, 1); else c.walls.push({ q: h.q, r: h.r });
+        afterEdit(false); redraw();
+      }
+    } else if (ui.tool === "card") {
+      var a4 = lumenFindNearestAnchor(geom, pos.x, pos.y, "edge");
+      if (a4) {
+        var seg = PAEngine.lumenCardSegment(geom, { q: a4.q, r: a4.r, edgeIdx: a4.idx });
+        var key = lumenSegKey(seg);
+        var ci = -1;
+        c.cards.forEach(function (cd, i) { if (lumenSegKey(PAEngine.lumenCardSegment(geom, cd)) === key) ci = i; });
+        if (ci >= 0) c.cards.splice(ci, 1); else c.cards.push({ q: a4.q, r: a4.r, edgeIdx: a4.idx });
+        afterEdit(false); redraw();
+      }
+    } else if (ui.tool === "erase") {
+      if (eraseNear(pos.x, pos.y)) { afterEdit(false); redraw(); renderProps(); }
+    }
+  };
+  canvas.onpointermove = function (evt) {
+    if (ui.tool !== "select" || !activeDrag) return;
+    var pos = canvasCoords(evt);
+    var moveDist = Math.hypot(evt.clientX - dragStartClient.x, evt.clientY - dragStartClient.y);
+    if (moveDist > 3) dragMoved = true;
+    var center = lumenAnchorPx(geom, activeDrag);
+    var rawAngle = lumenNorm360(Math.atan2(pos.y - center.y, pos.x - center.x) * 180 / Math.PI);
+    var snapped = Math.round(rawAngle / 15) * 15 % 360;
+    lumenSetPieceTargetAngle(activeDrag, snapped);
+    redraw();
+    var angleInput = document.getElementById("lumenAngle");
+    if (angleInput) angleInput.value = Math.round(lumenNorm360(activeDrag.angle));
+  };
+  function endDrag() {
+    if (activeDrag) {
+      if (!dragMoved) lumenSetPieceTargetAngle(activeDrag, activeDrag.angle + 15);
+      redraw();
+      var angleInput = document.getElementById("lumenAngle");
+      if (angleInput) angleInput.value = Math.round(lumenNorm360(activeDrag.angle));
+      afterEdit(false);
+    }
+    activeDrag = null;
+  }
+  canvas.onpointerup = endDrag;
+  canvas.onpointercancel = endDrag;
+
+  redraw();
+  renderProps();
+}
+
 function wireNodeInspector(n) {
   var byId = function (id) { return document.getElementById(id); };
   if (byId("fTitle")) {
@@ -2684,6 +2963,10 @@ function wireNodeInspector(n) {
           renderInspector();
         };
       });
+      break;
+    case "lumenPuzzle":
+      bindText("fPrompt", "prompt");
+      wireLumenDesigner(n);
       break;
     case "awardItem":
       bindChange("fItemId", function (v) { c.itemId = v; });

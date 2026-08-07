@@ -285,6 +285,50 @@ var NODE_TYPES = {
       return total + " rope end(s) — " + pairs + " correct pair(s) set";
     }
   },
+  lumenPuzzle: {
+    family: "puzzle", label: "Lumen Beam Puzzle (Hex Grid)", icon: "🔆",
+    defaultTitle: "New Lumen Puzzle",
+    // A hex-grid light-routing puzzle: fixed light source(s) emit a beam
+    // through a field of hexes; the player drags/taps mirrors and lenses
+    // (placed by the creator, see content.pieces) to rotate them in 15°
+    // steps and route the beam(s) onto every target at the intensity each
+    // target's own condition demands (content.targets — at least/at most/
+    // between/approximately, same shape as the standalone builder). Walls
+    // and opaque cards (content.walls/content.cards) block beams; sources
+    // are opaque cylinders with a narrow emission slit, so beams can also be
+    // blocked by (or graze) another source's housing. Auto-validates after
+    // every rotation — no submit button — same family as Fuse Panel/Sliding
+    // Tile: the node completes the instant every target's condition is met
+    // simultaneously (see pv_action_submitLumenPuzzle below).
+    //
+    // Adapted from the standalone lumen-puzzle-builder.html prototype (a
+    // full multi-level project editor with a placement palette) into this
+    // node type: one node = one level. The creator designs the level using
+    // the same hex-grid placement UI, embedded directly in the Studio
+    // inspector (see buildTypeSpecificFields/wireNodeInspector's
+    // "lumenPuzzle" case in app.js), and the exact same geometry/beam-
+    // tracing math (lumenComputeGeometry/lumenTraceAllBeams, defined further
+    // down and exported as PAEngine.lumen*) drives both that design-time
+    // preview and the real player screen (see the "lumenPuzzle" branch in
+    // renderPreviewNode and wireLumenPuzzleInteractions, below), so there's
+    // one shared implementation of the hex trigonometry and beam physics
+    // rather than two.
+    defaultContent: function () {
+      return {
+        prompt: "Rotate the mirrors and lenses to route the beam onto every target.",
+        gridSize: 8,
+        sources: [{ id: uid("lsrc"), q: 0, r: 4, kind: "center", idx: 0, angle: 0 }],
+        pieces: [{ id: uid("lpc"), type: "mirror", q: 1, r: 2, kind: "center", idx: 0, angle: 45 }],
+        targets: [{ id: uid("ltg"), q: 4, r: 4, kind: "center", idx: 0, mode: "atleast", min: 0.8, max: 3, value: 1.5, tolerance: 0.15 }],
+        walls: [],
+        cards: [],
+        showBackButton: false
+      };
+    },
+    summary: function (c) {
+      return (c.sources || []).length + " source(s), " + (c.pieces || []).length + " piece(s), " + (c.targets || []).length + " target(s)";
+    }
+  },
   awardItem: {
     family: "state", label: "Award Item", icon: "🎒",
     defaultTitle: "Award Item",
@@ -1212,6 +1256,20 @@ function pv_action_submitRopeTying(session, nodeId, pairs) {
   return ok;
 }
 
+// Lumen Puzzle — auto-validates after every rotation (same "auto-validate,
+// no submit button" family as Fuse Panel), driven by
+// wireLumenPuzzleInteractions below, which recomputes the beam trace after
+// every drag/tap and passes in whether every target's condition is
+// currently met simultaneously.
+function pv_action_submitLumenPuzzle(session, nodeId, allTargetsSolved) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var mechanicOk = !!allTargetsSolved;
+  var ok = nodeCompletionOk(n, session, mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+
 function pv_action_revealHint(session, hintNodeId) {
   var cur = session.state.hintProgress[hintNodeId] || 0;
   var n = session.hunt.nodes.find(function (x) { return x.id === hintNodeId; });
@@ -1229,7 +1287,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying"];
+  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle"];
 
 // Node types offering a generic, opt-in "← Back" button — every
 // PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
@@ -1245,7 +1303,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // Studio inspector field.
 var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
-  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying"];
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -1840,6 +1898,15 @@ function renderPreviewNode(session, n, ctl) {
     var fbRt = session.state.feedback[n.id];
     if (fbRt === "incorrect") html += '<div class="pv-feedback incorrect">✗ Not tied correctly — try again.</div>';
     if (fbRt === "correct") html += '<div class="pv-feedback correct">✓ Hoisted!</div>';
+  } else if (n.type === "lumenPuzzle") {
+    if (c.prompt) html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += '<div class="pv-lumen-wrap" data-node="' + esc(n.id) + '">' +
+      '<canvas class="pv-lumen-canvas" data-node="' + esc(n.id) + '"></canvas>' +
+      '<div class="pv-lumen-toast" data-node="' + esc(n.id) + '">All targets solved ✨</div>' +
+      '</div>' +
+      '<div class="pv-lumen-summary" data-node="' + esc(n.id) + '"></div>';
+    var fbLu = session.state.feedback[n.id];
+    if (fbLu === "correct") html += '<div class="pv-feedback correct">✓ Beam routed.</div>';
   } else if (n.type === "clickableImage") {
     if (c.body) html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
     html += renderClickableImageBlock(c);
@@ -2514,6 +2581,786 @@ function wireRopeTyingInteractions(root, ctl, session, n) {
   };
 }
 
+/* ---------------------------------------------------------------------
+   Lumen Beam Puzzle — hex-grid light-routing geometry and beam-tracing
+   engine, ported from the standalone lumen-puzzle-builder.html prototype.
+   Pure functions only (no DOM, no mutable module-level "current level"):
+   everything takes an explicit geometry object (from lumenComputeGeometry,
+   which depends only on content.gridSize) and/or a live piece-state object
+   (sources/pieces/targets/walls/cards, straight off node.content or a
+   player-side draft copy with live piece angles). Exported at the bottom
+   of this module as PAEngine.lumen* so both the player runtime
+   (wireLumenPuzzleInteractions, below) and Studio's inspector-embedded
+   level designer (buildTypeSpecificFields/wireNodeInspector's
+   "lumenPuzzle" case in app.js) share exactly the same math rather than
+   maintaining two copies of hex trigonometry and beam physics.
+--------------------------------------------------------------------- */
+var LUMEN_STAGE_SIZE = 760;
+var LUMEN_OVERSCAN = 1.05;
+var LUMEN_EPS_MIN = 0.5;
+var LUMEN_LENS_BOOST = 1.6, LUMEN_LENS_PENALTY = 0.9;
+var LUMEN_SLIT_HALF_DEG = 20;
+
+function lumenRad(d) { return d * Math.PI / 180; }
+function lumenNorm360(d) { return ((d % 360) + 360) % 360; }
+function lumenNum(v, d) { return (typeof v === "number" && isFinite(v)) ? v : d; }
+function lumenFmt(n) { return (Math.round(n * 100) / 100).toFixed(2); }
+
+function lumenAxialLocal(hexR, q, r) {
+  return { x: hexR * Math.sqrt(3) * (q + r / 2), y: hexR * 1.5 * r };
+}
+function lumenHexVerts(cx, cy, size) {
+  var v = [];
+  for (var i = 0; i < 6; i++) {
+    var a = lumenRad(60 * i - 30);
+    v.push({ x: cx + size * Math.cos(a), y: cy + size * Math.sin(a) });
+  }
+  return v;
+}
+function lumenHexEdges(cx, cy, size) {
+  var v = lumenHexVerts(cx, cy, size);
+  var e = [];
+  for (var i = 0; i < 6; i++) e.push([v[i], v[(i + 1) % 6]]);
+  return e;
+}
+// Square field of hexes built from offset (row,col) coordinates — raw axial
+// q/r ranges form a rhombus, so each row's columns get a per-row offset to
+// yield a rectangular field instead. Same approach as the prototype.
+function lumenForEachGridHex(N, cb) {
+  for (var rr = 0; rr < N; rr++) {
+    var rowOffset = Math.floor(rr / 2);
+    for (var cc = 0; cc < N; cc++) cb(cc - rowOffset, rr);
+  }
+}
+
+// Builds the render/anchor geometry for a level purely from its grid size —
+// independent of what's actually placed on it, so it only needs recomputing
+// when gridSize changes (not on every piece rotation).
+function lumenComputeGeometry(gridSize) {
+  var N = Math.max(3, Math.min(15, Math.round(lumenNum(gridSize, 8))));
+  var xs = [], ys = [];
+  lumenForEachGridHex(N, function (q, r) {
+    var c = lumenAxialLocal(1, q, r);
+    lumenHexVerts(c.x, c.y, 1).forEach(function (v) { xs.push(v.x); ys.push(v.y); });
+  });
+  var minXu = Math.min.apply(null, xs), maxXu = Math.max.apply(null, xs);
+  var minYu = Math.min.apply(null, ys), maxYu = Math.max.apply(null, ys);
+  var w0 = maxXu - minXu, h0 = maxYu - minYu;
+  var scale = (LUMEN_STAGE_SIZE / Math.min(w0, h0)) * LUMEN_OVERSCAN;
+
+  var L = { gridSize: N };
+  L.hexR = scale;
+  L.k = scale / 36;
+  L.lensR = scale * 0.4;
+  L.mirrorHalf = scale * 0.6;
+  L.targetR = scale * 0.4;
+  L.cylOuter = scale * 0.66;
+  L.cylInner = scale * 0.5;
+  L.eps = Math.max(LUMEN_EPS_MIN, scale * 0.02);
+
+  var fieldW = w0 * scale, fieldH = h0 * scale;
+  L.offsetX = -(minXu * scale) + (LUMEN_STAGE_SIZE - fieldW) / 2;
+  L.offsetY = -(minYu * scale) + (LUMEN_STAGE_SIZE - fieldH) / 2;
+  L.width = LUMEN_STAGE_SIZE; L.height = LUMEN_STAGE_SIZE;
+
+  L.hexList = [];
+  L.anchors = [];
+  lumenForEachGridHex(N, function (q, r) {
+    var c = lumenHexPx(L, q, r);
+    L.hexList.push({ q: q, r: r, x: c.x, y: c.y });
+    L.anchors.push({ x: c.x, y: c.y, q: q, r: r, kind: "center", idx: 0 });
+    var verts = lumenHexVerts(c.x, c.y, L.hexR);
+    for (var i = 0; i < 6; i++) L.anchors.push({ x: verts[i].x, y: verts[i].y, q: q, r: r, kind: "corner", idx: i });
+    for (var j = 0; j < 6; j++) {
+      var a = verts[j], b = verts[(j + 1) % 6];
+      L.anchors.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, q: q, r: r, kind: "edge", idx: j });
+    }
+  });
+  return L;
+}
+
+function lumenHexPx(geom, q, r) {
+  var p = lumenAxialLocal(geom.hexR, q, r);
+  return { x: p.x + (geom.offsetX || 0), y: p.y + (geom.offsetY || 0) };
+}
+function lumenAnchorPx(geom, obj) {
+  var c = lumenHexPx(geom, obj.q, obj.r);
+  if (!obj.kind || obj.kind === "center") return c;
+  var verts = lumenHexVerts(c.x, c.y, geom.hexR);
+  if (obj.kind === "corner") {
+    var i = ((obj.idx % 6) + 6) % 6;
+    return { x: verts[i].x, y: verts[i].y };
+  }
+  var j = ((obj.idx % 6) + 6) % 6;
+  var a = verts[j], b = verts[(j + 1) % 6];
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+function lumenCardSegment(geom, card) {
+  var c = lumenHexPx(geom, card.q, card.r);
+  var verts = lumenHexVerts(c.x, c.y, geom.hexR);
+  var i = ((card.edgeIdx % 6) + 6) % 6;
+  return [verts[i], verts[(i + 1) % 6]];
+}
+
+function lumenSegIntersect(O, D, A, B, minT) {
+  var v1x = O.x - A.x, v1y = O.y - A.y;
+  var v2x = B.x - A.x, v2y = B.y - A.y;
+  var v3x = -D.y, v3y = D.x;
+  var dot = v2x * v3x + v2y * v3y;
+  if (Math.abs(dot) < 1e-9) return null;
+  var t1 = (v2x * v1y - v2y * v1x) / dot;
+  var t2 = (v1x * v3x + v1y * v3y) / dot;
+  if (t1 > minT && t2 >= 0 && t2 <= 1) return { t: t1, x: O.x + D.x * t1, y: O.y + D.y * t1 };
+  return null;
+}
+function lumenCircleIntersect(O, D, C, r, minT) {
+  var ocx = O.x - C.x, ocy = O.y - C.y;
+  var b = 2 * (ocx * D.x + ocy * D.y);
+  var c = ocx * ocx + ocy * ocy - r * r;
+  var disc = b * b - 4 * c;
+  if (disc < 0) return null;
+  var sq = Math.sqrt(disc);
+  var t0 = (-b - sq) / 2, t1 = (-b + sq) / 2;
+  if (t0 > t1) { var tmp = t0; t0 = t1; t1 = tmp; }
+  var entry = null, exit = null;
+  if (t0 > minT) { entry = t0; exit = t1; }
+  else if (t1 > minT) { entry = t1; exit = t1; }
+  if (entry === null) return null;
+  return { tEntry: entry, tExit: exit, xEntry: O.x + D.x * entry, yEntry: O.y + D.y * entry, xExit: O.x + D.x * exit, yExit: O.y + D.y * exit };
+}
+function lumenGetBlockerSegs(geom, level) {
+  var segs = [];
+  (level.walls || []).forEach(function (w) {
+    var c = lumenHexPx(geom, w.q, w.r);
+    lumenHexEdges(c.x, c.y, geom.hexR).forEach(function (e) { segs.push(e); });
+  });
+  (level.cards || []).forEach(function (cd) { segs.push(lumenCardSegment(geom, cd)); });
+  return segs;
+}
+// A source's cylinder is solid everywhere except its narrow emission slit —
+// any beam meeting the outer wall outside the slit angle stops there; a beam
+// that enters via the slit but would exit into a solid section on the far
+// side stops at that exit point instead.
+function lumenSourceCylinderBlock(geom, O, D, src, minT) {
+  var c = lumenAnchorPx(geom, src);
+  var res = lumenCircleIntersect(O, D, c, geom.cylOuter, minT);
+  if (!res) return null;
+  var gapCenter = lumenNorm360(src.angle);
+  function angleOf(px, py) { return lumenNorm360(Math.atan2(py - c.y, px - c.x) * 180 / Math.PI); }
+  function inGap(ang) {
+    var d = Math.abs(lumenNorm360(ang - gapCenter));
+    d = Math.min(d, 360 - d);
+    return d <= LUMEN_SLIT_HALF_DEG + 0.05;
+  }
+  var entryAngle = angleOf(res.xEntry, res.yEntry);
+  if (!inGap(entryAngle)) return { t: res.tEntry, x: res.xEntry, y: res.yEntry };
+  if (res.tExit > res.tEntry + 1e-6) {
+    var exitAngle = angleOf(res.xExit, res.yExit);
+    if (!inGap(exitAngle)) return { t: res.tExit, x: res.xExit, y: res.yExit };
+  }
+  return null;
+}
+
+function lumenEvaluateTarget(t, hit, intensity) {
+  if (!t || !hit) return false;
+  if (t.mode === "atleast") return intensity >= t.min;
+  if (t.mode === "atmost") return intensity <= t.max;
+  if (t.mode === "between") return intensity >= t.min && intensity <= t.max;
+  if (t.mode === "exact") return Math.abs(intensity - t.value) <= t.tolerance;
+  return false;
+}
+function lumenConditionLabel(t) {
+  if (!t) return "";
+  if (t.mode === "atleast") return "≥ " + lumenFmt(t.min);
+  if (t.mode === "atmost") return "≤ " + lumenFmt(t.max);
+  if (t.mode === "between") return lumenFmt(t.min) + "–" + lumenFmt(t.max);
+  if (t.mode === "exact") return "≈ " + lumenFmt(t.value) + " ±" + lumenFmt(t.tolerance);
+  return "";
+}
+
+function lumenTraceSingleBeam(geom, level, src, blockerSegs, boundaryEdges) {
+  var O0 = lumenAnchorPx(geom, src);
+  var O = { x: O0.x, y: O0.y };
+  var D = { x: Math.cos(lumenRad(src.angle)), y: Math.sin(lumenRad(src.angle)) };
+  var intensity = 1.0;
+  var segments = [];
+  var activated = {};
+  var closeness = {};
+  var hitTargetId = null, hitIntensity = 0;
+  var eps = geom.eps;
+
+  for (var bounce = 0; bounce < 60; bounce++) {
+    var best = null;
+    boundaryEdges.forEach(function (seg) {
+      var h = lumenSegIntersect(O, D, seg[0], seg[1], eps);
+      if (h && (!best || h.t < best.t)) best = { t: h.t, type: "boundary", x: h.x, y: h.y };
+    });
+    blockerSegs.forEach(function (seg) {
+      var h = lumenSegIntersect(O, D, seg[0], seg[1], eps);
+      if (h && (!best || h.t < best.t)) best = { t: h.t, type: "wall", x: h.x, y: h.y };
+    });
+    (level.sources || []).forEach(function (s) {
+      var hitc = lumenSourceCylinderBlock(geom, O, D, s, eps);
+      if (hitc && (!best || hitc.t < best.t)) best = { t: hitc.t, type: "wall", x: hitc.x, y: hitc.y };
+    });
+    (level.pieces || []).forEach(function (p) {
+      if (p.type === "mirror") {
+        var c = lumenAnchorPx(geom, p);
+        var rA = lumenRad(p.angle);
+        var A = { x: c.x + Math.cos(rA) * geom.mirrorHalf, y: c.y + Math.sin(rA) * geom.mirrorHalf };
+        var B = { x: c.x - Math.cos(rA) * geom.mirrorHalf, y: c.y - Math.sin(rA) * geom.mirrorHalf };
+        var h = lumenSegIntersect(O, D, A, B, eps);
+        if (h && (!best || h.t < best.t)) best = { t: h.t, type: "mirror", piece: p, x: h.x, y: h.y };
+      } else if (p.type === "lens") {
+        var c2 = lumenAnchorPx(geom, p);
+        var res = lumenCircleIntersect(O, D, c2, geom.lensR, eps);
+        if (res && (!best || res.tEntry < best.t)) best = { t: res.tEntry, type: "lens", piece: p, x: res.xEntry, y: res.yEntry, exitX: res.xExit, exitY: res.yExit };
+      }
+    });
+    (level.targets || []).forEach(function (tg) {
+      var c3 = lumenAnchorPx(geom, tg);
+      var res2 = lumenCircleIntersect(O, D, c3, geom.targetR, eps);
+      if (res2 && (!best || res2.tEntry < best.t)) best = { t: res2.tEntry, type: "target", targetObj: tg, x: res2.xEntry, y: res2.yEntry };
+    });
+
+    if (!best) break;
+    segments.push({ x1: O.x, y1: O.y, x2: best.x, y2: best.y, intensity: intensity });
+    if (best.type === "boundary" || best.type === "wall") break;
+
+    if (best.type === "mirror") {
+      var p2 = best.piece;
+      var rA2 = lumenRad(p2.angle);
+      var lineDir = { x: Math.cos(rA2), y: Math.sin(rA2) };
+      var normal = { x: -lineDir.y, y: lineDir.x };
+      var dDotN = D.x * normal.x + D.y * normal.y;
+      D = { x: D.x - 2 * dDotN * normal.x, y: D.y - 2 * dDotN * normal.y };
+      var len = Math.hypot(D.x, D.y); D.x /= len; D.y /= len;
+      O = { x: best.x + D.x * eps * 2, y: best.y + D.y * eps * 2 };
+      activated[p2.id] = true;
+      continue;
+    }
+    if (best.type === "lens") {
+      var p3 = best.piece;
+      var rayAngle = lumenNorm360(Math.atan2(D.y, D.x) * 180 / Math.PI) % 180;
+      var lensAngle = lumenNorm360(p3.angle) % 180;
+      var diff = Math.abs(rayAngle - lensAngle);
+      diff = Math.min(diff, 180 - diff);
+      var close = 1 - diff / 90;
+      var factor = LUMEN_LENS_PENALTY + (LUMEN_LENS_BOOST - LUMEN_LENS_PENALTY) * close;
+      intensity *= factor;
+      segments.push({ x1: best.x, y1: best.y, x2: best.exitX, y2: best.exitY, intensity: intensity });
+      closeness[p3.id] = Math.max(closeness[p3.id] || 0, close);
+      if (close > 0.5) activated[p3.id] = true;
+      O = { x: best.exitX + D.x * eps * 2, y: best.exitY + D.y * eps * 2 };
+      continue;
+    }
+    if (best.type === "target") { hitTargetId = best.targetObj.id; hitIntensity = intensity; break; }
+  }
+  return { segments: segments, activated: activated, closeness: closeness, hitTargetId: hitTargetId, hitIntensity: hitIntensity, emitting: segments.length > 0 };
+}
+
+function lumenTraceAllBeams(geom, level) {
+  var boundaryEdges = [
+    [{ x: 0, y: 0 }, { x: geom.width, y: 0 }],
+    [{ x: geom.width, y: 0 }, { x: geom.width, y: geom.height }],
+    [{ x: geom.width, y: geom.height }, { x: 0, y: geom.height }],
+    [{ x: 0, y: geom.height }, { x: 0, y: 0 }]
+  ];
+  var blockerSegs = lumenGetBlockerSegs(geom, level);
+
+  var segments = [];
+  var activated = {};
+  var closeness = {};
+  var targetIntensity = {};
+  var targetHitAtAll = {};
+  var emittingSources = {};
+
+  (level.sources || []).forEach(function (src) {
+    var r = lumenTraceSingleBeam(geom, level, src, blockerSegs, boundaryEdges);
+    segments = segments.concat(r.segments);
+    Object.keys(r.activated).forEach(function (id) { activated[id] = true; });
+    Object.keys(r.closeness).forEach(function (id) { closeness[id] = Math.max(closeness[id] || 0, r.closeness[id]); });
+    if (r.emitting) emittingSources[src.id] = true;
+    if (r.hitTargetId) {
+      targetIntensity[r.hitTargetId] = (targetIntensity[r.hitTargetId] || 0) + r.hitIntensity;
+      targetHitAtAll[r.hitTargetId] = true;
+    }
+  });
+
+  return { segments: segments, activated: activated, closeness: closeness, targetIntensity: targetIntensity, targetHitAtAll: targetHitAtAll, emittingSources: emittingSources };
+}
+
+function lumenAllTargetsSolved(level, trace) {
+  var targets = level.targets || [];
+  if (!targets.length) return false;
+  return targets.every(function (t) {
+    return lumenEvaluateTarget(t, !!trace.targetHitAtAll[t.id], trace.targetIntensity[t.id] || 0);
+  });
+}
+
+function lumenBeamColor(i) {
+  if (i <= 0.05) return "rgba(90,100,120,0.55)";
+  var hue = Math.max(45, 205 - i * 55);
+  var light = Math.min(85, 48 + i * 13);
+  return "hsl(" + hue + ", 95%, " + light + "%)";
+}
+function lumenLerpColor(c1, c2, t) {
+  var a = parseInt(c1.slice(1), 16), b = parseInt(c2.slice(1), 16);
+  var ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  var br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  var r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
+  return "rgb(" + r + "," + g + "," + bl + ")";
+}
+function lumenRoundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function lumenHexPathCtx(ctx, cx, cy, size) {
+  var v = lumenHexVerts(cx, cy, size);
+  ctx.beginPath();
+  ctx.moveTo(v[0].x, v[0].y);
+  for (var i = 1; i < 6; i++) ctx.lineTo(v[i].x, v[i].y);
+  ctx.closePath();
+}
+
+function lumenFindNearestAnchor(geom, x, y, kindFilter) {
+  var best = null, bestD = geom.hexR * 0.55;
+  geom.anchors.forEach(function (a) {
+    if (kindFilter && a.kind !== kindFilter) return;
+    var d = Math.hypot(x - a.x, y - a.y);
+    if (d < bestD) { bestD = d; best = a; }
+  });
+  return best;
+}
+function lumenFindNearestHex(geom, x, y) {
+  var best = null, bestD = geom.hexR * 0.85;
+  geom.hexList.forEach(function (h) {
+    var d = Math.hypot(x - h.x, y - h.y);
+    if (d < bestD) { bestD = d; best = h; }
+  });
+  return best;
+}
+// Player-mode piece lookup — only mirrors/lenses are player-rotatable
+// (sources/targets/walls/cards are level-design elements set by the
+// creator; see wireLumenPuzzleInteractions below).
+function lumenFindPieceNear(geom, level, x, y) {
+  var best = null, bestD = geom.hexR * 0.62;
+  (level.pieces || []).forEach(function (p) {
+    var c = lumenAnchorPx(geom, p);
+    var d = Math.hypot(x - c.x, y - c.y);
+    if (d < bestD) { bestD = d; best = p; }
+  });
+  return best;
+}
+// Design-mode piece lookup (used by Studio's inspector builder) — also
+// considers sources, since the creator (not the player) sets their angle.
+function lumenFindRotatableNear(geom, level, x, y) {
+  var all = (level.sources || []).concat(level.pieces || []);
+  var best = null, bestD = geom.hexR * 0.62;
+  all.forEach(function (p) {
+    var c = lumenAnchorPx(geom, p);
+    var d = Math.hypot(x - c.x, y - c.y);
+    if (d < bestD) { bestD = d; best = p; }
+  });
+  return best;
+}
+function lumenFindTargetNear(geom, level, x, y) {
+  var best = null, bestD = geom.hexR * 0.62;
+  (level.targets || []).forEach(function (t) {
+    var c = lumenAnchorPx(geom, t);
+    var d = Math.hypot(x - c.x, y - c.y);
+    if (d < bestD) { bestD = d; best = t; }
+  });
+  return best;
+}
+function lumenDistToSegment(px, py, A, B) {
+  var vx = B.x - A.x, vy = B.y - A.y, wx = px - A.x, wy = py - A.y;
+  var len2 = vx * vx + vy * vy || 1e-9;
+  var t = (wx * vx + wy * vy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  var cx = A.x + vx * t, cy = A.y + vy * t;
+  return Math.hypot(px - cx, py - cy);
+}
+function lumenSegKey(seg) {
+  var pts = [[Math.round(seg[0].x), Math.round(seg[0].y)], [Math.round(seg[1].x), Math.round(seg[1].y)]];
+  pts.sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+  return pts.map(function (p) { return p.join(","); }).join("|");
+}
+function lumenPointKeyFromPos(pos) { return Math.round(pos.x) + "," + Math.round(pos.y); }
+function lumenSetPieceTargetAngle(p, snapped) {
+  p.angle = lumenNorm360(snapped);
+}
+
+// ---- canvas drawing (shared by player + Studio design-time preview) ----
+function lumenDrawGrid(ctx, geom) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1;
+  geom.hexList.forEach(function (h) { lumenHexPathCtx(ctx, h.x, h.y, geom.hexR * 0.96); ctx.stroke(); });
+  ctx.restore();
+}
+function lumenDrawWalls(ctx, geom, level) {
+  (level.walls || []).forEach(function (w) {
+    var p = lumenHexPx(geom, w.q, w.r);
+    ctx.save();
+    lumenHexPathCtx(ctx, p.x, p.y, geom.hexR * 0.92);
+    ctx.fillStyle = "#241c1c";
+    ctx.fill();
+    ctx.clip();
+    ctx.strokeStyle = "rgba(120,70,70,0.5)";
+    ctx.lineWidth = 3 * geom.k;
+    for (var i = -geom.hexR * 2; i < geom.hexR * 3; i += 10 * geom.k) {
+      ctx.beginPath();
+      ctx.moveTo(p.x + i - geom.hexR, p.y + geom.hexR);
+      ctx.lineTo(p.x + i + geom.hexR, p.y - geom.hexR);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
+function lumenDrawCards(ctx, geom, level) {
+  (level.cards || []).forEach(function (cd) {
+    var seg = lumenCardSegment(geom, cd);
+    var A = seg[0], B = seg[1];
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#2a1e1e";
+    ctx.lineWidth = 9 * geom.k;
+    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    ctx.strokeStyle = "rgba(168,106,106,0.75)";
+    ctx.lineWidth = 3 * geom.k;
+    ctx.setLineDash([6 * geom.k, 4 * geom.k]);
+    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    ctx.restore();
+  });
+}
+function lumenDrawBeam(ctx, segments) {
+  ctx.save();
+  ctx.lineCap = "round";
+  segments.forEach(function (s) {
+    var w = Math.min(4 + s.intensity * 4, 20);
+    ctx.strokeStyle = lumenBeamColor(s.intensity);
+    ctx.globalAlpha = 0.25;
+    ctx.lineWidth = w * 2.4;
+    ctx.shadowColor = lumenBeamColor(s.intensity);
+    ctx.shadowBlur = 18 + s.intensity * 8;
+    ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+  });
+  segments.forEach(function (s) {
+    var w = Math.min(3 + s.intensity * 3, 12);
+    ctx.strokeStyle = lumenBeamColor(s.intensity);
+    ctx.globalAlpha = 0.95;
+    ctx.lineWidth = w;
+    ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+  });
+  ctx.restore();
+}
+function lumenDrawSourceCylinder(ctx, geom, src, emitting, selected) {
+  var pos = lumenAnchorPx(geom, src);
+  var x = pos.x, y = pos.y;
+  var pulse = 1 + Math.sin(Date.now() / 260) * 0.08;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.shadowColor = "#ffd27f";
+  ctx.shadowBlur = 20;
+  var grad = ctx.createRadialGradient(0, 0, 2, 0, 0, 11 * pulse);
+  grad.addColorStop(0, "#ffffff"); grad.addColorStop(0.5, "#ffe6b0"); grad.addColorStop(1, "rgba(255,210,127,0)");
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(0, 0, 11 * pulse, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#fff8e8";
+  ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
+
+  var a = lumenRad(src.angle);
+  var gapStart = a - lumenRad(LUMEN_SLIT_HALF_DEG);
+  var gapEnd = a + lumenRad(LUMEN_SLIT_HALF_DEG);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, geom.cylOuter, gapEnd, gapStart + Math.PI * 2);
+  ctx.arc(0, 0, geom.cylInner, gapStart + Math.PI * 2, gapEnd, true);
+  ctx.closePath();
+  var wallGrad = ctx.createLinearGradient(-geom.cylOuter, -geom.cylOuter, geom.cylOuter, geom.cylOuter);
+  wallGrad.addColorStop(0, "#5a6784"); wallGrad.addColorStop(0.5, "#9aa8c8"); wallGrad.addColorStop(1, "#3f4a66");
+  ctx.fillStyle = wallGrad;
+  ctx.shadowColor = "rgba(160,180,220,0.4)";
+  ctx.shadowBlur = 6;
+  ctx.fill();
+  ctx.restore();
+
+  if (emitting) {
+    ctx.save();
+    ctx.rotate(a);
+    var spillGrad = ctx.createRadialGradient(0, 0, geom.cylInner, 0, 0, geom.cylOuter + 8);
+    spillGrad.addColorStop(0, "rgba(255,230,176,0.85)"); spillGrad.addColorStop(1, "rgba(255,230,176,0)");
+    ctx.fillStyle = spillGrad;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, geom.cylOuter + 8, -lumenRad(LUMEN_SLIT_HALF_DEG), lumenRad(LUMEN_SLIT_HALF_DEG));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+  if (selected) lumenDrawSelectionRing(ctx, geom, x, y);
+}
+function lumenDrawTarget(ctx, geom, t, hit, intensity, selected) {
+  var pos = lumenAnchorPx(geom, t);
+  var x = pos.x, y = pos.y;
+  var solved = lumenEvaluateTarget(t, hit, intensity);
+  var color, glow;
+  if (solved) { color = "#6bffb0"; glow = "#6bffb0"; }
+  else if (hit) { color = "#ff9f4a"; glow = "#ff9f4a"; }
+  else { color = "#3a4568"; glow = "transparent"; }
+  var pulse = solved ? (1 + Math.sin(Date.now() / 200) * 0.12) : 1;
+
+  ctx.save();
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = (solved ? 28 : (hit ? 14 : 0));
+  lumenHexPathCtx(ctx, x, y, (geom.targetR * 1.25) * pulse);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.font = (9 * geom.k) + "px Segoe UI, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(lumenConditionLabel(t), x, y + geom.hexR * 0.9);
+  ctx.restore();
+  if (selected) lumenDrawSelectionRing(ctx, geom, x, y);
+}
+function lumenDrawMirror(ctx, geom, p, active, selected) {
+  var pos = lumenAnchorPx(geom, p);
+  var x = pos.x, y = pos.y;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(lumenRad(p.angle));
+  var len = geom.mirrorHalf * 2, w = 8 * geom.k;
+  ctx.shadowColor = active ? "#bfeaff" : "transparent";
+  ctx.shadowBlur = active ? 22 : 0;
+  var grad = ctx.createLinearGradient(-len / 2, 0, len / 2, 0);
+  grad.addColorStop(0, "#7f8ba8"); grad.addColorStop(0.5, active ? "#eaf7ff" : "#cfd8e8"); grad.addColorStop(1, "#7f8ba8");
+  ctx.fillStyle = grad;
+  lumenRoundRectPath(ctx, -len / 2, -w / 2, len, w, 4 * geom.k);
+  ctx.fill();
+  ctx.restore();
+  if (selected) lumenDrawSelectionRing(ctx, geom, x, y);
+}
+function lumenDrawLens(ctx, geom, p, active, close, selected) {
+  var pos = lumenAnchorPx(geom, p);
+  var x = pos.x, y = pos.y;
+  var t = active ? close : 0;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(lumenRad(p.angle));
+  ctx.shadowColor = active ? lumenLerpColor("#4a90c2", "#ffbf5c", t) : "transparent";
+  ctx.shadowBlur = active ? (8 + t * 26) : 0;
+  var grad = ctx.createLinearGradient(0, -geom.hexR * 0.42, 0, geom.hexR * 0.42);
+  grad.addColorStop(0, lumenLerpColor("#bfeaff", "#fff3d6", t));
+  grad.addColorStop(1, lumenLerpColor("#4a90c2", "#ffbf5c", t));
+  ctx.fillStyle = grad;
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, geom.hexR * 0.22, geom.hexR * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = "rgba(255,255,255,0.8)";
+  ctx.lineWidth = 2 * geom.k;
+  ctx.beginPath(); ctx.moveTo(0, -geom.hexR * 0.42); ctx.lineTo(0, geom.hexR * 0.42); ctx.stroke();
+  ctx.restore();
+  if (selected) lumenDrawSelectionRing(ctx, geom, x, y);
+}
+function lumenDrawSelectionRing(ctx, geom, x, y) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = 1.5 * geom.k;
+  ctx.setLineDash([3 * geom.k, 3 * geom.k]);
+  ctx.beginPath(); ctx.arc(x, y, geom.hexR * 0.7, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+// Full-scene render — draws grid/walls/cards/beams/pieces/sources/targets
+// in the right back-to-front order, then returns the trace (so callers can
+// drive a target-status readout off the same pass). `selectedId`, if given,
+// draws a dashed selection ring on whichever source/piece/target has that
+// id (used by Studio's design-time builder; the player screen passes null).
+function lumenRenderScene(ctx, geom, level, selectedId) {
+  ctx.clearRect(0, 0, geom.width, geom.height);
+  lumenDrawGrid(ctx, geom);
+  lumenDrawWalls(ctx, geom, level);
+  lumenDrawCards(ctx, geom, level);
+  var trace = lumenTraceAllBeams(geom, level);
+  lumenDrawBeam(ctx, trace.segments);
+  (level.pieces || []).forEach(function (p) {
+    var active = !!trace.activated[p.id];
+    if (p.type === "mirror") lumenDrawMirror(ctx, geom, p, active, selectedId === p.id);
+    else lumenDrawLens(ctx, geom, p, active, trace.closeness[p.id] || 0, selectedId === p.id);
+  });
+  (level.sources || []).forEach(function (s) {
+    lumenDrawSourceCylinder(ctx, geom, s, !!trace.emittingSources[s.id], selectedId === s.id);
+  });
+  (level.targets || []).forEach(function (t) {
+    var hit = !!trace.targetHitAtAll[t.id];
+    var intensity = trace.targetIntensity[t.id] || 0;
+    lumenDrawTarget(ctx, geom, t, hit, intensity, selectedId === t.id);
+  });
+  return trace;
+}
+
+// Player-runtime interaction — locates its canvas (a no-op if a different
+// node type is currently on screen, same guard style as
+// wireRopeTyingInteractions above), draws the current beam trace, and wires
+// pointer drag-rotate + tap-to-nudge on mirrors/lenses only — sources,
+// targets, walls and cards are level-design elements set by the creator
+// (Studio's inspector builder, see app.js), not player-interactive. Live
+// piece angles are tracked in ctl.lumenDraft[n.id] (a deep-cloned copy of
+// content.sources/pieces so dragging never mutates the hunt itself), and
+// geometry (which only depends on content.gridSize) is memoized in
+// ctl.lumenGeom[n.id] across re-renders. Every drag/tap redraws the canvas
+// directly and re-checks target conditions — no requestAnimationFrame loop,
+// since the canvas element itself is torn down and rebuilt by the
+// surrounding ctl.render() innerHTML swap on any state change other than a
+// piece rotation.
+function wireLumenPuzzleInteractions(root, ctl, session, n) {
+  var wrap = root.querySelector('.pv-lumen-wrap[data-node="' + n.id + '"]');
+  if (!wrap) return;
+  var canvas = wrap.querySelector(".pv-lumen-canvas");
+  var toastEl = wrap.querySelector(".pv-lumen-toast");
+  var summaryEl = root.querySelector('.pv-lumen-summary[data-node="' + n.id + '"]');
+  var c = n.content;
+
+  ctl.lumenGeom = ctl.lumenGeom || {};
+  if (!ctl.lumenGeom[n.id]) ctl.lumenGeom[n.id] = lumenComputeGeometry(c.gridSize);
+  var geom = ctl.lumenGeom[n.id];
+
+  ctl.lumenDraft = ctl.lumenDraft || {};
+  if (!ctl.lumenDraft[n.id]) {
+    ctl.lumenDraft[n.id] = {
+      sources: clone(c.sources || []),
+      pieces: clone(c.pieces || []),
+      targets: c.targets || [],
+      walls: c.walls || [],
+      cards: c.cards || []
+    };
+  }
+  var level = ctl.lumenDraft[n.id];
+
+  canvas.width = geom.width;
+  canvas.height = geom.height;
+  var ctx = canvas.getContext("2d");
+
+  var activePiece = null, dragMoved = false, dragStartClient = null, hoverPiece = null;
+  var lastSolved = false;
+  var locked = !!session.state.completed[n.id];
+
+  function updateSummary(trace) {
+    var targets = level.targets || [];
+    if (!(level.sources || []).length) { if (summaryEl) summaryEl.textContent = "No light source placed"; return false; }
+    if (!targets.length) { if (summaryEl) summaryEl.textContent = "No target placed"; return false; }
+    var solvedCount = 0;
+    targets.forEach(function (t) {
+      if (lumenEvaluateTarget(t, !!trace.targetHitAtAll[t.id], trace.targetIntensity[t.id] || 0)) solvedCount++;
+    });
+    if (summaryEl) summaryEl.textContent = solvedCount + " of " + targets.length + " target" + (targets.length > 1 ? "s" : "") + " solved";
+    return solvedCount === targets.length;
+  }
+
+  function redraw() {
+    var trace = lumenRenderScene(ctx, geom, level, null);
+    var allSolved = updateSummary(trace);
+    if (toastEl) toastEl.classList.toggle("show", !!allSolved);
+    if (allSolved && !lastSolved && !locked) {
+      var ok = pv_action_submitLumenPuzzle(session, n.id, true);
+      if (ok) {
+        lastSolved = true; locked = true;
+        setTimeout(function () { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; ctl.render(); }, 600);
+        return;
+      }
+    }
+    lastSolved = !!allSolved;
+  }
+
+  function canvasCoords(evt) {
+    var rect = canvas.getBoundingClientRect();
+    var scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    return { x: (evt.clientX - rect.left) * scaleX, y: (evt.clientY - rect.top) * scaleY };
+  }
+
+  if (locked) { redraw(); return; } // read-only — draw once, no interaction wiring
+
+  canvas.onpointerdown = function (evt) {
+    var pos = canvasCoords(evt);
+    var p = lumenFindPieceNear(geom, level, pos.x, pos.y);
+    if (!p) return;
+    activePiece = p; dragMoved = false;
+    dragStartClient = { x: evt.clientX, y: evt.clientY };
+    try { canvas.setPointerCapture(evt.pointerId); } catch (e) {}
+    evt.preventDefault();
+  };
+  canvas.onpointermove = function (evt) {
+    if (!activePiece) {
+      var pos0 = canvasCoords(evt);
+      hoverPiece = lumenFindPieceNear(geom, level, pos0.x, pos0.y);
+      canvas.style.cursor = hoverPiece ? "grab" : "default";
+      return;
+    }
+    var pos = canvasCoords(evt);
+    var moveDist = Math.hypot(evt.clientX - dragStartClient.x, evt.clientY - dragStartClient.y);
+    if (moveDist > 3) dragMoved = true;
+    var center = lumenAnchorPx(geom, activePiece);
+    var rawAngle = lumenNorm360(Math.atan2(pos.y - center.y, pos.x - center.x) * 180 / Math.PI);
+    var snapped = Math.round(rawAngle / 15) * 15 % 360;
+    lumenSetPieceTargetAngle(activePiece, snapped);
+    canvas.style.cursor = "grabbing";
+    redraw();
+  };
+  function endDrag() {
+    if (activePiece && !dragMoved) {
+      lumenSetPieceTargetAngle(activePiece, activePiece.angle + 15);
+      redraw();
+    }
+    activePiece = null;
+    canvas.style.cursor = hoverPiece ? "grab" : "default";
+  }
+  canvas.onpointerup = endDrag;
+  canvas.onpointercancel = endDrag;
+
+  redraw();
+}
+
+// Draws an already-completed Lumen Puzzle node's board with no interaction
+// wiring — used when Studio's "pinned node" preview (a canvas click / Story
+// tab jump, see renderPinnedNode below) shows a node that's already been
+// solved, a path that skips wirePreviewNodeInteractions entirely (to avoid
+// re-triggering completion effects) and so would otherwise leave the canvas
+// blank, unlike the string-rendered node types where the read-only markup
+// is already complete the moment it's assigned via innerHTML. Prefers the
+// player's own last-seen piece angles (ctl.lumenDraft, if this puzzle was
+// actually played this session) over the raw designed content, so a solved
+// board is shown the way the player left it rather than back at its
+// original unsolved layout.
+function lumenDrawReadOnly(ctl, n) {
+  var root = ctl.mainEl;
+  var wrap = root.querySelector('.pv-lumen-wrap[data-node="' + n.id + '"]');
+  if (!wrap) return;
+  var canvas = wrap.querySelector(".pv-lumen-canvas");
+  var c = n.content;
+  ctl.lumenGeom = ctl.lumenGeom || {};
+  if (!ctl.lumenGeom[n.id]) ctl.lumenGeom[n.id] = lumenComputeGeometry(c.gridSize);
+  var geom = ctl.lumenGeom[n.id];
+  var level = (ctl.lumenDraft && ctl.lumenDraft[n.id]) || { sources: c.sources || [], pieces: c.pieces || [], targets: c.targets || [], walls: c.walls || [], cards: c.cards || [] };
+  canvas.width = geom.width; canvas.height = geom.height;
+  lumenRenderScene(canvas.getContext("2d"), geom, level, null);
+  var summaryEl = root.querySelector('.pv-lumen-summary[data-node="' + n.id + '"]');
+  if (summaryEl) summaryEl.textContent = (level.targets || []).length + " of " + (level.targets || []).length + " target(s) solved";
+}
+
 function wirePreviewNodeInteractions(session, n, ctl) {
   if (!n) return;
   var root = ctl.mainEl;
@@ -2594,6 +3441,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireTextSubmitAction(root, ctl, session, n, "pvCrossRefInput", "pvSubmitCrossRef", pv_action_submitCrossReferenceAnswer);
   wirePdfReveal(root, ctl, session, n);
   wireRopeTyingInteractions(root, ctl, session, n);
+  wireLumenPuzzleInteractions(root, ctl, session, n);
 
   // Sequence / Pattern — tap swatches in order; auto-validates once the
   // attempt is as long as the target sequence, resetting on a miss.
@@ -2701,6 +3549,11 @@ function renderPinnedNode(session, n, ctl) {
   // Already-completed nodes are shown read-only — wiring their controls
   // again would let a resubmit silently double up effects like score.
   if (!state.completed[n.id]) wirePreviewNodeInteractions(session, n, ctl);
+  // Lumen Puzzle's board is drawn imperatively onto a <canvas> rather than
+  // built as innerHTML markup (see wireLumenPuzzleInteractions above), so a
+  // completed node shown here still needs one draw call even though its
+  // interaction wiring is skipped, or the canvas would be left blank.
+  else if (n.type === "lumenPuzzle") lumenDrawReadOnly(ctl, n);
   ctl._activeIds = { expandedId: n.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
 }
 
@@ -2710,6 +3563,7 @@ function createPreviewController(mainEl, sideEl) {
     session: null, expandedNodeId: null, showState: false,
     orderingDraft: {}, matchingDraft: {},
     sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {}, fuseDraft: {}, ropeDraft: {},
+    lumenDraft: {}, lumenGeom: {}, // lumenDraft: node id -> live {sources,pieces,targets,walls,cards} the player rotates; lumenGeom: node id -> memoized hex geometry (see wireLumenPuzzleInteractions)
     pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
@@ -2732,6 +3586,8 @@ function createPreviewController(mainEl, sideEl) {
     ctl.cryptexDraft = {};
     ctl.fuseDraft = {};
     ctl.ropeDraft = {};
+    ctl.lumenDraft = {};
+    ctl.lumenGeom = {};
     ctl.pinnedNodeId = null;
     ctl.peekStack = [];
     ctl.laneListId = null;
@@ -2915,7 +3771,31 @@ return {
   pv_action_submitCrossReferenceAnswer: pv_action_submitCrossReferenceAnswer,
   pv_action_submitFusePanel: pv_action_submitFusePanel,
   pv_action_submitRopeTying: pv_action_submitRopeTying,
+  pv_action_submitLumenPuzzle: pv_action_submitLumenPuzzle,
   pv_action_revealHint: pv_action_revealHint,
+
+  // Lumen Puzzle — hex geometry/beam-tracing math and canvas drawing,
+  // shared between the player runtime (above) and Studio's inspector-
+  // embedded level designer (buildTypeSpecificFields/wireNodeInspector's
+  // "lumenPuzzle" case in app.js).
+  lumenComputeGeometry: lumenComputeGeometry,
+  lumenHexPx: lumenHexPx,
+  lumenAnchorPx: lumenAnchorPx,
+  lumenCardSegment: lumenCardSegment,
+  lumenTraceAllBeams: lumenTraceAllBeams,
+  lumenAllTargetsSolved: lumenAllTargetsSolved,
+  lumenEvaluateTarget: lumenEvaluateTarget,
+  lumenConditionLabel: lumenConditionLabel,
+  lumenRenderScene: lumenRenderScene,
+  lumenFindNearestAnchor: lumenFindNearestAnchor,
+  lumenFindNearestHex: lumenFindNearestHex,
+  lumenFindRotatableNear: lumenFindRotatableNear,
+  lumenFindTargetNear: lumenFindTargetNear,
+  lumenDistToSegment: lumenDistToSegment,
+  lumenSegKey: lumenSegKey,
+  lumenPointKeyFromPos: lumenPointKeyFromPos,
+  lumenSetPieceTargetAngle: lumenSetPieceTargetAngle,
+  lumenNorm360: lumenNorm360,
 
   PLAYER_SCREEN_TYPES: PLAYER_SCREEN_TYPES,
   BACK_BUTTON_TYPES: BACK_BUTTON_TYPES,

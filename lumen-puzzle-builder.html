@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumen Puzzle Builder</title>
+<style>
+  :root{
+    --bg-a:#0a0e1a; --bg-b:#131c33; --panel:#141b2e; --panel-b:#1c2740;
+    --border:#2a3556; --accent:#7fd8ff; --accent2:#ffd27f; --good:#6bffb0; --bad:#ff6b6b;
+    --text:#e7edf7; --dim:#8a94ad;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:radial-gradient(1200px 700px at 50% -10%, #1a2544 0%, var(--bg-a) 55%, #060811 100%);
+    color:var(--text); display:flex; justify-content:center; padding:24px 14px 50px;
+  }
+  .wrap{ width:100%; max-width:1300px; }
+  header{ text-align:center; margin-bottom:14px; }
+  h1{
+    margin:0 0 4px; font-size:24px; letter-spacing:1px; font-weight:700;
+    background:linear-gradient(90deg,#bfe9ff,#ffe6b0);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  header p{ margin:0; color:var(--dim); font-size:12.5px; }
+  .badge{
+    display:inline-block; margin-top:6px; font-size:11px; letter-spacing:1.5px;
+    color:#0a0e1a; background:linear-gradient(90deg,var(--accent),var(--accent2));
+    padding:2px 10px; border-radius:20px; font-weight:700; text-transform:uppercase;
+  }
+
+  .layout{ display:grid; grid-template-columns:230px 1fr 300px; gap:14px; align-items:start; margin-top:16px; }
+  @media (max-width:1050px){ .layout{ grid-template-columns:1fr; } }
+
+  .panel{
+    background:linear-gradient(160deg,var(--panel),#0e1526);
+    border:1px solid var(--border); border-radius:14px; padding:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.35);
+  }
+  .panelTitle{ font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:var(--dim); margin:0 0 8px; font-weight:700; }
+
+  /* level list */
+  #levelList{ list-style:none; margin:0 0 8px; padding:0; display:flex; flex-direction:column; gap:4px; max-height:220px; overflow:auto; }
+  .levelItem{
+    padding:7px 9px; border-radius:8px; cursor:pointer; font-size:12.5px; color:var(--dim);
+    border:1px solid transparent; display:flex; justify-content:space-between; gap:6px;
+  }
+  .levelItem:hover{ background:var(--panel-b); color:var(--text); }
+  .levelItem.active{ background:var(--panel-b); border-color:var(--accent); color:var(--text); }
+  .levelItemName{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rowBtns{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+
+  label{ display:block; font-size:11px; color:var(--dim); margin-bottom:10px; letter-spacing:.3px; }
+  label input[type="text"], label input[type="number"], label textarea, label select{
+    display:block; width:100%; margin-top:4px; background:#0a0e1a; border:1px solid var(--border);
+    color:var(--text); border-radius:7px; padding:7px 8px; font-size:13px; font-family:inherit;
+  }
+  label textarea{ resize:vertical; min-height:52px; }
+  label input:focus, label textarea:focus, label select:focus{ outline:none; border-color:var(--accent); }
+  input[type="range"]{ width:100%; margin-top:6px; accent-color:var(--accent); }
+
+  button.ctrl{
+    background:var(--panel-b); border:1px solid var(--border); color:var(--text);
+    padding:7px 12px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600;
+    transition:all .15s ease;
+  }
+  button.ctrl:hover{ border-color:var(--accent2); color:var(--accent2); }
+  button.ctrl.primary{ background:linear-gradient(90deg,var(--accent),#9fe4ff); color:#08101f; border-color:var(--accent); }
+  button.ctrl.primary:hover{ color:#08101f; filter:brightness(1.08); }
+  button.ctrl.danger{ border-color:rgba(255,107,107,0.5); color:#ff9d9d; }
+  button.ctrl.danger:hover{ border-color:var(--bad); color:var(--bad); }
+  button.ctrl.small{ padding:5px 9px; font-size:11.5px; }
+  button.ctrl:disabled{ opacity:.4; cursor:not-allowed; }
+
+  /* palette */
+  .paletteGrid{ display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:12px; }
+  .toolBtn{
+    background:var(--panel-b); border:1px solid var(--border); color:var(--dim);
+    border-radius:9px; padding:9px 6px; cursor:pointer; font-size:11px; font-weight:600;
+    display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center;
+  }
+  .toolBtn:hover{ color:var(--text); border-color:var(--accent); }
+  .toolBtn.active{ color:#08101f; background:linear-gradient(160deg,var(--accent),#9fe4ff); border-color:var(--accent); box-shadow:0 0 14px rgba(127,216,255,0.4); }
+  .toolIcon{ width:20px; height:20px; display:flex; align-items:center; justify-content:center; }
+  .toolIcon .dot{ width:12px; height:12px; border-radius:50%; background:radial-gradient(circle,#fff,#ffd27f); }
+  .toolIcon .bar{ width:18px; height:5px; border-radius:3px; background:linear-gradient(135deg,#cfd8e8,#7f8ba8); }
+  .toolIcon .ellipse{ width:11px; height:18px; border-radius:50%; background:radial-gradient(circle,#bfeaff,#4a90c2); }
+  .toolIcon .hexTarget{ width:16px; height:16px; clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%); background:radial-gradient(circle,#6bffb0,#1c8a58); }
+  .toolIcon .hexWall{ width:16px; height:16px; clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%); background:repeating-linear-gradient(45deg,#3a2f2f,#3a2f2f 3px,#241c1c 3px,#241c1c 6px); }
+  .toolIcon .card{ width:6px; height:18px; border-radius:3px; background:linear-gradient(180deg,#a86a6a,#5a3a3a); }
+  .toolIcon .arrow{ width:16px; height:16px; border:1.5px solid var(--dim); border-radius:3px; }
+  .toolIcon .eraser{ width:16px; height:12px; border-radius:3px; background:linear-gradient(135deg,#ff9d9d,#c24a4a); }
+
+  /* stage */
+  .stage{
+    position:relative; background:linear-gradient(160deg,var(--panel),#0e1526);
+    border:1px solid var(--border); border-radius:16px; padding:12px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.5); display:flex; justify-content:center;
+    overflow:hidden;
+  }
+  canvas{ max-width:100%; height:auto; border-radius:10px; cursor:default; display:block; touch-action:none; aspect-ratio:1/1; }
+  .toast{
+    position:absolute; top:10px; left:50%; transform:translate(-50%,-14px);
+    background:linear-gradient(90deg,#1c3d2c,#12261c); border:1px solid var(--good);
+    color:var(--good); padding:7px 16px; border-radius:30px; font-weight:700; font-size:12.5px;
+    opacity:0; pointer-events:none; transition:all .35s ease; letter-spacing:.5px; z-index:5;
+  }
+  .toast.show{ opacity:1; transform:translate(-50%,4px); }
+
+  /* properties */
+  .propsHint{ font-size:12px; color:var(--dim); line-height:1.5; }
+  .propsSection{ }
+  .propsTitle{ font-size:13px; font-weight:700; color:var(--accent2); margin-bottom:8px; }
+
+  /* meter / target list */
+  .meterLabel{ display:flex; justify-content:space-between; font-size:11px; color:var(--dim); margin-bottom:4px; letter-spacing:.5px; text-transform:uppercase;}
+  .meterTrack{ height:8px; border-radius:6px; background:#0a0e1a; border:1px solid var(--border); overflow:hidden; }
+  .meterFill{ height:100%; width:0%; border-radius:6px; background:linear-gradient(90deg,#4a6fff,#7fd8ff); transition:width .2s ease, background .3s ease; }
+  .meterFill.solved{ background:linear-gradient(90deg,#2fe38a,#8bffce); box-shadow:0 0 12px rgba(107,255,176,0.6); }
+  .meterState{ font-size:11.5px; font-weight:600; }
+  .meterState.solved{ color:var(--good); }
+  .meterState.unlit{ color:var(--dim); }
+  .meterState.miss{ color:#ff9f4a; }
+  .targetRow{ background:#0a0e1a; border:1px solid var(--border); border-radius:8px; padding:8px; }
+  .targetRowHead{ display:flex; justify-content:space-between; font-size:11.5px; font-weight:700; margin-bottom:5px; }
+  .targetRowStatus.solved{ color:var(--good); }
+  .targetRowStatus.miss{ color:#ff9f4a; }
+  .targetRowStatus.unlit{ color:var(--dim); }
+  .targetRowSub{ font-size:10.5px; color:var(--dim); margin-top:4px; }
+
+  .legend{ margin-top:12px; font-size:11px; color:var(--dim); line-height:1.6; }
+  .legend b{ color:var(--text); }
+
+  /* modal */
+  .modalOverlay{
+    position:fixed; inset:0; background:rgba(4,6,12,0.72); display:none;
+    align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .modalOverlay.show{ display:flex; }
+  .modalBox{
+    background:linear-gradient(160deg,var(--panel),#0e1526); border:1px solid var(--border);
+    border-radius:14px; padding:18px; width:100%; max-width:640px; max-height:86vh; overflow:auto;
+    box-shadow:0 30px 80px rgba(0,0,0,0.6);
+  }
+  .modalBox h2{ margin:0 0 4px; font-size:16px; color:var(--accent2); }
+  .modalBox p.sub{ margin:0 0 12px; font-size:12px; color:var(--dim); }
+  .modalBox textarea{
+    width:100%; height:280px; background:#0a0e1a; border:1px solid var(--border); color:var(--text);
+    border-radius:8px; padding:10px; font-family:'SF Mono',Consolas,monospace; font-size:11.5px;
+    line-height:1.5; resize:vertical;
+  }
+  .modalBtnRow{ display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .modalMsg{ font-size:12px; margin-top:6px; min-height:16px; }
+  .modalMsg.err{ color:var(--bad); }
+  .modalMsg.ok{ color:var(--good); }
+
+  footer{ text-align:center; margin-top:18px; color:var(--dim); font-size:11.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Lumen Puzzle Builder</h1>
+    <p>Design hex-grid light puzzles — place pieces on hex centres, corners or edges</p>
+    <span class="badge">Builder v2</span>
+  </header>
+
+  <div class="layout">
+
+    <!-- LEFT: levels & meta -->
+    <div class="left-col" style="display:flex; flex-direction:column; gap:14px;">
+      <div class="panel">
+        <div class="panelTitle">Levels</div>
+        <ul id="levelList"></ul>
+        <div class="rowBtns">
+          <button class="ctrl small" id="btnNewLevel">＋ New</button>
+          <button class="ctrl small" id="btnDupLevel">⧉ Duplicate</button>
+          <button class="ctrl small" id="btnUpLevel">▲</button>
+          <button class="ctrl small" id="btnDownLevel">▼</button>
+          <button class="ctrl small danger" id="btnDelLevel">🗑 Delete</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">Level Details</div>
+        <label>Name<input type="text" id="levelNameInput" spellcheck="false"></label>
+        <label>Hint / instructions<textarea id="levelHintInput" spellcheck="false"></textarea></label>
+        <div class="panelTitle" style="margin-top:4px;">Grid Size (zoom)</div>
+        <label>Hexes per side: <span id="gridSizeVal">8</span>
+          <input type="range" id="gridSizeSlider" min="3" max="15" step="1">
+        </label>
+        <p style="font-size:11px;color:var(--dim);margin:-6px 0 10px;">Building area is always square. A higher number packs in more, smaller hexes (zoom out) — max 15.</p>
+        <div class="rowBtns" style="margin-top:2px;">
+          <button class="ctrl small danger" id="btnClearLevel">Clear Level</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: canvas -->
+    <div class="panel">
+      <div class="panelTitle" style="text-align:center;">Click a tool, then click the grid to place. Drag a piece to rotate. Right‑click to remove.</div>
+      <div class="stage">
+        <canvas id="game"></canvas>
+        <div class="toast" id="toast">All Targets Solved ✨</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: palette, properties, playtest -->
+    <div class="right-col" style="display:flex; flex-direction:column; gap:14px;">
+      <div class="panel">
+        <div class="panelTitle">Palette</div>
+        <div class="paletteGrid">
+          <button class="toolBtn active" data-tool="select"><span class="toolIcon"><span class="arrow"></span></span>Select / Rotate</button>
+          <button class="toolBtn" data-tool="source"><span class="toolIcon"><span class="dot"></span></span>Light Source</button>
+          <button class="toolBtn" data-tool="mirror"><span class="toolIcon"><span class="bar"></span></span>Mirror</button>
+          <button class="toolBtn" data-tool="lens"><span class="toolIcon"><span class="ellipse"></span></span>Lens</button>
+          <button class="toolBtn" data-tool="target"><span class="toolIcon"><span class="hexTarget"></span></span>Target</button>
+          <button class="toolBtn" data-tool="wall"><span class="toolIcon"><span class="hexWall"></span></span>Wall Hex</button>
+          <button class="toolBtn" data-tool="card"><span class="toolIcon"><span class="card"></span></span>Opaque Card</button>
+          <button class="toolBtn" data-tool="erase"><span class="toolIcon"><span class="eraser"></span></span>Erase</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">Properties</div>
+        <div id="propsPanel">
+          <div id="propsEmpty" class="propsHint">Select a piece, or choose a tool above to place a new one. Sources and Targets can be placed multiple times per level.</div>
+
+          <div id="propsSource" class="propsSection" style="display:none">
+            <div class="propsTitle">Light Source</div>
+            <label>Angle (°)<input type="number" id="srcAngle" step="1" min="0" max="359"></label>
+            <button class="ctrl danger small" id="srcDelete">Remove this source</button>
+          </div>
+
+          <div id="propsPiece" class="propsSection" style="display:none">
+            <div class="propsTitle" id="pieceTitle">Mirror</div>
+            <label>Angle (°)<input type="number" id="pieceAngle" step="1" min="0" max="359"></label>
+            <button class="ctrl danger small" id="pieceDelete">Remove</button>
+          </div>
+
+          <div id="propsTarget" class="propsSection" style="display:none">
+            <div class="propsTitle">Target — beam intensity condition</div>
+            <label>Condition
+              <select id="targetMode">
+                <option value="atleast">At least…</option>
+                <option value="atmost">At most…</option>
+                <option value="between">Between…</option>
+                <option value="exact">Approximately…</option>
+              </select>
+            </label>
+            <label id="fldMin">Minimum intensity<input type="number" id="targetMin" step="0.05" min="0"></label>
+            <label id="fldMax">Maximum intensity<input type="number" id="targetMax" step="0.05" min="0"></label>
+            <label id="fldValue">Target value<input type="number" id="targetValue" step="0.05" min="0"></label>
+            <label id="fldTol">Tolerance (±)<input type="number" id="targetTol" step="0.01" min="0"></label>
+            <p style="font-size:10.5px;color:var(--dim);margin:-4px 0 10px;">If several beams land on the same target, their intensities add together.</p>
+            <button class="ctrl danger small" id="targetDelete">Remove this target</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">Playtest</div>
+        <div id="targetSummary" class="meterState unlit">No light source placed</div>
+        <div id="targetList" style="display:flex; flex-direction:column; gap:10px; margin-top:8px;"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">Project</div>
+        <div class="rowBtns">
+          <button class="ctrl primary small" id="btnExport">⬇ Export / Import JSON</button>
+        </div>
+        <div class="legend">
+          <div><b>Center / Corner / Edge</b> — snap pieces to hex centres, corners or edge midpoints.</div>
+          <div><b>Opaque card</b> — blocks light along a single hex edge only (unlike a full Wall Hex).</div>
+          <div><b>Source cylinders are opaque</b> — beams are blocked by another source's housing unless they pass through its slit.</div>
+          <div>Multiple sources and targets are allowed per level; a target's intensity is the sum of every beam that lands on it.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>Project autosaves to this browser. Use Export / Import to save a .json file or move levels between browsers.</footer>
+</div>
+
+<!-- Export / Import modal -->
+<div class="modalOverlay" id="modalOverlay">
+  <div class="modalBox">
+    <h2>Export / Import Project</h2>
+    <p class="sub">Download this JSON to save your levels, or paste/upload JSON here to load levels into the builder.</p>
+    <textarea id="modalTextarea" spellcheck="false"></textarea>
+    <div class="modalMsg" id="modalMsg"></div>
+    <div class="modalBtnRow">
+      <button class="ctrl small" id="btnRefreshExport">↻ Refresh from builder</button>
+      <button class="ctrl primary small" id="btnDownloadJson">⬇ Download .json</button>
+      <button class="ctrl small" id="btnCopyJson">⧉ Copy</button>
+      <label class="ctrl small" style="cursor:pointer;">⬆ Load file<input type="file" id="fileImport" accept="application/json" style="display:none"></label>
+      <button class="ctrl danger small" id="btnApplyImport">Apply text to builder</button>
+      <span style="flex:1"></span>
+      <button class="ctrl small" id="btnCloseModal">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- geometry constants ----------
+  const STAGE_SIZE = 760;      // fixed square canvas — every level renders into the same square
+  const OVERSCAN = 1.05;       // hexes deliberately overflow every edge of the square by ~5%
+  const EPS_MIN = 0.5;
+  const LENS_BOOST = 1.6, LENS_PENALTY = 0.9;
+  const SLIT_HALF_DEG = 20;
+
+  function rad(d){ return d*Math.PI/180; }
+  function norm360(d){ return ((d%360)+360)%360; }
+  function num(v,d){ return (typeof v==='number' && isFinite(v)) ? v : d; }
+  function fmt(n){ return (Math.round(n*100)/100).toFixed(2); }
+  function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function axialLocal(hexR,q,r){
+    return { x: hexR*Math.sqrt(3)*(q+r/2), y: hexR*1.5*r };
+  }
+  function hexVerts(cx,cy,size){
+    const v=[];
+    for(let i=0;i<6;i++){
+      const a = rad(60*i-30);
+      v.push({x:cx+size*Math.cos(a), y:cy+size*Math.sin(a)});
+    }
+    return v;
+  }
+  function hexEdges(cx,cy,size){
+    const v = hexVerts(cx,cy,size);
+    const e = [];
+    for(let i=0;i<6;i++) e.push([v[i], v[(i+1)%6]]);
+    return e;
+  }
+
+  // A square field of hexes is built from offset (row,col) coordinates rather than
+  // raw axial q/r ranges — raw axial ranges form a rhombus/parallelogram. Converting
+  // each row's columns to axial with a per-row offset yields a rectangular field.
+  function forEachGridHex(N, cb){
+    for(let rr=0; rr<N; rr++){
+      const rowOffset = Math.floor(rr/2);
+      for(let cc=0; cc<N; cc++) cb(cc-rowOffset, rr);
+    }
+  }
+
+  // ---------- data model ----------
+  let idCounter = 1;
+  function nextId(){ return 'p'+(idCounter++); }
+
+  function newLevel(name){
+    return {
+      name: name || 'New Level',
+      hint: '',
+      gridSize: 8,
+      sources: [],
+      pieces: [],
+      targets: [],
+      walls: [],
+      cards: [],
+      // geometry (computed by computeLevelGeometry)
+      hexR:36, k:1, lensR:14.4, mirrorHalf:21.6, targetR:14.4, cylOuter:23.76, cylInner:18, eps:0.75,
+      offsetX:0, offsetY:0, width:STAGE_SIZE, height:STAGE_SIZE, hexList:[], anchors:[]
+    };
+  }
+
+  function computeLevelGeometry(L){
+    const N = Math.max(3, Math.min(15, Math.round(L.gridSize)));
+    L.gridSize = N;
+
+    let xs=[], ys=[];
+    forEachGridHex(N, (q,r)=>{
+      const c = axialLocal(1,q,r);
+      hexVerts(c.x,c.y,1).forEach(v=>{ xs.push(v.x); ys.push(v.y); });
+    });
+    const minXu=Math.min(...xs), maxXu=Math.max(...xs);
+    const minYu=Math.min(...ys), maxYu=Math.max(...ys);
+    const w0=maxXu-minXu, h0=maxYu-minYu;
+    const scale = (STAGE_SIZE/Math.min(w0,h0))*OVERSCAN;
+
+    L.hexR = scale;
+    L.k = scale/36;
+    L.lensR = scale*0.4;
+    L.mirrorHalf = scale*0.6;
+    L.targetR = scale*0.4;
+    L.cylOuter = scale*0.66;
+    L.cylInner = scale*0.5;
+    L.eps = Math.max(EPS_MIN, scale*0.02);
+
+    const fieldW = w0*scale, fieldH = h0*scale;
+    L.offsetX = -(minXu*scale) + (STAGE_SIZE-fieldW)/2;
+    L.offsetY = -(minYu*scale) + (STAGE_SIZE-fieldH)/2;
+    L.width = STAGE_SIZE; L.height = STAGE_SIZE;
+
+    L.hexList = [];
+    L.anchors = [];
+    forEachGridHex(N, (q,r)=>{
+      const c = hexPx(L,q,r);
+      L.hexList.push({q,r,x:c.x,y:c.y});
+      L.anchors.push({x:c.x,y:c.y,q,r,kind:'center',idx:0});
+      const verts = hexVerts(c.x,c.y,L.hexR);
+      for(let i=0;i<6;i++) L.anchors.push({x:verts[i].x,y:verts[i].y,q,r,kind:'corner',idx:i});
+      for(let i=0;i<6;i++){
+        const a=verts[i], b=verts[(i+1)%6];
+        L.anchors.push({x:(a.x+b.x)/2,y:(a.y+b.y)/2,q,r,kind:'edge',idx:i});
+      }
+    });
+  }
+
+  function hexPx(L,q,r){
+    const p = axialLocal(L.hexR,q,r);
+    return { x: p.x+L.offsetX, y: p.y+L.offsetY };
+  }
+  function anchorPx(L, obj){
+    const c = hexPx(L, obj.q, obj.r);
+    if(!obj.kind || obj.kind==='center') return c;
+    const verts = hexVerts(c.x,c.y,L.hexR);
+    if(obj.kind==='corner'){
+      const i = ((obj.idx%6)+6)%6;
+      return {x:verts[i].x, y:verts[i].y};
+    }
+    const i = ((obj.idx%6)+6)%6;
+    const a = verts[i], b = verts[(i+1)%6];
+    return {x:(a.x+b.x)/2, y:(a.y+b.y)/2};
+  }
+  function cardSegment(L, card){
+    const c = hexPx(L, card.q, card.r);
+    const verts = hexVerts(c.x,c.y,L.hexR);
+    const i = ((card.edgeIdx%6)+6)%6;
+    return [verts[i], verts[(i+1)%6]];
+  }
+  function collectAnchors(L){ return L.anchors; }
+
+  // ---------- project state ----------
+  let project = { levels: [ newLevel('Level 1') ] };
+  let currentLevelIndex = 0;
+  let level = project.levels[0];
+  computeLevelGeometry(level);
+
+  let currentTool = 'select';
+  let selected = null; // reference to a source / target / mirror / lens object
+
+  // interaction state
+  let activePointerPiece = null;
+  let dragMoved = false;
+  let dragStart = null;
+  let lastSnappedAngle = null;
+  let hoverPiece = null;
+  let hoverPos = null;
+  let hoverSeg = null;
+  let lastSolved = false;
+
+  // ---------- DOM refs ----------
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const toastEl = document.getElementById('toast');
+
+  // ---------- level list / meta UI ----------
+  function renderLevelList(){
+    const ul = document.getElementById('levelList');
+    ul.innerHTML = '';
+    project.levels.forEach((L,i)=>{
+      const li = document.createElement('li');
+      li.className = 'levelItem' + (i===currentLevelIndex ? ' active' : '');
+      li.innerHTML = '<span class="levelItemName">'+(i+1)+'. '+escapeHtml(L.name||'Untitled')+'</span>';
+      li.addEventListener('click', ()=>switchLevel(i));
+      ul.appendChild(li);
+    });
+  }
+
+  function syncMetaFields(){
+    document.getElementById('levelNameInput').value = level.name;
+    document.getElementById('levelHintInput').value = level.hint;
+    document.getElementById('gridSizeSlider').value = level.gridSize;
+    document.getElementById('gridSizeVal').textContent = level.gridSize;
+  }
+
+  function switchLevel(i){
+    currentLevelIndex = i;
+    level = project.levels[i];
+    computeLevelGeometry(level);
+    canvas.width = level.width;
+    canvas.height = level.height;
+    selected = null;
+    hoverPiece = null; hoverPos = null; hoverSeg = null;
+    lastSolved = false;
+    toastEl.classList.remove('show');
+    renderLevelList();
+    syncMetaFields();
+    renderPropsPanel();
+    autosave();
+  }
+
+  document.getElementById('btnNewLevel').addEventListener('click', ()=>{
+    const L = newLevel('Level '+(project.levels.length+1));
+    computeLevelGeometry(L);
+    project.levels.push(L);
+    switchLevel(project.levels.length-1);
+  });
+  document.getElementById('btnDupLevel').addEventListener('click', ()=>{
+    const clone = JSON.parse(JSON.stringify(level));
+    clone.name = level.name + ' (copy)';
+    clone.sources.forEach(s=>{ s.id = nextId(); });
+    clone.pieces.forEach(p=>{ p.id = nextId(); });
+    clone.targets.forEach(t=>{ t.id = nextId(); });
+    computeLevelGeometry(clone);
+    project.levels.splice(currentLevelIndex+1, 0, clone);
+    switchLevel(currentLevelIndex+1);
+  });
+  document.getElementById('btnUpLevel').addEventListener('click', ()=>{
+    if(currentLevelIndex===0) return;
+    const arr = project.levels;
+    [arr[currentLevelIndex-1], arr[currentLevelIndex]] = [arr[currentLevelIndex], arr[currentLevelIndex-1]];
+    switchLevel(currentLevelIndex-1);
+  });
+  document.getElementById('btnDownLevel').addEventListener('click', ()=>{
+    const arr = project.levels;
+    if(currentLevelIndex>=arr.length-1) return;
+    [arr[currentLevelIndex+1], arr[currentLevelIndex]] = [arr[currentLevelIndex], arr[currentLevelIndex+1]];
+    switchLevel(currentLevelIndex+1);
+  });
+  document.getElementById('btnDelLevel').addEventListener('click', ()=>{
+    if(project.levels.length<=1){ alert('A project needs at least one level.'); return; }
+    if(!confirm('Delete "'+level.name+'"? This cannot be undone.')) return;
+    project.levels.splice(currentLevelIndex,1);
+    switchLevel(Math.max(0,currentLevelIndex-1));
+  });
+  document.getElementById('btnClearLevel').addEventListener('click', ()=>{
+    if(!confirm('Clear all pieces, walls and cards from this level?')) return;
+    level.sources=[]; level.pieces=[]; level.targets=[]; level.walls=[]; level.cards=[];
+    selected=null; renderPropsPanel(); autosave();
+  });
+
+  document.getElementById('levelNameInput').addEventListener('input', evt=>{
+    level.name = evt.target.value; renderLevelList(); autosave();
+  });
+  document.getElementById('levelHintInput').addEventListener('input', evt=>{
+    level.hint = evt.target.value; autosave();
+  });
+  document.getElementById('gridSizeSlider').addEventListener('input', evt=>{
+    const n = Math.max(3, Math.min(15, Math.round(num(parseFloat(evt.target.value),8))));
+    level.gridSize = n;
+    document.getElementById('gridSizeVal').textContent = n;
+    computeLevelGeometry(level);
+    autosave();
+  });
+
+  // ---------- palette ----------
+  document.querySelectorAll('.toolBtn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.toolBtn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTool = btn.dataset.tool;
+      if(currentTool!=='select'){ selected=null; renderPropsPanel(); }
+      hoverPos=null; hoverSeg=null;
+      updateCursor();
+    });
+  });
+  function updateCursor(){
+    canvas.style.cursor = currentTool==='select' ? (hoverPiece?'grab':'default') : (currentTool==='erase' ? 'crosshair' : 'copy');
+  }
+
+  // ---------- properties panel ----------
+  const modeFieldMap = { atleast:['fldMin'], atmost:['fldMax'], between:['fldMin','fldMax'], exact:['fldValue','fldTol'] };
+
+  function renderPropsPanel(){
+    const empty = document.getElementById('propsEmpty');
+    const secSource = document.getElementById('propsSource');
+    const secPiece = document.getElementById('propsPiece');
+    const secTarget = document.getElementById('propsTarget');
+    empty.style.display='none'; secSource.style.display='none'; secPiece.style.display='none'; secTarget.style.display='none';
+
+    if(!selected){ empty.style.display=''; return; }
+    if(selected.type==='source'){
+      secSource.style.display='';
+      document.getElementById('srcAngle').value = Math.round(norm360(selected.angle));
+      return;
+    }
+    if(selected.type==='target'){
+      secTarget.style.display='';
+      document.getElementById('targetMode').value = selected.mode;
+      document.getElementById('targetMin').value = selected.min;
+      document.getElementById('targetMax').value = selected.max;
+      document.getElementById('targetValue').value = selected.value;
+      document.getElementById('targetTol').value = selected.tolerance;
+      updateTargetFieldVisibility();
+      return;
+    }
+    secPiece.style.display='';
+    document.getElementById('pieceTitle').textContent = selected.type==='lens' ? 'Lens' : 'Mirror';
+    document.getElementById('pieceAngle').value = Math.round(norm360(selected.angle));
+  }
+
+  function updateTargetFieldVisibility(){
+    const show = modeFieldMap[selected.mode] || [];
+    ['fldMin','fldMax','fldValue','fldTol'].forEach(id=>{
+      document.getElementById(id).style.display = show.indexOf(id)>=0 ? '' : 'none';
+    });
+  }
+
+  function removeSelected(){
+    if(!selected) return;
+    if(selected.type==='source') level.sources = level.sources.filter(s=>s!==selected);
+    else if(selected.type==='target') level.targets = level.targets.filter(t=>t!==selected);
+    else level.pieces = level.pieces.filter(p=>p!==selected);
+    selected = null; renderPropsPanel(); autosave();
+  }
+
+  document.getElementById('srcAngle').addEventListener('input', evt=>{
+    if(!selected || selected.type!=='source') return;
+    const v = norm360(num(parseFloat(evt.target.value),0));
+    selected.angle = v; selected.targetAngle = v; autosave();
+  });
+  document.getElementById('srcDelete').addEventListener('click', removeSelected);
+  document.getElementById('pieceAngle').addEventListener('input', evt=>{
+    if(!selected || (selected.type!=='mirror' && selected.type!=='lens')) return;
+    const v = norm360(num(parseFloat(evt.target.value),0));
+    selected.angle = v; selected.targetAngle = v; autosave();
+  });
+  document.getElementById('pieceDelete').addEventListener('click', removeSelected);
+  document.getElementById('targetMode').addEventListener('change', evt=>{
+    if(!selected || selected.type!=='target') return;
+    selected.mode = evt.target.value;
+    updateTargetFieldVisibility(); autosave();
+  });
+  ['targetMin','targetMax','targetValue','targetTol'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', evt=>{
+      if(!selected || selected.type!=='target') return;
+      const key = id==='targetMin'?'min':id==='targetMax'?'max':id==='targetValue'?'value':'tolerance';
+      selected[key] = Math.max(0, num(parseFloat(evt.target.value),0));
+      autosave();
+    });
+  });
+  document.getElementById('targetDelete').addEventListener('click', removeSelected);
+
+  window.addEventListener('keydown', evt=>{
+    if((evt.key==='Delete' || evt.key==='Backspace') && selected && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){
+      removeSelected();
+    }
+  });
+
+  // ---------- finders ----------
+  function findRotatablePieceNear(x,y){
+    const all = [...level.sources, ...level.pieces];
+    let best=null, bestD=level.hexR*0.62;
+    all.forEach(p=>{
+      const c = anchorPx(level,p);
+      const d = Math.hypot(x-c.x,y-c.y);
+      if(d<bestD){ bestD=d; best=p; }
+    });
+    return best;
+  }
+  function findTargetNear(x,y){
+    let best=null, bestD=level.hexR*0.62;
+    level.targets.forEach(t=>{
+      const c = anchorPx(level,t);
+      const d = Math.hypot(x-c.x,y-c.y);
+      if(d<bestD){ bestD=d; best=t; }
+    });
+    return best;
+  }
+  function findNearestHex(x,y){
+    let best=null, bestD=level.hexR*0.85;
+    level.hexList.forEach(h=>{
+      const d = Math.hypot(x-h.x,y-h.y);
+      if(d<bestD){ bestD=d; best=h; }
+    });
+    return best;
+  }
+  function findNearestAnchor(x,y,kindFilter){
+    let best=null, bestD=level.hexR*0.55;
+    level.anchors.forEach(a=>{
+      if(kindFilter && a.kind!==kindFilter) return;
+      const d = Math.hypot(x-a.x,y-a.y);
+      if(d<bestD){ bestD=d; best=a; }
+    });
+    return best;
+  }
+  function distToSegment(px,py,A,B){
+    const vx=B.x-A.x, vy=B.y-A.y, wx=px-A.x, wy=py-A.y;
+    const len2 = vx*vx+vy*vy || 1e-9;
+    let t = (wx*vx+wy*vy)/len2;
+    t = Math.max(0,Math.min(1,t));
+    const cx=A.x+vx*t, cy=A.y+vy*t;
+    return Math.hypot(px-cx,py-cy);
+  }
+  function segKey(seg){
+    const pts = [[Math.round(seg[0].x),Math.round(seg[0].y)],[Math.round(seg[1].x),Math.round(seg[1].y)]];
+    pts.sort((a,b)=> a[0]-b[0] || a[1]-b[1]);
+    return pts.map(p=>p.join(',')).join('|');
+  }
+  function pointKeyFromPos(pos){ return Math.round(pos.x)+','+Math.round(pos.y); }
+
+  // ---------- placement ----------
+  function removeAnyPointPieceAt(pos){
+    const key = pointKeyFromPos(pos);
+    level.sources = level.sources.filter(s=> pointKeyFromPos(anchorPx(level,s))!==key);
+    level.targets = level.targets.filter(t=> pointKeyFromPos(anchorPx(level,t))!==key);
+    level.pieces = level.pieces.filter(p=> pointKeyFromPos(anchorPx(level,p))!==key);
+  }
+  function placeSource(anchor){
+    const pos = {x:anchor.x,y:anchor.y};
+    removeAnyPointPieceAt(pos);
+    const s = { id:nextId(), type:'source', q:anchor.q, r:anchor.r, kind:anchor.kind, idx:anchor.idx, angle:105, targetAngle:105 };
+    level.sources.push(s);
+    selected = s; renderPropsPanel();
+  }
+  function placePiece(type, anchor){
+    const pos = {x:anchor.x,y:anchor.y};
+    removeAnyPointPieceAt(pos);
+    const p = { id:nextId(), type, q:anchor.q, r:anchor.r, kind:anchor.kind, idx:anchor.idx, angle:90, targetAngle:90 };
+    level.pieces.push(p);
+    selected = p; renderPropsPanel();
+  }
+  function placeTarget(anchor){
+    const pos = {x:anchor.x,y:anchor.y};
+    removeAnyPointPieceAt(pos);
+    const base = (selected && selected.type==='target') ? selected : null;
+    const t = {
+      id:nextId(), type:'target', q:anchor.q, r:anchor.r, kind:anchor.kind, idx:anchor.idx,
+      mode: base?base.mode:'atleast',
+      min: base?base.min:1.5, max: base?base.max:3, value: base?base.value:1.5, tolerance: base?base.tolerance:0.15
+    };
+    level.targets.push(t);
+    selected = t; renderPropsPanel();
+  }
+  function placeOrRemoveWall(hex){
+    const idx = level.walls.findIndex(w=>w.q===hex.q && w.r===hex.r);
+    if(idx>=0) level.walls.splice(idx,1); else level.walls.push({q:hex.q, r:hex.r});
+  }
+  function placeOrRemoveCard(anchor){
+    const seg = cardSegment(level, {q:anchor.q, r:anchor.r, edgeIdx:anchor.idx});
+    const key = segKey(seg);
+    const existingIdx = level.cards.findIndex(c=> segKey(cardSegment(level,c))===key);
+    if(existingIdx>=0) level.cards.splice(existingIdx,1);
+    else level.cards.push({q:anchor.q, r:anchor.r, edgeIdx:anchor.idx});
+  }
+  function eraseNear(x,y){
+    const candidates = [];
+    level.sources.forEach((s,i)=>{ const c=anchorPx(level,s); candidates.push({kind:'source', idx:i, d:Math.hypot(x-c.x,y-c.y)}); });
+    level.targets.forEach((t,i)=>{ const c=anchorPx(level,t); candidates.push({kind:'target', idx:i, d:Math.hypot(x-c.x,y-c.y)}); });
+    level.pieces.forEach((p,i)=>{ const c=anchorPx(level,p); candidates.push({kind:'piece', idx:i, d:Math.hypot(x-c.x,y-c.y)}); });
+    level.walls.forEach((w,i)=>{ const c=hexPx(level,w.q,w.r); candidates.push({kind:'wall', idx:i, d:Math.hypot(x-c.x,y-c.y)}); });
+    level.cards.forEach((cd,i)=>{
+      const seg = cardSegment(level,cd);
+      candidates.push({kind:'card', idx:i, d:distToSegment(x,y,seg[0],seg[1])});
+    });
+    candidates.sort((a,b)=>a.d-b.d);
+    const best = candidates[0];
+    if(!best || best.d > level.hexR*0.75) return false;
+    if(best.kind==='source'){ const removed=level.sources[best.idx]; level.sources.splice(best.idx,1); if(selected===removed) selected=null; }
+    else if(best.kind==='target'){ const removed=level.targets[best.idx]; level.targets.splice(best.idx,1); if(selected===removed) selected=null; }
+    else if(best.kind==='piece'){ const removed=level.pieces[best.idx]; level.pieces.splice(best.idx,1); if(selected===removed) selected=null; }
+    else if(best.kind==='wall') level.walls.splice(best.idx,1);
+    else if(best.kind==='card') level.cards.splice(best.idx,1);
+    renderPropsPanel();
+    return true;
+  }
+
+  function setPieceTargetAngle(p, snapped){
+    const cur = p.targetAngle;
+    let diff = ((snapped - norm360(cur) + 540)%360)-180;
+    p.targetAngle = cur + diff;
+  }
+
+  // ---------- beam engine ----------
+  function segIntersect(O,D,A,B,minT){
+    const v1x=O.x-A.x, v1y=O.y-A.y;
+    const v2x=B.x-A.x, v2y=B.y-A.y;
+    const v3x=-D.y, v3y=D.x;
+    const dot=v2x*v3x+v2y*v3y;
+    if(Math.abs(dot)<1e-9) return null;
+    const t1=(v2x*v1y - v2y*v1x)/dot;
+    const t2=(v1x*v3x+v1y*v3y)/dot;
+    if(t1>minT && t2>=0 && t2<=1) return {t:t1, x:O.x+D.x*t1, y:O.y+D.y*t1};
+    return null;
+  }
+  function circleIntersect(O,D,C,r,minT){
+    const ocx=O.x-C.x, ocy=O.y-C.y;
+    const b=2*(ocx*D.x+ocy*D.y);
+    const c=ocx*ocx+ocy*ocy-r*r;
+    const disc=b*b-4*c;
+    if(disc<0) return null;
+    const sq=Math.sqrt(disc);
+    let t0=(-b-sq)/2, t1=(-b+sq)/2;
+    if(t0>t1){ const tmp=t0; t0=t1; t1=tmp; }
+    let entry=null, exit=null;
+    if(t0>minT){ entry=t0; exit=t1; }
+    else if(t1>minT){ entry=t1; exit=t1; }
+    if(entry===null) return null;
+    return {tEntry:entry, tExit:exit, xEntry:O.x+D.x*entry, yEntry:O.y+D.y*entry, xExit:O.x+D.x*exit, yExit:O.y+D.y*exit};
+  }
+  function getBlockerSegs(){
+    const segs = [];
+    level.walls.forEach(w=>{
+      const c = hexPx(level,w.q,w.r);
+      hexEdges(c.x,c.y,level.hexR).forEach(e=>segs.push(e));
+    });
+    level.cards.forEach(cd=> segs.push(cardSegment(level,cd)) );
+    return segs;
+  }
+
+  // A source's cylinder is solid everywhere except its narrow emission slit.
+  // Any beam (including from other sources) that meets the outer wall outside
+  // the slit angle is stopped there; a beam that enters via the slit but would
+  // exit into a solid section on the far side is stopped at that exit point.
+  function sourceCylinderBlock(O,D,src,minT){
+    const c = anchorPx(level, src);
+    const res = circleIntersect(O,D,c,level.cylOuter,minT);
+    if(!res) return null;
+    const gapCenter = norm360(src.angle);
+    function angleOf(px,py){ return norm360(Math.atan2(py-c.y,px-c.x)*180/Math.PI); }
+    function inGap(ang){
+      let d = Math.abs(norm360(ang-gapCenter));
+      d = Math.min(d,360-d);
+      return d <= SLIT_HALF_DEG + 0.05;
+    }
+    const entryAngle = angleOf(res.xEntry,res.yEntry);
+    if(!inGap(entryAngle)) return {t:res.tEntry, x:res.xEntry, y:res.yEntry};
+    if(res.tExit > res.tEntry + 1e-6){
+      const exitAngle = angleOf(res.xExit,res.yExit);
+      if(!inGap(exitAngle)) return {t:res.tExit, x:res.xExit, y:res.yExit};
+    }
+    return null;
+  }
+
+  function evaluateTarget(t, hit, intensity){
+    if(!t || !hit) return false;
+    if(t.mode==='atleast') return intensity >= t.min;
+    if(t.mode==='atmost') return intensity <= t.max;
+    if(t.mode==='between') return intensity >= t.min && intensity <= t.max;
+    if(t.mode==='exact') return Math.abs(intensity - t.value) <= t.tolerance;
+    return false;
+  }
+  function conditionLabel(t){
+    if(!t) return '';
+    if(t.mode==='atleast') return '≥ '+fmt(t.min);
+    if(t.mode==='atmost') return '≤ '+fmt(t.max);
+    if(t.mode==='between') return fmt(t.min)+'–'+fmt(t.max);
+    if(t.mode==='exact') return '≈ '+fmt(t.value)+' ±'+fmt(t.tolerance);
+    return '';
+  }
+
+  function traceSingleBeam(src, blockerSegs, boundaryEdges){
+    const O0 = anchorPx(level, src);
+    let O = {x:O0.x, y:O0.y};
+    let D = {x:Math.cos(rad(src.angle)), y:Math.sin(rad(src.angle))};
+    let intensity = 1.0;
+    const segments = [];
+    const activated = new Set();
+    const closeness = new Map();
+    let hitTargetId=null, hitIntensity=0;
+    const eps = level.eps;
+
+    for(let bounce=0; bounce<60; bounce++){
+      let best = null;
+
+      boundaryEdges.forEach(([A,B])=>{
+        const h = segIntersect(O,D,A,B,eps);
+        if(h && (!best || h.t<best.t)) best = {t:h.t, type:'boundary', x:h.x, y:h.y};
+      });
+      blockerSegs.forEach(([A,B])=>{
+        const h = segIntersect(O,D,A,B,eps);
+        if(h && (!best || h.t<best.t)) best = {t:h.t, type:'wall', x:h.x, y:h.y};
+      });
+      level.sources.forEach(s=>{
+        const hitc = sourceCylinderBlock(O,D,s,eps);
+        if(hitc && (!best || hitc.t<best.t)) best = {t:hitc.t, type:'wall', x:hitc.x, y:hitc.y};
+      });
+      level.pieces.forEach(p=>{
+        if(p.type==='mirror'){
+          const c = anchorPx(level,p);
+          const rA = rad(p.angle);
+          const A = {x:c.x+Math.cos(rA)*level.mirrorHalf, y:c.y+Math.sin(rA)*level.mirrorHalf};
+          const B = {x:c.x-Math.cos(rA)*level.mirrorHalf, y:c.y-Math.sin(rA)*level.mirrorHalf};
+          const h = segIntersect(O,D,A,B,eps);
+          if(h && (!best || h.t<best.t)) best = {t:h.t, type:'mirror', piece:p, x:h.x, y:h.y};
+        } else if(p.type==='lens'){
+          const c = anchorPx(level,p);
+          const res = circleIntersect(O,D,c,level.lensR,eps);
+          if(res && (!best || res.tEntry<best.t)) best = {t:res.tEntry, type:'lens', piece:p, x:res.xEntry, y:res.yEntry, exitX:res.xExit, exitY:res.yExit};
+        }
+      });
+      level.targets.forEach(tg=>{
+        const c = anchorPx(level, tg);
+        const res = circleIntersect(O,D,c,level.targetR,eps);
+        if(res && (!best || res.tEntry<best.t)) best = {t:res.tEntry, type:'target', targetObj:tg, x:res.xEntry, y:res.yEntry};
+      });
+
+      if(!best) break;
+      segments.push({x1:O.x,y1:O.y,x2:best.x,y2:best.y,intensity});
+      if(best.type==='boundary' || best.type==='wall') break;
+
+      if(best.type==='mirror'){
+        const p = best.piece;
+        const rA = rad(p.angle);
+        const lineDir = {x:Math.cos(rA), y:Math.sin(rA)};
+        const normal = {x:-lineDir.y, y:lineDir.x};
+        const dDotN = D.x*normal.x + D.y*normal.y;
+        D = {x:D.x-2*dDotN*normal.x, y:D.y-2*dDotN*normal.y};
+        const len = Math.hypot(D.x,D.y); D.x/=len; D.y/=len;
+        O = {x:best.x+D.x*eps*2, y:best.y+D.y*eps*2};
+        activated.add(p.id);
+        continue;
+      }
+      if(best.type==='lens'){
+        const p = best.piece;
+        const rayAngle = norm360(Math.atan2(D.y,D.x)*180/Math.PI) % 180;
+        const lensAngle = norm360(p.angle) % 180;
+        let diff = Math.abs(rayAngle-lensAngle);
+        diff = Math.min(diff, 180-diff);
+        const close = 1 - diff/90;
+        const factor = LENS_PENALTY + (LENS_BOOST-LENS_PENALTY)*close;
+        intensity *= factor;
+        segments.push({x1:best.x,y1:best.y,x2:best.exitX,y2:best.exitY,intensity});
+        closeness.set(p.id, close);
+        if(close>0.5) activated.add(p.id);
+        O = {x:best.exitX+D.x*eps*2, y:best.exitY+D.y*eps*2};
+        continue;
+      }
+      if(best.type==='target'){ hitTargetId = best.targetObj.id; hitIntensity = intensity; break; }
+    }
+    return { segments, activated, closeness, hitTargetId, hitIntensity, emitting: segments.length>0 };
+  }
+
+  function traceAllBeams(){
+    const boundaryEdges = [
+      [{x:0,y:0},{x:canvas.width,y:0}],
+      [{x:canvas.width,y:0},{x:canvas.width,y:canvas.height}],
+      [{x:canvas.width,y:canvas.height},{x:0,y:canvas.height}],
+      [{x:0,y:canvas.height},{x:0,y:0}]
+    ];
+    const blockerSegs = getBlockerSegs();
+
+    const segments = [];
+    const activated = new Set();
+    const closeness = new Map();
+    const targetIntensity = new Map();
+    const targetHitAtAll = new Map();
+    const emittingSources = new Set();
+
+    level.sources.forEach(src=>{
+      const r = traceSingleBeam(src, blockerSegs, boundaryEdges);
+      segments.push(...r.segments);
+      r.activated.forEach(id=>activated.add(id));
+      r.closeness.forEach((v,k)=>{ closeness.set(k, Math.max(v, closeness.get(k)||0)); });
+      if(r.emitting) emittingSources.add(src.id);
+      if(r.hitTargetId){
+        targetIntensity.set(r.hitTargetId, (targetIntensity.get(r.hitTargetId)||0) + r.hitIntensity);
+        targetHitAtAll.set(r.hitTargetId, true);
+      }
+    });
+
+    return { segments, activated, closeness, targetIntensity, targetHitAtAll, emittingSources };
+  }
+
+  // ---------- drawing ----------
+  function beamColor(i){
+    if(i<=0.05) return 'rgba(90,100,120,0.55)';
+    const hue = Math.max(45, 205 - i*55);
+    const light = Math.min(85, 48 + i*13);
+    return `hsl(${hue}, 95%, ${light}%)`;
+  }
+  function lerpColor(c1,c2,t){
+    const a=parseInt(c1.slice(1),16), b=parseInt(c2.slice(1),16);
+    const ar=(a>>16)&255, ag=(a>>8)&255, ab=a&255;
+    const br=(b>>16)&255, bg=(b>>8)&255, bb=b&255;
+    const r=Math.round(ar+(br-ar)*t), g=Math.round(ag+(bg-ag)*t), bl=Math.round(ab+(bb-ab)*t);
+    return `rgb(${r},${g},${bl})`;
+  }
+  function roundRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+  function drawHexPath(cx,cy,size){
+    const v = hexVerts(cx,cy,size);
+    ctx.beginPath();
+    ctx.moveTo(v[0].x,v[0].y);
+    for(let i=1;i<6;i++) ctx.lineTo(v[i].x,v[i].y);
+    ctx.closePath();
+  }
+
+  function drawGrid(){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    level.hexList.forEach(h=>{
+      drawHexPath(h.x,h.y,level.hexR*0.96);
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  function drawAnchorHints(){
+    if(['select','erase'].includes(currentTool)) return;
+    ctx.save();
+    if(currentTool==='wall'){
+      level.hexList.forEach(h=>{
+        ctx.beginPath(); ctx.arc(h.x,h.y,3,0,Math.PI*2);
+        ctx.fillStyle='rgba(255,159,74,0.35)'; ctx.fill();
+      });
+    } else {
+      level.anchors.forEach(a=>{
+        if(currentTool==='card' && a.kind!=='edge') return;
+        ctx.beginPath();
+        ctx.arc(a.x,a.y, a.kind==='center'?3:2, 0, Math.PI*2);
+        ctx.fillStyle = a.kind==='center' ? 'rgba(127,216,255,0.32)' : a.kind==='corner' ? 'rgba(255,210,127,0.3)' : 'rgba(107,255,176,0.3)';
+        ctx.fill();
+      });
+    }
+    ctx.restore();
+  }
+
+  function drawWalls(){
+    level.walls.forEach(w=>{
+      const p = hexPx(level,w.q,w.r);
+      ctx.save();
+      drawHexPath(p.x,p.y,level.hexR*0.92);
+      ctx.fillStyle = '#241c1c';
+      ctx.fill();
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(120,70,70,0.5)';
+      ctx.lineWidth = 3*level.k;
+      for(let i=-level.hexR*2;i<level.hexR*3;i+=10*level.k){
+        ctx.beginPath();
+        ctx.moveTo(p.x+i-level.hexR, p.y+level.hexR);
+        ctx.lineTo(p.x+i+level.hexR, p.y-level.hexR);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }
+
+  function drawCards(){
+    level.cards.forEach(cd=>{
+      const [A,B] = cardSegment(level,cd);
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#2a1e1e';
+      ctx.lineWidth = 9*level.k;
+      ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke();
+      ctx.strokeStyle = 'rgba(168,106,106,0.75)';
+      ctx.lineWidth = 3*level.k;
+      ctx.setLineDash([6*level.k,4*level.k]);
+      ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  function drawBeam(segments){
+    ctx.save();
+    ctx.lineCap = 'round';
+    segments.forEach(s=>{
+      const w = Math.min(4 + s.intensity*4, 20)*level.k;
+      ctx.strokeStyle = beamColor(s.intensity);
+      ctx.globalAlpha = 0.25;
+      ctx.lineWidth = w*2.4;
+      ctx.shadowColor = beamColor(s.intensity);
+      ctx.shadowBlur = (18 + s.intensity*8)*level.k;
+      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+    });
+    segments.forEach(s=>{
+      const w = Math.min(3 + s.intensity*3, 12)*level.k;
+      ctx.strokeStyle = beamColor(s.intensity);
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = w;
+      ctx.shadowBlur = 6*level.k;
+      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  function drawSourceCylinder(src, emitting){
+    const {x,y} = anchorPx(level, src);
+    const k = level.k;
+    const pulse = 1 + Math.sin(Date.now()/260)*0.08;
+
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.shadowColor = '#ffd27f';
+    ctx.shadowBlur = 20*k;
+    const grad = ctx.createRadialGradient(0,0,2*k,0,0,11*k*pulse);
+    grad.addColorStop(0,'#ffffff'); grad.addColorStop(0.5,'#ffe6b0'); grad.addColorStop(1,'rgba(255,210,127,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(0,0,11*k*pulse,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff8e8';
+    ctx.beginPath(); ctx.arc(0,0,5*k,0,Math.PI*2); ctx.fill();
+
+    const a = rad(src.angle);
+    const gapStart = a - rad(SLIT_HALF_DEG);
+    const gapEnd = a + rad(SLIT_HALF_DEG);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0,0,level.cylOuter, gapEnd, gapStart + Math.PI*2);
+    ctx.arc(0,0,level.cylInner, gapStart + Math.PI*2, gapEnd, true);
+    ctx.closePath();
+    const wallGrad = ctx.createLinearGradient(-level.cylOuter,-level.cylOuter,level.cylOuter,level.cylOuter);
+    wallGrad.addColorStop(0,'#5a6784');
+    wallGrad.addColorStop(0.5,'#9aa8c8');
+    wallGrad.addColorStop(1,'#3f4a66');
+    ctx.fillStyle = wallGrad;
+    ctx.shadowColor = 'rgba(160,180,220,0.4)';
+    ctx.shadowBlur = 6*k;
+    ctx.fill();
+    ctx.restore();
+
+    if(emitting){
+      ctx.save();
+      ctx.rotate(a);
+      const spillGrad = ctx.createRadialGradient(0,0,level.cylInner,0,0,level.cylOuter+8*k);
+      spillGrad.addColorStop(0,'rgba(255,230,176,0.85)');
+      spillGrad.addColorStop(1,'rgba(255,230,176,0)');
+      ctx.fillStyle = spillGrad;
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.arc(0,0,level.cylOuter+8*k, -rad(SLIT_HALF_DEG), rad(SLIT_HALF_DEG));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+
+    if(selected===src) drawSelectionRing(x,y);
+  }
+
+  function drawTarget(t, hit, intensity){
+    const {x,y} = anchorPx(level, t);
+    const k = level.k;
+    const solved = evaluateTarget(t, hit, intensity);
+    let color, glow;
+    if(solved){ color = '#6bffb0'; glow = '#6bffb0'; }
+    else if(hit){ color = '#ff9f4a'; glow = '#ff9f4a'; }
+    else { color = '#3a4568'; glow = 'transparent'; }
+    const pulse = solved ? (1+Math.sin(Date.now()/200)*0.12) : 1;
+
+    ctx.save();
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = (solved ? 28 : (hit ? 14 : 0))*k;
+    drawHexPath(x,y, (level.targetR*1.25)*pulse);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = (9*k)+'px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(conditionLabel(t), x, y+level.hexR*0.9);
+    ctx.restore();
+
+    if(selected===t) drawSelectionRing(x,y);
+  }
+
+  function drawMirror(p, active){
+    const {x,y} = anchorPx(level,p);
+    const k = level.k;
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(rad(p.angle));
+    const len = level.mirrorHalf*2, w = 8*k;
+    ctx.shadowColor = active ? '#bfeaff' : 'transparent';
+    ctx.shadowBlur = active ? 22*k : 0;
+    const grad = ctx.createLinearGradient(-len/2,0,len/2,0);
+    grad.addColorStop(0,'#7f8ba8');
+    grad.addColorStop(0.5, active ? '#eaf7ff' : '#cfd8e8');
+    grad.addColorStop(1,'#7f8ba8');
+    ctx.fillStyle = grad;
+    roundRect(-len/2,-w/2,len,w,4*k);
+    ctx.fill();
+    ctx.restore();
+    if(selected===p) drawSelectionRing(x,y);
+  }
+
+  function drawLens(p, active, close){
+    const {x,y} = anchorPx(level,p);
+    const k = level.k;
+    const t = active ? close : 0;
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(rad(p.angle));
+    ctx.shadowColor = active ? lerpColor('#4a90c2','#ffbf5c', t) : 'transparent';
+    ctx.shadowBlur = active ? (8 + t*26)*k : 0;
+    const grad = ctx.createLinearGradient(0,-level.hexR*0.42,0,level.hexR*0.42);
+    grad.addColorStop(0, lerpColor('#bfeaff','#fff3d6', t));
+    grad.addColorStop(1, lerpColor('#4a90c2','#ffbf5c', t));
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.ellipse(0,0, level.hexR*0.22, level.hexR*0.42, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 2*k;
+    ctx.beginPath(); ctx.moveTo(0,-level.hexR*0.42); ctx.lineTo(0,level.hexR*0.42); ctx.stroke();
+    ctx.restore();
+    if(selected===p) drawSelectionRing(x,y);
+  }
+
+  function drawSelectionRing(x,y){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1.5*level.k;
+    ctx.setLineDash([3*level.k,3*level.k]);
+    ctx.beginPath(); ctx.arc(x,y,level.hexR*0.7,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawHoverAndDrag(){
+    const k = level.k;
+    if(currentTool==='select'){
+      if(hoverPiece && !activePointerPiece){
+        const {x,y} = anchorPx(level, hoverPiece);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 1.5*k;
+        ctx.setLineDash([4*k,4*k]);
+        ctx.beginPath(); ctx.arc(x,y,level.hexR*0.78,0,Math.PI*2); ctx.stroke();
+        ctx.restore();
+      }
+      if(activePointerPiece){
+        const {x,y} = anchorPx(level, activePointerPiece);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,210,127,0.55)';
+        ctx.lineWidth = 2*k;
+        ctx.beginPath(); ctx.arc(x,y,level.hexR*0.82,0,Math.PI*2); ctx.stroke();
+        for(let a=0;a<360;a+=15){
+          const rA = rad(a);
+          const inner = level.hexR*0.82, outer = level.hexR*0.94;
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x+Math.cos(rA)*inner, y+Math.sin(rA)*inner);
+          ctx.lineTo(x+Math.cos(rA)*outer, y+Math.sin(rA)*outer);
+          ctx.stroke();
+        }
+        const label = Math.round(norm360(activePointerPiece.angle)) + '°';
+        ctx.font = 'bold '+(13*k)+'px Segoe UI, sans-serif';
+        ctx.textAlign = 'center';
+        const ty = y - level.hexR*1.15;
+        roundRect(x-22*k, ty-13*k, 44*k, 20*k, 6*k);
+        ctx.fillStyle = '#ffd27f';
+        ctx.shadowColor = 'rgba(255,210,127,0.8)';
+        ctx.shadowBlur = 8*k;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#0a0e1a';
+        ctx.fillText(label, x, ty+2*k);
+        ctx.restore();
+      }
+      return;
+    }
+
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    if(currentTool==='source' && hoverPos){
+      ctx.fillStyle='#ffd27f';
+      ctx.beginPath(); ctx.arc(hoverPos.x,hoverPos.y,8*k,0,Math.PI*2); ctx.fill();
+    } else if(currentTool==='mirror' && hoverPos){
+      ctx.strokeStyle='#cfd8e8'; ctx.lineWidth=7*k; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(hoverPos.x-level.mirrorHalf,hoverPos.y); ctx.lineTo(hoverPos.x+level.mirrorHalf,hoverPos.y); ctx.stroke();
+    } else if(currentTool==='lens' && hoverPos){
+      ctx.fillStyle='#bfeaff';
+      ctx.beginPath(); ctx.ellipse(hoverPos.x,hoverPos.y,level.hexR*0.22,level.hexR*0.42,0,0,Math.PI*2); ctx.fill();
+    } else if(currentTool==='target' && hoverPos){
+      ctx.strokeStyle='#6bffb0'; ctx.lineWidth=3*k;
+      drawHexPath(hoverPos.x,hoverPos.y,level.targetR*1.25); ctx.stroke();
+    } else if(currentTool==='wall' && hoverPos){
+      drawHexPath(hoverPos.x,hoverPos.y,level.hexR*0.92);
+      ctx.fillStyle='#3a2f2f'; ctx.fill();
+    } else if(currentTool==='card' && hoverSeg){
+      ctx.strokeStyle='#a86a6a'; ctx.lineWidth=9*k; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(hoverSeg[0].x,hoverSeg[0].y); ctx.lineTo(hoverSeg[1].x,hoverSeg[1].y); ctx.stroke();
+    } else if(currentTool==='erase' && hoverPos){
+      ctx.strokeStyle='#ff6b6b'; ctx.lineWidth=2*k;
+      ctx.beginPath(); ctx.arc(hoverPos.x,hoverPos.y,11*k,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function updateAngles(){
+    const list = [...level.sources, ...level.pieces];
+    list.forEach(p=>{
+      const diff = p.targetAngle - p.angle;
+      if(Math.abs(diff) > 0.4) p.angle += diff*0.3;
+      else { p.angle = p.targetAngle = norm360(p.targetAngle); }
+    });
+  }
+
+  function updateHUD(trace){
+    const summaryEl = document.getElementById('targetSummary');
+    const listEl = document.getElementById('targetList');
+
+    if(level.sources.length===0){
+      summaryEl.textContent = 'No light source placed';
+      summaryEl.className = 'meterState unlit';
+      listEl.innerHTML = '';
+      lastSolved = false;
+      return;
+    }
+    if(level.targets.length===0){
+      summaryEl.textContent = 'No target placed';
+      summaryEl.className = 'meterState unlit';
+      listEl.innerHTML = '';
+      lastSolved = false;
+      return;
+    }
+
+    let solvedCount = 0;
+    let rowsHtml = '';
+    level.targets.forEach((t,i)=>{
+      const hit = trace.targetHitAtAll.has(t.id);
+      const intensity = trace.targetIntensity.get(t.id) || 0;
+      const solved = evaluateTarget(t, hit, intensity);
+      if(solved) solvedCount++;
+      const ref = Math.max(t.min||0, t.max||0, t.value||0, 0.5);
+      const pct = Math.min(intensity/ref, 1)*100;
+      const statusClass = solved ? 'solved' : (hit ? 'miss' : 'unlit');
+      const statusText = solved ? '✓ met' : (hit ? '✗ not met' : 'unlit');
+      rowsHtml += '<div class="targetRow">'
+        + '<div class="targetRowHead"><span>Target '+(i+1)+'</span><span class="targetRowStatus '+statusClass+'">'+statusText+'</span></div>'
+        + '<div class="meterTrack"><div class="meterFill'+(solved?' solved':'')+'" style="width:'+pct+'%"></div></div>'
+        + '<div class="targetRowSub">'+(hit?fmt(intensity):'0.00')+' / '+conditionLabel(t)+'</div>'
+        + '</div>';
+    });
+    listEl.innerHTML = rowsHtml;
+
+    const allSolved = solvedCount===level.targets.length;
+    summaryEl.textContent = solvedCount+' of '+level.targets.length+' target'+(level.targets.length>1?'s':'')+' solved';
+    summaryEl.className = 'meterState ' + (allSolved?'solved':'unlit');
+
+    if(allSolved && !lastSolved) toastEl.classList.add('show');
+    else if(!allSolved && lastSolved) toastEl.classList.remove('show');
+    lastSolved = allSolved;
+  }
+
+  function render(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawGrid();
+    drawAnchorHints();
+    drawWalls();
+    drawCards();
+    const trace = traceAllBeams();
+    drawBeam(trace.segments);
+    drawHoverAndDrag();
+    level.pieces.forEach(p=>{
+      const active = trace.activated.has(p.id);
+      if(p.type==='mirror') drawMirror(p, active);
+      else drawLens(p, active, trace.closeness.get(p.id)||0);
+    });
+    level.sources.forEach(s=>{
+      drawSourceCylinder(s, trace.emittingSources.has(s.id));
+    });
+    level.targets.forEach(t=>{
+      const hit = trace.targetHitAtAll.has(t.id);
+      const intensity = trace.targetIntensity.get(t.id) || 0;
+      drawTarget(t, hit, intensity);
+    });
+    updateHUD(trace);
+  }
+
+  function frame(){
+    updateAngles();
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- interaction ----------
+  function canvasCoords(evt){
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return { x: (evt.clientX-rect.left)*scaleX, y: (evt.clientY-rect.top)*scaleY };
+  }
+
+  function playTone(freq, dur, gainVal){
+    try{
+      const ac = new (window.AudioContext||window.webkitAudioContext)();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type='sine'; o.frequency.value=freq;
+      g.gain.value=gainVal;
+      o.connect(g); g.connect(ac.destination);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+dur);
+      o.stop(ac.currentTime+dur+0.01);
+    }catch(e){}
+  }
+  const tick = ()=>playTone(720,0.05,0.04);
+  const bump = ()=>playTone(480,0.12,0.05);
+
+  function handlePlacementClick(x,y){
+    if(currentTool==='source'){
+      const a = findNearestAnchor(x,y,null);
+      if(a){ placeSource(a); autosave(); }
+    } else if(currentTool==='mirror' || currentTool==='lens'){
+      const a = findNearestAnchor(x,y,null);
+      if(a){ placePiece(currentTool, a); autosave(); }
+    } else if(currentTool==='target'){
+      const a = findNearestAnchor(x,y,null);
+      if(a){ placeTarget(a); autosave(); }
+    } else if(currentTool==='wall'){
+      const h = findNearestHex(x,y);
+      if(h){ placeOrRemoveWall(h); autosave(); }
+    } else if(currentTool==='card'){
+      const a = findNearestAnchor(x,y,'edge');
+      if(a){ placeOrRemoveCard(a); autosave(); }
+    } else if(currentTool==='erase'){
+      if(eraseNear(x,y)) autosave();
+    }
+  }
+
+  canvas.addEventListener('pointerdown', evt=>{
+    const {x,y} = canvasCoords(evt);
+    if(currentTool==='select'){
+      const p = findRotatablePieceNear(x,y);
+      if(p){
+        selected = p; renderPropsPanel();
+        activePointerPiece = p;
+        dragMoved = false;
+        dragStart = {x:evt.clientX, y:evt.clientY};
+        lastSnappedAngle = Math.round(norm360(p.angle)/15)*15 % 360;
+        try{ canvas.setPointerCapture(evt.pointerId); }catch(e){}
+        evt.preventDefault();
+        return;
+      }
+      const t = findTargetNear(x,y);
+      selected = t; renderPropsPanel();
+      return;
+    }
+    handlePlacementClick(x,y);
+    evt.preventDefault();
+  });
+
+  canvas.addEventListener('pointermove', evt=>{
+    const {x,y} = canvasCoords(evt);
+    if(currentTool==='select'){
+      if(activePointerPiece){
+        const moveDist = Math.hypot(evt.clientX-dragStart.x, evt.clientY-dragStart.y);
+        if(moveDist>3) dragMoved = true;
+        const center = anchorPx(level, activePointerPiece);
+        const rawAngle = norm360(Math.atan2(y-center.y, x-center.x)*180/Math.PI);
+        const snapped = Math.round(rawAngle/15)*15 % 360;
+        if(snapped !== lastSnappedAngle){ lastSnappedAngle = snapped; tick(); }
+        setPieceTargetAngle(activePointerPiece, snapped);
+        canvas.style.cursor = 'grabbing';
+        if(activePointerPiece.type==='source') document.getElementById('srcAngle').value = Math.round(norm360(activePointerPiece.targetAngle));
+        else document.getElementById('pieceAngle').value = Math.round(norm360(activePointerPiece.targetAngle));
+      } else {
+        hoverPiece = findRotatablePieceNear(x,y) || findTargetNear(x,y);
+        updateCursor();
+      }
+      return;
+    }
+    if(currentTool==='card'){
+      const a = findNearestAnchor(x,y,'edge');
+      hoverSeg = a ? cardSegment(level,{q:a.q,r:a.r,edgeIdx:a.idx}) : null;
+      hoverPos = null;
+    } else if(currentTool==='wall'){
+      const h = findNearestHex(x,y);
+      hoverPos = h ? {x:h.x,y:h.y} : null;
+      hoverSeg = null;
+    } else if(currentTool==='erase'){
+      hoverPos = {x,y}; hoverSeg = null;
+    } else {
+      const a = findNearestAnchor(x,y,null);
+      hoverPos = a ? {x:a.x,y:a.y} : null;
+      hoverSeg = null;
+    }
+  });
+
+  function endDrag(){
+    if(activePointerPiece && !dragMoved){
+      setPieceTargetAngle(activePointerPiece, norm360(activePointerPiece.targetAngle+15));
+      bump();
+      if(activePointerPiece.type==='source') document.getElementById('srcAngle').value = Math.round(norm360(activePointerPiece.targetAngle));
+      else document.getElementById('pieceAngle').value = Math.round(norm360(activePointerPiece.targetAngle));
+    }
+    if(activePointerPiece) autosave();
+    activePointerPiece = null;
+    updateCursor();
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  window.addEventListener('pointerup', ()=>{ if(activePointerPiece) endDrag(); });
+
+  canvas.addEventListener('contextmenu', evt=>{
+    evt.preventDefault();
+    const {x,y} = canvasCoords(evt);
+    if(eraseNear(x,y)) autosave();
+  });
+
+  // ---------- export / import ----------
+  function buildExportObject(){
+    return {
+      schema: 'lumenBuilder/v2',
+      exportedAt: new Date().toISOString(),
+      levels: project.levels.map(L=>({
+        name: L.name, hint: L.hint,
+        grid: {size:L.gridSize},
+        sources: L.sources.map(s=>({q:s.q, r:s.r, kind:s.kind, idx:s.idx, angle:Math.round(norm360(s.angle)*10)/10})),
+        pieces: L.pieces.map(p=>({type:p.type, q:p.q, r:p.r, kind:p.kind, idx:p.idx, angle:Math.round(norm360(p.angle)*10)/10})),
+        targets: L.targets.map(t=>({q:t.q, r:t.r, kind:t.kind, idx:t.idx, mode:t.mode, min:t.min, max:t.max, value:t.value, tolerance:t.tolerance})),
+        walls: L.walls.map(w=>({q:w.q, r:w.r})),
+        cards: L.cards.map(c=>({q:c.q, r:c.r, edgeIdx:c.edgeIdx}))
+      }))
+    };
+  }
+
+  function normalizeImportedLevel(raw){
+    const L = newLevel(raw.name || 'Level');
+    L.hint = raw.hint || '';
+
+    const g = raw.grid || {};
+    let size = num(g.size, null);
+    if(size===null){
+      const qSpan = (num(g.qMax,7)-num(g.qMin,0))+1;
+      const rSpan = (num(g.rMax,5)-num(g.rMin,0))+1;
+      size = Math.max(qSpan, rSpan, 3);
+    }
+    L.gridSize = Math.max(3, Math.min(15, Math.round(size)));
+
+    function normSource(s){
+      return { id:nextId(), type:'source', q:num(s.q,0), r:num(s.r,0), kind:s.kind||'center', idx:num(s.idx,0), angle:norm360(num(s.angle,0)), targetAngle:norm360(num(s.angle,0)) };
+    }
+    function normTargetItem(t){
+      let tt = t;
+      if(tt.threshold!==undefined && tt.mode===undefined) tt = Object.assign({}, tt, {mode:'atleast', min:tt.threshold});
+      return {
+        id:nextId(), type:'target', q:num(tt.q,0), r:num(tt.r,0), kind:tt.kind||'center', idx:num(tt.idx,0),
+        mode: ['atleast','atmost','between','exact'].indexOf(tt.mode)>=0 ? tt.mode : 'atleast',
+        min:num(tt.min,1), max:num(tt.max,3), value:num(tt.value,1.5), tolerance:num(tt.tolerance,0.15)
+      };
+    }
+    function normPiece(p){
+      return { id:nextId(), type: p.type==='lens'?'lens':'mirror', q:num(p.q,0), r:num(p.r,0), kind:p.kind||'center', idx:num(p.idx,0), angle:norm360(num(p.angle,0)), targetAngle:norm360(num(p.angle,0)) };
+    }
+
+    if(Array.isArray(raw.sources)) L.sources = raw.sources.map(normSource);
+    else if(raw.source) L.sources = [normSource(raw.source)];
+    else L.sources = [];
+
+    if(Array.isArray(raw.targets)) L.targets = raw.targets.map(normTargetItem);
+    else if(raw.target) L.targets = [normTargetItem(raw.target)];
+    else L.targets = [];
+
+    L.pieces = Array.isArray(raw.pieces) ? raw.pieces.map(normPiece) : [];
+    L.walls = Array.isArray(raw.walls) ? raw.walls.map(w=>({q:num(w.q,0), r:num(w.r,0)})) : [];
+    L.cards = Array.isArray(raw.cards) ? raw.cards.map(c=>({q:num(c.q,0), r:num(c.r,0), edgeIdx:num(c.edgeIdx,0)})) : [];
+
+    computeLevelGeometry(L);
+    return L;
+  }
+
+  function importProject(parsed){
+    const rawLevels = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.levels) ? parsed.levels : null);
+    if(!rawLevels || !rawLevels.length) throw new Error('No levels array found in JSON.');
+    const levels = rawLevels.map(normalizeImportedLevel);
+    project = { levels };
+    switchLevel(0);
+  }
+
+  const modalOverlay = document.getElementById('modalOverlay');
+  const modalTextarea = document.getElementById('modalTextarea');
+  const modalMsg = document.getElementById('modalMsg');
+
+  function openModal(){
+    modalTextarea.value = JSON.stringify(buildExportObject(), null, 2);
+    modalMsg.textContent = ''; modalMsg.className='modalMsg';
+    modalOverlay.classList.add('show');
+  }
+  function closeModal(){ modalOverlay.classList.remove('show'); }
+
+  document.getElementById('btnExport').addEventListener('click', openModal);
+  document.getElementById('btnCloseModal').addEventListener('click', closeModal);
+  modalOverlay.addEventListener('click', evt=>{ if(evt.target===modalOverlay) closeModal(); });
+
+  document.getElementById('btnRefreshExport').addEventListener('click', ()=>{
+    modalTextarea.value = JSON.stringify(buildExportObject(), null, 2);
+    modalMsg.textContent = 'Refreshed from current builder state.'; modalMsg.className='modalMsg ok';
+  });
+  document.getElementById('btnDownloadJson').addEventListener('click', ()=>{
+    const blob = new Blob([modalTextarea.value], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'lumen-puzzle-levels.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+  document.getElementById('btnCopyJson').addEventListener('click', ()=>{
+    modalTextarea.select();
+    try{
+      navigator.clipboard.writeText(modalTextarea.value).then(()=>{
+        modalMsg.textContent = 'Copied to clipboard.'; modalMsg.className='modalMsg ok';
+      }).catch(()=>{
+        document.execCommand('copy');
+        modalMsg.textContent = 'Copied to clipboard.'; modalMsg.className='modalMsg ok';
+      });
+    }catch(e){
+      modalMsg.textContent = 'Could not copy automatically — select and copy manually.'; modalMsg.className='modalMsg err';
+    }
+  });
+  document.getElementById('btnApplyImport').addEventListener('click', ()=>{
+    try{
+      const parsed = JSON.parse(modalTextarea.value);
+      importProject(parsed);
+      modalMsg.textContent = 'Loaded '+project.levels.length+' level(s) into the builder.'; modalMsg.className='modalMsg ok';
+    }catch(e){
+      modalMsg.textContent = 'Import failed: '+e.message; modalMsg.className='modalMsg err';
+    }
+  });
+  document.getElementById('fileImport').addEventListener('change', evt=>{
+    const file = evt.target.files && evt.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        modalTextarea.value = reader.result;
+        const parsed = JSON.parse(reader.result);
+        importProject(parsed);
+        modalMsg.textContent = 'Loaded "'+file.name+'" — '+project.levels.length+' level(s).'; modalMsg.className='modalMsg ok';
+      }catch(e){
+        modalMsg.textContent = 'Could not read file: '+e.message; modalMsg.className='modalMsg err';
+      }
+    };
+    reader.readAsText(file);
+    evt.target.value = '';
+  });
+
+  // ---------- autosave ----------
+  const SAVE_KEY = 'lumenBuilderProjectV2';
+  let saveTimer = null;
+  function autosave(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>{
+      try{ localStorage.setItem(SAVE_KEY, JSON.stringify(buildExportObject())); }catch(e){}
+    }, 300);
+  }
+  function tryRestore(){
+    try{
+      const raw = localStorage.getItem(SAVE_KEY);
+      if(!raw) return false;
+      const parsed = JSON.parse(raw);
+      if(!parsed || !Array.isArray(parsed.levels) || !parsed.levels.length) return false;
+      project = { levels: parsed.levels.map(normalizeImportedLevel) };
+      return true;
+    }catch(e){ return false; }
+  }
+
+  // ---------- init ----------
+  if(tryRestore()){
+    currentLevelIndex = 0;
+    level = project.levels[0];
+  }
+  computeLevelGeometry(level);
+  canvas.width = level.width;
+  canvas.height = level.height;
+  renderLevelList();
+  syncMetaFields();
+  renderPropsPanel();
+  requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
