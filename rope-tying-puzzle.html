@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rope Tying Puzzle</title>
+<style>
+  :root{
+    --board-size: min(90vw, 90vh, 560px);
+  }
+  *{ box-sizing:border-box; touch-action:manipulation; }
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:16px;
+    background: radial-gradient(circle at 50% 30%, #3a2f28, #1c1712 75%);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color:#f2e8d8;
+    padding:20px;
+  }
+  h1{
+    margin:0;
+    font-size:1.4rem;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:#e8d5b5;
+  }
+  #status{
+    min-height:1.4em;
+    font-size:1rem;
+    color:#c9a876;
+    text-align:center;
+  }
+  .board-wrap{
+    position:relative;
+    width:var(--board-size);
+    height:var(--board-size);
+  }
+  svg{
+    width:100%;
+    height:100%;
+    display:block;
+    border-radius:14px;
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.02) 0 2px, transparent 2px 6px),
+      linear-gradient(160deg,#5b4632,#3d2f22);
+    box-shadow: 0 0 0 8px #241b13, 0 10px 30px rgba(0,0,0,0.6), inset 0 0 40px rgba(0,0,0,0.4);
+  }
+  .controls{
+    display:flex;
+    gap:12px;
+  }
+  button{
+    background:#7a5233;
+    color:#f6ecd9;
+    border:2px solid #c9a876;
+    border-radius:8px;
+    padding:8px 18px;
+    font-size:0.95rem;
+    cursor:pointer;
+    transition:transform 0.15s, background 0.15s;
+  }
+  button:hover{ background:#8f6440; transform:translateY(-1px); }
+  button:active{ transform:translateY(0); }
+  .end-cap, .knot{ cursor:pointer; }
+  .win-banner{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:2rem;
+    font-weight:700;
+    color:#fff8e0;
+    text-shadow:0 2px 8px rgba(0,0,0,0.8);
+    background:rgba(20,15,10,0.35);
+    border-radius:14px;
+    opacity:0;
+    pointer-events:none;
+  }
+  .win-banner.show{
+    opacity:1;
+    animation: popIn 0.45s ease;
+  }
+  @keyframes popIn{
+    from{ transform:scale(0.7); opacity:0; }
+    to{ transform:scale(1); opacity:1; }
+  }
+  .knot-pop{
+    animation: knotPop 0.4s cubic-bezier(.34,1.56,.64,1) both;
+    animation-delay: 0.32s;
+  }
+  @keyframes knotPop{
+    0%{ transform:scale(0.1); opacity:0; }
+    55%{ transform:scale(1.3); opacity:1; }
+    80%{ transform:scale(0.92); }
+    100%{ transform:scale(1); opacity:1; }
+  }
+  .knot-untie{
+    animation: knotUntie 0.22s ease-in forwards;
+  }
+  @keyframes knotUntie{
+    0%{ transform:scale(1) rotate(0deg); opacity:1; }
+    100%{ transform:scale(0.25) rotate(35deg); opacity:0; }
+  }
+  .stub-pop{
+    animation: stubPop 0.4s cubic-bezier(.34,1.56,.64,1) both;
+  }
+  @keyframes stubPop{
+    0%{ transform:scale(0.05); opacity:0; }
+    100%{ transform:scale(1); opacity:1; }
+  }
+</style>
+</head>
+<body>
+  <h1>Tie the Ropes</h1>
+  <div id="status">Tap two ends to tie them. Tap a knot to untie it.</div>
+  <div class="board-wrap">
+    <svg id="board" viewBox="0 0 500 500"></svg>
+    <div class="win-banner" id="winBanner">All tied! 🎉</div>
+  </div>
+  <div class="controls">
+    <button id="newPuzzleBtn">New Puzzle</button>
+    <button id="resetBtn">Untie All</button>
+  </div>
+
+<script>
+(function(){
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('board');
+  const statusEl = document.getElementById('status');
+  const winBanner = document.getElementById('winBanner');
+
+  // 8 slots, 2 per side, in clockwise order around the square.
+  // Each slot only fixes the edge point + inward direction; the actual
+  // stub length varies per puzzle (see slotLengths) so ropes differ in length.
+  const SLOTS = [
+    {edge:{x:180,y:0},   dir:{x:0,y:1}},
+    {edge:{x:320,y:0},   dir:{x:0,y:1}},
+    {edge:{x:500,y:180}, dir:{x:-1,y:0}},
+    {edge:{x:500,y:320}, dir:{x:-1,y:0}},
+    {edge:{x:320,y:500}, dir:{x:0,y:-1}},
+    {edge:{x:180,y:500}, dir:{x:0,y:-1}},
+    {edge:{x:0,y:320},   dir:{x:1,y:0}},
+    {edge:{x:0,y:180},   dir:{x:1,y:0}},
+  ];
+
+  // All ropes share one standard brown — colour no longer distinguishes them.
+  const COLORS = [
+    {hex:'#8a5a34', light:'#c9a876'},
+    {hex:'#8a5a34', light:'#c9a876'},
+    {hex:'#8a5a34', light:'#c9a876'},
+    {hex:'#8a5a34', light:'#c9a876'},
+  ];
+
+  const PAIR_LABELS = ['A','B','C','D'];
+
+  let slotColors = [];
+  let slotLengths = [];  // per-slot rope length, so knots never land in the same spot
+  let connections = [];   // {a, b, seed, animated}
+  let selected = null;
+  let poppingSlots = new Set(); // slots that should play their entrance pop on next render
+
+  // Deterministic pseudo-random in [0,1) so decorative details (like fray)
+  // stay put between re-renders instead of jittering.
+  function prand(seed){
+    const x = Math.sin(seed*12.9898)*43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function shuffledColorSet(){
+    let attempt = 0, arr;
+    do {
+      arr = [0,0,1,1,2,2,3,3];
+      for(let i=arr.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [arr[i],arr[j]] = [arr[j],arr[i]];
+      }
+      attempt++;
+    } while ([[0,1],[2,3],[4,5],[6,7]].some(([i,j])=>arr[i]===arr[j]) && attempt < 25);
+    return arr;
+  }
+
+  function shuffledLengths(){
+    // 8 distinct lengths, shuffled onto the 8 slots, plus a little jitter
+    // so ratios between any two lengths are effectively never repeated.
+    const base = [56, 66, 76, 86, 96, 106, 116, 126];
+    for(let i=base.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [base[i],base[j]] = [base[j],base[i]];
+    }
+    return base.map(v => v + (Math.random()*4 - 2));
+  }
+
+  function slotTip(slotIdx){
+    const {edge, dir} = SLOTS[slotIdx];
+    const len = slotLengths[slotIdx];
+    return { x: edge.x + dir.x*len, y: edge.y + dir.y*len };
+  }
+
+  function newPuzzle(){
+    slotColors = shuffledColorSet();
+    slotLengths = shuffledLengths();
+    connections = [];
+    selected = null;
+    winBanner.classList.remove('show');
+    statusEl.textContent = 'Tap two ends to tie them. Tap a knot to untie it.';
+    poppingSlots = new Set([0,1,2,3,4,5,6,7]);
+    render();
+  }
+
+  function isFree(slot){
+    return !connections.some(c => c.a === slot || c.b === slot);
+  }
+
+  function tie(a, b){
+    connections.push({a, b, seed:(Math.random()-0.5)*70, animated:false});
+    selected = null;
+    render();
+    checkWin();
+  }
+
+  function untie(conn){
+    connections = connections.filter(c => c !== conn);
+    selected = null;
+    winBanner.classList.remove('show');
+    poppingSlots = new Set([conn.a, conn.b]);
+    render();
+    statusEl.textContent = 'Tap two ends to tie them. Tap a knot to untie it.';
+  }
+
+  function checkWin(){
+    const solved = connections.length === 4 && connections.every(c => slotColors[c.a] === slotColors[c.b]);
+    if(solved){
+      statusEl.textContent = 'Every rope is tied correctly!';
+      setTimeout(()=> winBanner.classList.add('show'), 150);
+    } else {
+      statusEl.textContent = 'Tap two ends to tie them. Tap a knot to untie it.';
+    }
+  }
+
+  function bezierPoint(p0,p1,p2,p3,t){
+    const mt = 1-t;
+    return {
+      x: mt*mt*mt*p0.x + 3*mt*mt*t*p1.x + 3*mt*t*t*p2.x + t*t*t*p3.x,
+      y: mt*mt*mt*p0.y + 3*mt*mt*t*p1.y + 3*mt*t*t*p2.y + t*t*t*p3.y
+    };
+  }
+
+  function curveControlPoints(a, b, seed){
+    const pa = SLOTS[a].edge, pb = SLOTS[b].edge;
+    const cx = 250, cy = 250;
+    const c1 = { x: pa.x + (cx-pa.x)*0.55 + seed, y: pa.y + (cy-pa.y)*0.55 - seed*0.4 };
+    const c2 = { x: pb.x + (cx-pb.x)*0.55 - seed, y: pb.y + (cy-pb.y)*0.55 + seed*0.4 };
+    return [pa, c1, c2, pb];
+  }
+
+  function el(tag, attrs){
+    const e = document.createElementNS(SVG_NS, tag);
+    for(const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  const FRAY_ANGLES = [-30, -18, -7, 7, 18, 30];
+  const FRAY_TONES = ['light','fiber','light','core','fiber','light'];
+
+  function drawFrayedEnd(slotIdx, tip, dir, color){
+    const g = el('g', {'pointer-events':'none'});
+    FRAY_ANGLES.forEach((deg, i)=>{
+      const rad = deg*Math.PI/180;
+      const rdx = dir.x*Math.cos(rad) - dir.y*Math.sin(rad);
+      const rdy = dir.x*Math.sin(rad) + dir.y*Math.cos(rad);
+      const jitter = prand(slotIdx*97 + i*13 + 3);
+      const len = 10 + jitter*10;
+      const start = { x: tip.x - dir.x*5, y: tip.y - dir.y*5 };
+      const end = { x: tip.x + rdx*len, y: tip.y + rdy*len };
+      const perp = { x:-rdy, y:rdx };
+      const bow = (prand(slotIdx*53 + i*7 + 1) - 0.5) * 7;
+      const ctrl = { x:(start.x+end.x)/2 + perp.x*bow, y:(start.y+end.y)/2 + perp.y*bow };
+      const d = `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} Q ${ctrl.x.toFixed(1)} ${ctrl.y.toFixed(1)} ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+      const tone = FRAY_TONES[i];
+      const stroke = tone === 'fiber' ? '#e8d5b5' : (tone === 'core' ? color.hex : color.light);
+      g.appendChild(el('path',{d, fill:'none', stroke, 'stroke-width': 1.7, 'stroke-linecap':'round', opacity:0.9}));
+    });
+    return g;
+  }
+
+  function drawRopeStub(slotIdx){
+    const color = COLORS[slotColors[slotIdx]];
+    const {edge, dir} = SLOTS[slotIdx];
+    const tip = slotTip(slotIdx);
+    const shaftEnd = { x: tip.x - dir.x*7, y: tip.y - dir.y*7 };
+
+    const wrap = el('g', {});
+    if(poppingSlots.has(slotIdx)){
+      wrap.setAttribute('class','stub-pop');
+      wrap.style.transformOrigin = `${edge.x}px ${edge.y}px`;
+      wrap.style.animationDelay = `${prand(slotIdx*31+5)*0.25}s`;
+    }
+
+    const g = el('g', {});
+    g.appendChild(el('line',{x1:edge.x,y1:edge.y,x2:shaftEnd.x,y2:shaftEnd.y, stroke:'#241b13','stroke-width':13,'stroke-linecap':'round'}));
+    g.appendChild(el('line',{x1:edge.x,y1:edge.y,x2:shaftEnd.x,y2:shaftEnd.y, stroke:color.hex,'stroke-width':10,'stroke-linecap':'round'}));
+    g.appendChild(el('line',{x1:edge.x,y1:edge.y,x2:shaftEnd.x,y2:shaftEnd.y, stroke:color.light,'stroke-width':2,'stroke-dasharray':'3 7','stroke-linecap':'round', opacity:0.8}));
+
+    g.appendChild(drawFrayedEnd(slotIdx, tip, dir, color));
+
+    if(selected === slotIdx){
+      const ring = el('circle',{cx:tip.x,cy:tip.y,r:19,fill:'none',stroke:'#fff8e0','stroke-width':3,opacity:0.9});
+      const a1 = el('animate',{attributeName:'r', values:'18;24;18', dur:'1s', repeatCount:'indefinite'});
+      const a2 = el('animate',{attributeName:'opacity', values:'0.9;0.25;0.9', dur:'1s', repeatCount:'indefinite'});
+      ring.appendChild(a1); ring.appendChild(a2);
+      g.appendChild(ring);
+    }
+    // Invisible tap target — no visible cap ball at the tip, just the fray.
+    const cap = el('circle',{cx:tip.x,cy:tip.y,r:16,fill:'transparent','pointer-events':'all',class:'end-cap'});
+    cap.dataset.slot = slotIdx;
+    g.appendChild(cap);
+
+    wrap.appendChild(g);
+    return wrap;
+  }
+
+  // An irregular, lumpy closed blob (not a circle) used as the knot's body,
+  // so it reads as a bulge of tangled rope rather than a disc.
+  function blobPath(cx, cy, r, seed){
+    const N = 9;
+    const pts = [];
+    for(let i=0;i<N;i++){
+      const angle = (i/N)*Math.PI*2;
+      const jitter = (prand(seed + i*7.31) - 0.5) * r*0.5;
+      const rad = r + jitter;
+      pts.push({ x: cx + Math.cos(angle)*rad, y: cy + Math.sin(angle)*rad });
+    }
+    const mid = (p1,p2)=>({x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2});
+    const start = mid(pts[N-1], pts[0]);
+    let d = `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} `;
+    for(let i=0;i<N;i++){
+      const p = pts[i];
+      const m = mid(p, pts[(i+1)%N]);
+      d += `Q ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${m.x.toFixed(1)} ${m.y.toFixed(1)} `;
+    }
+    return d + 'Z';
+  }
+
+  // One or two curved strands draped across the knot body to suggest a wrap/loop.
+  function knotWrapPath(cx, cy, r, seed){
+    const ang = prand(seed)*Math.PI;
+    const p1 = { x: cx + Math.cos(ang)*r*0.85, y: cy + Math.sin(ang)*r*0.85 };
+    const p2 = { x: cx - Math.cos(ang)*r*0.85, y: cy - Math.sin(ang)*r*0.85 };
+    const bow = (prand(seed+2)-0.5) * r*1.3;
+    const perp = { x:-Math.sin(ang), y:Math.cos(ang) };
+    const ctrl = { x: cx + perp.x*bow, y: cy + perp.y*bow };
+    return `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} Q ${ctrl.x.toFixed(1)} ${ctrl.y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+
+  function drawConnection(conn, defs){
+    const {a, b, seed} = conn;
+    const colorA = COLORS[slotColors[a]];
+    const colorB = COLORS[slotColors[b]];
+    const [p0,p1,p2,p3] = curveControlPoints(a,b,seed);
+    const d = `M ${p0.x} ${p0.y} C ${p1.x} ${p1.y}, ${p2.x} ${p2.y}, ${p3.x} ${p3.y}`;
+    const isNew = !conn.animated;
+    const g = el('g', {});
+
+    g.appendChild(el('path',{d, fill:'none', stroke:'#241b13','stroke-width':13,'stroke-linecap':'round'}));
+
+    // Knot sits along the rope proportional to each side's length, so it
+    // never lands at the same fixed midpoint (and never overlaps another knot).
+    const lenA = slotLengths[a], lenB = slotLengths[b];
+    const t = lenA / (lenA + lenB);
+    const tPct = Math.round(t*100);
+
+    const gradId = `grad-${a}-${b}-${Math.round(seed*100)}`;
+    const grad = el('linearGradient',{id:gradId, x1:p0.x, y1:p0.y, x2:p3.x, y2:p3.y, gradientUnits:'userSpaceOnUse'});
+    grad.appendChild(el('stop',{offset:'0%','stop-color':colorA.hex}));
+    grad.appendChild(el('stop',{offset:`${Math.max(tPct-3,0)}%`,'stop-color':colorA.hex}));
+    grad.appendChild(el('stop',{offset:`${Math.min(tPct+3,100)}%`,'stop-color':colorB.hex}));
+    grad.appendChild(el('stop',{offset:'100%','stop-color':colorB.hex}));
+    defs.appendChild(grad);
+    g.appendChild(el('path',{d, fill:'none', stroke:`url(#${gradId})`,'stroke-width':10,'stroke-linecap':'round'}));
+    g.appendChild(el('path',{d, fill:'none', stroke:colorA.light,'stroke-width':2,'stroke-dasharray':'3 7','stroke-linecap':'round', opacity:0.8}));
+
+    const mid = bezierPoint(p0,p1,p2,p3,t);
+    const before = bezierPoint(p0,p1,p2,p3, Math.max(t-0.09,0));
+    const after  = bezierPoint(p0,p1,p2,p3, Math.min(t+0.09,1));
+
+    const knotGroup = el('g', {class:'knot-group'});
+    knotGroup.style.transformOrigin = `${mid.x}px ${mid.y}px`;
+    const knotSeed = a*17.3 + b*31.7 + Math.abs(seed);
+    const R = 15;
+
+    // Short colored tails showing each rope disappearing into the knot.
+    const dirTo = (from)=>{
+      const dx = mid.x-from.x, dy = mid.y-from.y;
+      const len = Math.hypot(dx,dy) || 1;
+      return { x: dx/len, y: dy/len };
+    };
+    [[dirTo(before), colorA], [dirTo(after), colorB]].forEach(([dir,c])=>{
+      const x1 = mid.x - dir.x*(R+10), y1 = mid.y - dir.y*(R+10);
+      const x2 = mid.x - dir.x*(R-5),  y2 = mid.y - dir.y*(R-5);
+      knotGroup.appendChild(el('line',{x1,y1,x2,y2, stroke:c.hex, 'stroke-width':9, 'stroke-linecap':'round', 'pointer-events':'none'}));
+    });
+
+    // Lumpy knot body with subtle shading.
+    const bodyGradId = `knotgrad-${a}-${b}`;
+    const bodyGrad = el('radialGradient',{id:bodyGradId, cx:'32%', cy:'28%', r:'75%'});
+    bodyGrad.appendChild(el('stop',{offset:'0%','stop-color':'#ad8a5a'}));
+    bodyGrad.appendChild(el('stop',{offset:'100%','stop-color':'#6b5333'}));
+    defs.appendChild(bodyGrad);
+    knotGroup.appendChild(el('path',{
+      d: blobPath(mid.x, mid.y, R, knotSeed),
+      fill:`url(#${bodyGradId})`, stroke:'#241b13','stroke-width':3, 'stroke-linejoin':'round', 'pointer-events':'none'
+    }));
+
+    // Wrap lines etched across the body for a twisted-rope texture.
+    knotGroup.appendChild(el('path',{ d: knotWrapPath(mid.x, mid.y, R*0.8, knotSeed+1), fill:'none', stroke:'#3c2c1a','stroke-width':2.2, opacity:0.6, 'stroke-linecap':'round', 'pointer-events':'none' }));
+    knotGroup.appendChild(el('path',{ d: knotWrapPath(mid.x, mid.y, R*0.7, knotSeed+11), fill:'none', stroke:'#3c2c1a','stroke-width':2, opacity:0.45, 'stroke-linecap':'round', 'pointer-events':'none' }));
+
+    // Invisible hit target — the actual clickable element.
+    const hit = el('circle',{cx:mid.x, cy:mid.y, r:R+9, fill:'transparent', 'pointer-events':'all', class:'knot'});
+    hit.dataset.a = a; hit.dataset.b = b;
+    knotGroup.appendChild(hit);
+
+    if(isNew){
+      knotGroup.classList.add('knot-pop');
+      conn.animated = true;
+    }
+
+    g.appendChild(knotGroup);
+    return g;
+  }
+
+  // Small brass nameplate mounted over the base of a rope, right where it
+  // enters the frame. Top/bottom plaques sit upright; left/right ones are
+  // rotated 90° so they read along the side they're mounted on.
+  function drawPlaque(slotIdx){
+    const {edge, dir} = SLOTS[slotIdx];
+    const label = PAIR_LABELS[slotColors[slotIdx]];
+    const cx = edge.x + dir.x*14, cy = edge.y + dir.y*14;
+    const rotation = dir.y === 0 ? 90 : 0;
+    const w = 32, h = 17;
+    const g = el('g', { transform:`translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${rotation})`, 'pointer-events':'none' });
+
+    g.appendChild(el('rect',{x:-w/2, y:-h/2, width:w, height:h, rx:2.5, ry:2.5, fill:'url(#brassGrad)', stroke:'#4a3510','stroke-width':1.3}));
+    g.appendChild(el('rect',{x:-w/2+2, y:-h/2+2, width:w-4, height:h-4, rx:1.5, ry:1.5, fill:'none', stroke:'#fceec2','stroke-width':0.6, opacity:0.55}));
+    [[-w/2+4,-h/2+4],[w/2-4,-h/2+4],[-w/2+4,h/2-4],[w/2-4,h/2-4]].forEach(([rx,ry])=>{
+      g.appendChild(el('circle',{cx:rx.toFixed(1), cy:ry.toFixed(1), r:1.2, fill:'#6b4e1e', opacity:0.8}));
+    });
+    const text = el('text',{x:0, y:4, 'text-anchor':'middle', 'font-size':11, 'font-family':'Georgia, "Times New Roman", serif', 'font-weight':'700', fill:'#4a3510'});
+    text.textContent = label;
+    g.appendChild(text);
+
+    return g;
+  }
+
+  function render(){
+    svg.innerHTML = '';
+    const defs = el('defs', {});
+    svg.appendChild(defs);
+    const brassGrad = el('linearGradient',{id:'brassGrad', x1:'0%', y1:'0%', x2:'100%', y2:'100%'});
+    brassGrad.appendChild(el('stop',{offset:'0%','stop-color':'#f6dfa0'}));
+    brassGrad.appendChild(el('stop',{offset:'50%','stop-color':'#caa54c'}));
+    brassGrad.appendChild(el('stop',{offset:'100%','stop-color':'#8a6a2c'}));
+    defs.appendChild(brassGrad);
+    svg.appendChild(el('rect',{x:4,y:4,width:492,height:492, fill:'none', stroke:'rgba(255,255,255,0.08)','stroke-width':2, rx:10}));
+
+    connections.forEach(c => svg.appendChild(drawConnection(c, defs)));
+    SLOTS.forEach((s,i) => { if(isFree(i)) svg.appendChild(drawRopeStub(i)); });
+    SLOTS.forEach((s,i) => svg.appendChild(drawPlaque(i)));
+    poppingSlots.clear();
+  }
+
+  svg.addEventListener('click', (e)=>{
+    const target = e.target;
+    if(target.classList && target.classList.contains('knot')){
+      const a = Number(target.dataset.a), b = Number(target.dataset.b);
+      const conn = connections.find(c => c.a === a && c.b === b);
+      if(conn){
+        const knotGroup = target.closest('.knot-group');
+        if(knotGroup) knotGroup.classList.add('knot-untie');
+        setTimeout(()=> untie(conn), 190);
+      }
+      return;
+    }
+    if(target.classList && target.classList.contains('end-cap')){
+      const slot = Number(target.dataset.slot);
+      if(selected === null){
+        selected = slot;
+        render();
+      } else if(selected === slot){
+        selected = null;
+        render();
+      } else {
+        tie(selected, slot);
+      }
+    }
+  });
+
+  document.getElementById('newPuzzleBtn').addEventListener('click', newPuzzle);
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    connections = [];
+    selected = null;
+    winBanner.classList.remove('show');
+    statusEl.textContent = 'Tap two ends to tie them. Tap a knot to untie it.';
+    render();
+  });
+
+  newPuzzle();
+})();
+</script>
+</body>
+</html>

@@ -248,6 +248,43 @@ var NODE_TYPES = {
       return switches.length + " switches — " + onCount + " must end ON, " + (switches.length - onCount) + " OFF";
     }
   },
+  ropeTying: {
+    family: "puzzle", label: "Rope Tying", icon: "🪢",
+    defaultTitle: "New Rope Tying Puzzle",
+    // A square frame with 0-4 rope stubs per side (Left/Top/Right/Bottom,
+    // independently configurable — see content.sides), each carrying its
+    // own brass nameplate (content.ends[].label). The player taps two free
+    // ends to tie them, tap a knot to untie it, then presses the node's
+    // primary button (default label "Hoist" — see DEFAULT_BUTTON_LABEL
+    // below) to check the current ties against content.correctPairs.
+    // Adapted from the standalone rope-tying-puzzle.html prototype (a
+    // fixed 2-ropes-per-side board with randomised colour pairing) into a
+    // configurable node type: side counts, per-end label text and the
+    // correct pairing are all set once in the Studio inspector (a
+    // drag-and-drop pairing builder — see buildTypeSpecificFields/
+    // wireNodeInspector in app.js) rather than randomised at load. See
+    // renderRopeBoardSvg/wireRopeTyingInteractions/pv_action_submitRopeTying
+    // below for the player-facing half.
+    defaultContent: function () {
+      var mkEnd = function (side) { return { id: uid("end"), side: side, label: "" }; };
+      var ends = [];
+      ["left", "top", "right", "bottom"].forEach(function (side) {
+        for (var i = 0; i < 2; i++) ends.push(mkEnd(side));
+      });
+      return {
+        prompt: "Tie each rope to its matching partner, then hoist.",
+        sides: { left: 2, top: 2, right: 2, bottom: 2 },
+        ends: ends,
+        correctPairs: [],
+        showBackButton: false
+      };
+    },
+    summary: function (c) {
+      var total = (c.ends || []).length;
+      var pairs = (c.correctPairs || []).length;
+      return total + " rope end(s) — " + pairs + " correct pair(s) set";
+    }
+  },
   awardItem: {
     family: "state", label: "Award Item", icon: "🎒",
     defaultTitle: "Award Item",
@@ -1155,6 +1192,26 @@ function pv_action_submitFusePanel(session, nodeId, switchState) {
   return ok;
 }
 
+// Rope Tying — the player's ties are draft UI state (ctl.ropeDraft, see
+// wireRopeTyingInteractions below), only turned into pairs and checked when
+// the node's primary button ("Hoist" by default) is pressed. Correct only
+// when the tied set exactly matches content.correctPairs — same unordered-
+// pair normalization as Matching's submit above, except each pair here is
+// itself unordered too (tying end A to end B is identical to B to A), so
+// both the pair's own two ids and the outer pair list are sorted before
+// comparing.
+function pv_action_submitRopeTying(session, nodeId, pairs) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var norm = function (arr) {
+    return (arr || []).map(function (p) { return [p[0], p[1]].sort().join(":"); }).sort().join(",");
+  };
+  var mechanicOk = (n.content.correctPairs || []).length > 0 && norm(pairs) === norm(n.content.correctPairs);
+  var ok = nodeCompletionOk(n, session, mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+
 function pv_action_revealHint(session, hintNodeId) {
   var cur = session.state.hintProgress[hintNodeId] || 0;
   var n = session.hunt.nodes.find(function (x) { return x.id === hintNodeId; });
@@ -1172,7 +1229,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage", "pdfReveal"];
+  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying"];
 
 // Node types offering a generic, opt-in "← Back" button — every
 // PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
@@ -1188,7 +1245,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // Studio inspector field.
 var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
-  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal"];
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -1201,7 +1258,7 @@ var DEFAULT_BUTTON_LABEL = {
   scene: "Continue →", imageReveal: "Continue →", locationPlaceholder: "Continue →", pdfReveal: "Continue →",
   answerEntry: "Submit", cipher: "Submit", mathLogic: "Submit", anagram: "Submit", crossReferenceLookup: "Submit",
   ordering: "Submit order", matching: "Submit matches",
-  multiPartAnswer: "Submit all parts", physicalLockCode: "Unlock"
+  multiPartAnswer: "Submit all parts", physicalLockCode: "Unlock", ropeTying: "Hoist"
 };
 var BUTTON_LABEL_TYPES = DEFAULT_BUTTON_LABEL; // same key set — presence in this map is the "supports a custom label" flag
 function buttonLabelFor(n) {
@@ -1775,6 +1832,14 @@ function renderPreviewNode(session, n, ctl) {
     html += '</div>';
     var fbFu = session.state.feedback[n.id];
     if (fbFu === "correct") html += '<div class="pv-feedback correct">✓ Power restored.</div>';
+  } else if (n.type === "ropeTying") {
+    if (!ctl.ropeDraft[n.id]) ctl.ropeDraft[n.id] = { connections: [], selected: null };
+    if (c.prompt) html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += renderRopeBoardSvg(n, ctl);
+    html += pvPrimaryButton(n, "pvHoistBtn", "max-width:200px;margin-top:10px");
+    var fbRt = session.state.feedback[n.id];
+    if (fbRt === "incorrect") html += '<div class="pv-feedback incorrect">✗ Not tied correctly — try again.</div>';
+    if (fbRt === "correct") html += '<div class="pv-feedback correct">✓ Hoisted!</div>';
   } else if (n.type === "clickableImage") {
     if (c.body) html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
     html += renderClickableImageBlock(c);
@@ -2124,6 +2189,331 @@ function wireCryptexInteractions(root, ctl, session, n) {
   };
 }
 
+/* ---------------------------------------------------------------------
+   Rope Tying — a square frame with 0-4 rope stubs per side (Left/Top/
+   Right/Bottom, independently configurable via content.sides), each stub
+   carrying its own brass nameplate (content.ends[].label — set in the
+   Studio inspector). The player taps two free ends to tie them (a curved
+   rope + a knot appears where they meet), taps a knot to untie it, then
+   presses the node's primary button (default label "Hoist", see
+   DEFAULT_BUTTON_LABEL.ropeTying above) to check the current ties against
+   content.correctPairs (pv_action_submitRopeTying above).
+
+   Adapted from the standalone rope-tying-puzzle.html prototype (DOM-built
+   SVG, fixed 2-ropes-per-side, colours randomised at load) into this
+   node's string-built renderPreviewNode branch — same division of labour
+   as renderCryptexSvg/wireCryptexInteractions just above: this block only
+   ever reads/writes ctl.ropeDraft[n.id] = { connections: [{a,b,seed}],
+   selected: endId|null }, so it has no idea whether it's in Studio's
+   Preview overlay, the docked live mock, or the standalone Player app.
+--------------------------------------------------------------------- */
+var ROPE_BOARD = 500; // svg viewBox is 0 0 ROPE_BOARD ROPE_BOARD, same square the prototype used
+
+function ropePrand(seed) {
+  var x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+// Cheap deterministic string hash (order-sensitive, always positive) — used
+// to turn an end/connection id into a stable seed for ropePrand, so cosmetic
+// jitter (stub length, fray shape, knot lumpiness) stays put across
+// re-renders instead of reshuffling on every keystroke.
+function ropeHash(s) {
+  var h = 0;
+  s = String(s || "");
+  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h) + 1;
+}
+
+// Fixed edge point + inward direction for the idx-th (0-based) rope on a
+// given side, evenly spaced along that side among `count` total ropes on
+// it (so 1 rope centers, 2 split evenly, etc. — same idea as the
+// prototype's fixed 2-per-side SLOTS table, generalised to 0-4).
+function ropeSlotGeometry(side, idx, count) {
+  var t = (idx + 1) / (count + 1);
+  if (side === "left") return { edge: { x: 0, y: ROPE_BOARD * t }, dir: { x: 1, y: 0 } };
+  if (side === "top") return { edge: { x: ROPE_BOARD * t, y: 0 }, dir: { x: 0, y: 1 } };
+  if (side === "right") return { edge: { x: ROPE_BOARD, y: ROPE_BOARD * t }, dir: { x: -1, y: 0 } };
+  return { edge: { x: ROPE_BOARD * t, y: ROPE_BOARD }, dir: { x: 0, y: -1 } }; // bottom
+}
+
+// endId -> { end, side, idx, count, geom, stubLen, tip } for every
+// configured end on this node — computed fresh every render (cheap, at
+// most 16 ends) so a side-count/label edit in the Studio inspector is
+// reflected immediately without any extra invalidation bookkeeping.
+function ropeGeometryMap(c) {
+  var bySide = { left: [], top: [], right: [], bottom: [] };
+  (c.ends || []).forEach(function (e) { (bySide[e.side] || (bySide[e.side] = [])).push(e); });
+  var map = {};
+  ["left", "top", "right", "bottom"].forEach(function (side) {
+    var list = bySide[side];
+    list.forEach(function (e, idx) {
+      var geom = ropeSlotGeometry(side, idx, list.length);
+      // Deterministic per-end stub length (60-130px) purely so ties/knots
+      // never all land at the same distance from the frame — hashed off
+      // the end's own id, same trick as the prototype's random-but-seeded
+      // slotLengths, just stable across renders instead of per "New Puzzle".
+      var stubLen = 60 + ropePrand(ropeHash(e.id)) * 70;
+      var tip = { x: geom.edge.x + geom.dir.x * stubLen, y: geom.edge.y + geom.dir.y * stubLen };
+      map[e.id] = { end: e, side: side, idx: idx, count: list.length, geom: geom, stubLen: stubLen, tip: tip };
+    });
+  });
+  return map;
+}
+
+var ROPE_FRAY_ANGLES = [-30, -18, -7, 7, 18, 30];
+var ROPE_FRAY_TONES = ["light", "fiber", "light", "core", "fiber", "light"];
+var ROPE_HEX = "#8a5a34", ROPE_LIGHT = "#c9a876";
+
+function ropeFrayMarkup(seedBase, tip, dir) {
+  var s = "";
+  ROPE_FRAY_ANGLES.forEach(function (deg, i) {
+    var rad = deg * Math.PI / 180;
+    var rdx = dir.x * Math.cos(rad) - dir.y * Math.sin(rad);
+    var rdy = dir.x * Math.sin(rad) + dir.y * Math.cos(rad);
+    var jitter = ropePrand(seedBase * 97 + i * 13 + 3);
+    var len = 10 + jitter * 10;
+    var start = { x: tip.x - dir.x * 5, y: tip.y - dir.y * 5 };
+    var end = { x: tip.x + rdx * len, y: tip.y + rdy * len };
+    var perp = { x: -rdy, y: rdx };
+    var bow = (ropePrand(seedBase * 53 + i * 7 + 1) - 0.5) * 7;
+    var ctrl = { x: (start.x + end.x) / 2 + perp.x * bow, y: (start.y + end.y) / 2 + perp.y * bow };
+    var d = "M " + start.x.toFixed(1) + " " + start.y.toFixed(1) + " Q " + ctrl.x.toFixed(1) + " " + ctrl.y.toFixed(1) + " " + end.x.toFixed(1) + " " + end.y.toFixed(1);
+    var tone = ROPE_FRAY_TONES[i];
+    var stroke = tone === "fiber" ? "#e8d5b5" : (tone === "core" ? ROPE_HEX : ROPE_LIGHT);
+    s += '<path d="' + d + '" fill="none" stroke="' + stroke + '" stroke-width="1.7" stroke-linecap="round" opacity="0.9"/>';
+  });
+  return s;
+}
+
+// A free (untied) rope end — shaft + frayed tip + an invisible larger hit
+// circle at the tip (.rope-end-cap) that wireRopeTyingInteractions listens
+// for taps on.
+function ropeStubMarkup(endId, info, selectedId) {
+  var edge = info.geom.edge, dir = info.geom.dir, tip = info.tip;
+  var shaftEnd = { x: tip.x - dir.x * 7, y: tip.y - dir.y * 7 };
+  var seedBase = ropeHash(endId);
+  var s = '<g class="rope-stub">';
+  s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="#241b13" stroke-width="13" stroke-linecap="round"/>';
+  s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="' + ROPE_HEX + '" stroke-width="10" stroke-linecap="round"/>';
+  s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="' + ROPE_LIGHT + '" stroke-width="2" stroke-dasharray="3 7" stroke-linecap="round" opacity="0.8"/>';
+  s += ropeFrayMarkup(seedBase, tip, dir);
+  if (selectedId === endId) {
+    s += '<circle class="rope-selected-ring" cx="' + tip.x + '" cy="' + tip.y + '" r="19" fill="none" stroke="#fff8e0" stroke-width="3" opacity="0.9"/>';
+  }
+  s += '<circle class="rope-end-cap" data-endid="' + esc(endId) + '" cx="' + tip.x + '" cy="' + tip.y + '" r="16" fill="transparent"/>';
+  s += '</g>';
+  return s;
+}
+
+function ropeBezierPoint(p0, p1, p2, p3, t) {
+  var mt = 1 - t;
+  return {
+    x: mt * mt * mt * p0.x + 3 * mt * mt * t * p1.x + 3 * mt * t * t * p2.x + t * t * t * p3.x,
+    y: mt * mt * mt * p0.y + 3 * mt * mt * t * p1.y + 3 * mt * t * t * p2.y + t * t * t * p3.y
+  };
+}
+function ropeCurveControlPoints(pa, pb, seed) {
+  var cx = ROPE_BOARD / 2, cy = ROPE_BOARD / 2;
+  var c1 = { x: pa.x + (cx - pa.x) * 0.55 + seed, y: pa.y + (cy - pa.y) * 0.55 - seed * 0.4 };
+  var c2 = { x: pb.x + (cx - pb.x) * 0.55 - seed, y: pb.y + (cy - pb.y) * 0.55 + seed * 0.4 };
+  return [pa, c1, c2, pb];
+}
+// An irregular, lumpy closed blob (not a circle) for the knot's body, so it
+// reads as a bulge of tangled rope rather than a disc.
+function ropeBlobPath(cx, cy, r, seed) {
+  var N = 9, pts = [];
+  for (var i = 0; i < N; i++) {
+    var angle = (i / N) * Math.PI * 2;
+    var jitter = (ropePrand(seed + i * 7.31) - 0.5) * r * 0.5;
+    var rad = r + jitter;
+    pts.push({ x: cx + Math.cos(angle) * rad, y: cy + Math.sin(angle) * rad });
+  }
+  var mid = function (p1, p2) { return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }; };
+  var start = mid(pts[N - 1], pts[0]);
+  var d = "M " + start.x.toFixed(1) + " " + start.y.toFixed(1) + " ";
+  for (var j = 0; j < N; j++) {
+    var p = pts[j], m = mid(p, pts[(j + 1) % N]);
+    d += "Q " + p.x.toFixed(1) + " " + p.y.toFixed(1) + " " + m.x.toFixed(1) + " " + m.y.toFixed(1) + " ";
+  }
+  return d + "Z";
+}
+// One curved strand draped across the knot body to suggest a wrap/loop.
+function ropeKnotWrapPath(cx, cy, r, seed) {
+  var ang = ropePrand(seed) * Math.PI;
+  var p1 = { x: cx + Math.cos(ang) * r * 0.85, y: cy + Math.sin(ang) * r * 0.85 };
+  var p2 = { x: cx - Math.cos(ang) * r * 0.85, y: cy - Math.sin(ang) * r * 0.85 };
+  var bow = (ropePrand(seed + 2) - 0.5) * r * 1.3;
+  var perp = { x: -Math.sin(ang), y: Math.cos(ang) };
+  var ctrl = { x: cx + perp.x * bow, y: cy + perp.y * bow };
+  return "M " + p1.x.toFixed(1) + " " + p1.y.toFixed(1) + " Q " + ctrl.x.toFixed(1) + " " + ctrl.y.toFixed(1) + " " + p2.x.toFixed(1) + " " + p2.y.toFixed(1);
+}
+
+// A tied connection — curved rope between two ends' edge points plus a knot
+// where it crosses the shorter-stub side's proportional length (so the knot
+// never lands at a fixed midpoint or overlaps another one), with an
+// invisible larger hit circle (.rope-knot-hit) for untying. defsArr collects
+// this connection's own radial gradient (for the knot's shading) to be
+// flushed into the board's shared <defs> — ids are prefixed with idp so
+// several instances of this node type never clash if more than one is ever
+// on screen at once (e.g. Back-peek behind a live node).
+function ropeConnectionMarkup(idp, conn, geomMap, defsArr) {
+  var infoA = geomMap[conn.a], infoB = geomMap[conn.b];
+  if (!infoA || !infoB) return "";
+  var pts = ropeCurveControlPoints(infoA.geom.edge, infoB.geom.edge, conn.seed);
+  var p0 = pts[0], p1 = pts[1], p2 = pts[2], p3 = pts[3];
+  var d = "M " + p0.x + " " + p0.y + " C " + p1.x + " " + p1.y + ", " + p2.x + " " + p2.y + ", " + p3.x + " " + p3.y;
+  var s = '<g class="rope-connection' + (conn.animated ? "" : " rope-knot-pop") + '">';
+  conn.animated = true;
+  s += '<path d="' + d + '" fill="none" stroke="#241b13" stroke-width="13" stroke-linecap="round"/>';
+  s += '<path d="' + d + '" fill="none" stroke="' + ROPE_HEX + '" stroke-width="10" stroke-linecap="round"/>';
+  s += '<path d="' + d + '" fill="none" stroke="' + ROPE_LIGHT + '" stroke-width="2" stroke-dasharray="3 7" stroke-linecap="round" opacity="0.8"/>';
+
+  var lenA = infoA.stubLen, lenB = infoB.stubLen;
+  var t = lenA / (lenA + lenB);
+  var mid = ropeBezierPoint(p0, p1, p2, p3, t);
+  var before = ropeBezierPoint(p0, p1, p2, p3, Math.max(t - 0.09, 0));
+  var after = ropeBezierPoint(p0, p1, p2, p3, Math.min(t + 0.09, 1));
+  var knotSeed = ropeHash(conn.a) * 0.7 + ropeHash(conn.b) * 1.3 + Math.abs(conn.seed);
+  var R = 15;
+
+  s += '<g class="rope-knot-group">';
+  [before, after].forEach(function (from) {
+    var dx = mid.x - from.x, dy = mid.y - from.y;
+    var len = Math.hypot(dx, dy) || 1;
+    var dirx = dx / len, diry = dy / len;
+    var x1 = mid.x - dirx * (R + 10), y1 = mid.y - diry * (R + 10);
+    var x2 = mid.x - dirx * (R - 5), y2 = mid.y - diry * (R - 5);
+    s += '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + ROPE_HEX + '" stroke-width="9" stroke-linecap="round"/>';
+  });
+  var bodyGradId = idp + "kg" + ropeHash(conn.a + "|" + conn.b);
+  defsArr.push('<radialGradient id="' + bodyGradId + '" cx="32%" cy="28%" r="75%"><stop offset="0%" stop-color="#ad8a5a"/><stop offset="100%" stop-color="#6b5333"/></radialGradient>');
+  s += '<path d="' + ropeBlobPath(mid.x, mid.y, R, knotSeed) + '" fill="url(#' + bodyGradId + ')" stroke="#241b13" stroke-width="3" stroke-linejoin="round"/>';
+  s += '<path d="' + ropeKnotWrapPath(mid.x, mid.y, R * 0.8, knotSeed + 1) + '" fill="none" stroke="#3c2c1a" stroke-width="2.2" opacity="0.6" stroke-linecap="round"/>';
+  s += '<path d="' + ropeKnotWrapPath(mid.x, mid.y, R * 0.7, knotSeed + 11) + '" fill="none" stroke="#3c2c1a" stroke-width="2" opacity="0.45" stroke-linecap="round"/>';
+  s += '<circle class="rope-knot-hit" data-a="' + esc(conn.a) + '" data-b="' + esc(conn.b) + '" cx="' + mid.x + '" cy="' + mid.y + '" r="' + (R + 9) + '" fill="transparent"/>';
+  s += '</g></g>';
+  return s;
+}
+
+// Small brass nameplate mounted where a rope enters the frame — the text
+// the player reads is content.ends[].label, set in the Studio inspector.
+// Top/bottom plaques sit upright; left/right ones rotate 90° to read along
+// their side.
+function ropePlaqueMarkup(idp, info, label) {
+  var edge = info.geom.edge, dir = info.geom.dir;
+  var cx = edge.x + dir.x * 14, cy = edge.y + dir.y * 14;
+  var rotation = dir.y === 0 ? 90 : 0;
+  var w = 36, h = 17;
+  var text = esc(String(label || "").slice(0, 8));
+  var fontSize = text.length > 5 ? 9 : 11;
+  var s = '<g transform="translate(' + cx.toFixed(1) + ',' + cy.toFixed(1) + ') rotate(' + rotation + ')" pointer-events="none">';
+  s += '<rect x="' + (-w / 2) + '" y="' + (-h / 2) + '" width="' + w + '" height="' + h + '" rx="2.5" ry="2.5" fill="url(#' + idp + 'brass)" stroke="#4a3510" stroke-width="1.3"/>';
+  s += '<rect x="' + (-w / 2 + 2) + '" y="' + (-h / 2 + 2) + '" width="' + (w - 4) + '" height="' + (h - 4) + '" rx="1.5" ry="1.5" fill="none" stroke="#fceec2" stroke-width="0.6" opacity="0.55"/>';
+  s += '<text x="0" y="4" text-anchor="middle" font-size="' + fontSize + '" font-family="Georgia, \'Times New Roman\', serif" font-weight="700" fill="#4a3510">' + text + '</text>';
+  s += '</g>';
+  return s;
+}
+
+function renderRopeBoardSvg(n, ctl) {
+  var c = n.content;
+  var draft = ctl.ropeDraft[n.id];
+  var geomMap = ropeGeometryMap(c);
+  var idp = "rt" + n.id.replace(/[^a-zA-Z0-9]/g, "") + "_";
+  var defsArr = [];
+  var body = "";
+  draft.connections.forEach(function (conn) { body += ropeConnectionMarkup(idp, conn, geomMap, defsArr); });
+  (c.ends || []).forEach(function (e) {
+    var tied = draft.connections.some(function (cc) { return cc.a === e.id || cc.b === e.id; });
+    if (!tied && geomMap[e.id]) body += ropeStubMarkup(e.id, geomMap[e.id], draft.selected);
+  });
+  (c.ends || []).forEach(function (e) { if (geomMap[e.id]) body += ropePlaqueMarkup(idp, geomMap[e.id], e.label); });
+  return '<div class="pv-rope-wrap" data-node="' + esc(n.id) + '">' +
+    '<svg class="rope-svg" data-node="' + esc(n.id) + '" viewBox="0 0 ' + ROPE_BOARD + ' ' + ROPE_BOARD + '" style="display:block;margin:10px auto 0;max-width:100%;width:340px;">' +
+      '<defs><linearGradient id="' + idp + 'brass" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f6dfa0"/><stop offset="50%" stop-color="#caa54c"/><stop offset="100%" stop-color="#8a6a2c"/></linearGradient>' +
+        defsArr.join("") +
+      '</defs>' +
+      '<rect x="4" y="4" width="' + (ROPE_BOARD - 8) + '" height="' + (ROPE_BOARD - 8) + '" rx="10" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="2"/>' +
+      body +
+    '</svg>' +
+  '</div>';
+}
+
+// Tap two free ends (.rope-end-cap) to tie them, tap a knot (.rope-knot-hit)
+// to untie it — same select-then-tie interaction as the standalone
+// prototype, just delegated off one click listener on the svg root (fresh
+// every render, like every other wire* fn here) instead of DOM node
+// references. The Hoist button (#pvHoistBtn) reads off the current ties,
+// submits them, and drives the win/fail presentation described in
+// NODE_TYPES.ropeTying's comment: wrong -> button flashes red + the whole
+// board shakes, then resets for another attempt; correct -> button flashes
+// green, the board animates away (.rope-clear-away, styles.css), and after
+// a 2s pause (so the player actually sees it clear) the view advances to
+// whatever comes next — the node itself already completed the moment
+// pv_action_submitRopeTying returned true, this timeout only delays the
+// re-render that moves the screen on (same trick as wireCryptexInteractions
+// above, just a 2s hold instead of 3s and a clear-away instead of a
+// shackle-open pose).
+function wireRopeTyingInteractions(root, ctl, session, n) {
+  var wrap = root.querySelector('.pv-rope-wrap[data-node="' + n.id + '"]');
+  if (!wrap) return;
+  var svg = wrap.querySelector(".rope-svg");
+  if (!ctl.ropeDraft[n.id]) ctl.ropeDraft[n.id] = { connections: [], selected: null };
+  var draft = ctl.ropeDraft[n.id];
+
+  svg.onclick = function (e) {
+    if (wrap.dataset.rtLocked === "1") return;
+    var target = e.target;
+    if (!target || !target.classList) return;
+    if (target.classList.contains("rope-knot-hit")) {
+      var a = target.dataset.a, b = target.dataset.b;
+      var idx = -1;
+      draft.connections.forEach(function (cc, i) { if (cc.a === a && cc.b === b) idx = i; });
+      if (idx !== -1) { draft.connections.splice(idx, 1); draft.selected = null; ctl.render(); }
+      return;
+    }
+    if (target.classList.contains("rope-end-cap")) {
+      var endId = target.dataset.endid;
+      if (draft.selected === null) { draft.selected = endId; ctl.render(); }
+      else if (draft.selected === endId) { draft.selected = null; ctl.render(); }
+      else {
+        draft.connections.push({ a: draft.selected, b: endId, seed: (Math.random() - 0.5) * 70, animated: false });
+        draft.selected = null;
+        ctl.render();
+      }
+    }
+  };
+
+  var hoistBtn = root.querySelector("#pvHoistBtn");
+  if (!hoistBtn) return;
+  hoistBtn.onclick = function () {
+    if (wrap.dataset.rtLocked === "1") return; // guards a double-press during the 2s hold below
+    var pairs = draft.connections.map(function (cc) { return [cc.a, cc.b]; });
+    var ok = pv_action_submitRopeTying(session, n.id, pairs);
+    if (ok) {
+      wrap.dataset.rtLocked = "1";
+      hoistBtn.classList.remove("pv-hoist-fail");
+      hoistBtn.classList.add("pv-hoist-success");
+      wrap.classList.remove("rope-shake");
+      wrap.classList.add("rope-clear-away");
+      setTimeout(function () {
+        ctl.expandedNodeId = null; ctl.pinnedNodeId = null;
+        ctl.render();
+      }, 2000);
+    } else {
+      hoistBtn.classList.remove("pv-hoist-success");
+      hoistBtn.classList.add("pv-hoist-fail");
+      wrap.classList.remove("rope-shake");
+      void wrap.offsetWidth; // restart the shake animation even on repeated wrong guesses
+      wrap.classList.add("rope-shake");
+      setTimeout(function () {
+        hoistBtn.classList.remove("pv-hoist-fail");
+        wrap.classList.remove("rope-shake");
+        ctl.render();
+      }, 650);
+    }
+  };
+}
+
 function wirePreviewNodeInteractions(session, n, ctl) {
   if (!n) return;
   var root = ctl.mainEl;
@@ -2203,6 +2593,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireCryptexInteractions(root, ctl, session, n);
   wireTextSubmitAction(root, ctl, session, n, "pvCrossRefInput", "pvSubmitCrossRef", pv_action_submitCrossReferenceAnswer);
   wirePdfReveal(root, ctl, session, n);
+  wireRopeTyingInteractions(root, ctl, session, n);
 
   // Sequence / Pattern — tap swatches in order; auto-validates once the
   // attempt is as long as the target sequence, resetting on a miss.
@@ -2318,7 +2709,7 @@ function createPreviewController(mainEl, sideEl) {
     mainEl: mainEl, sideEl: sideEl,
     session: null, expandedNodeId: null, showState: false,
     orderingDraft: {}, matchingDraft: {},
-    sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {}, fuseDraft: {},
+    sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {}, fuseDraft: {}, ropeDraft: {},
     pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
@@ -2340,6 +2731,7 @@ function createPreviewController(mainEl, sideEl) {
     ctl.lockDialDraft = {};
     ctl.cryptexDraft = {};
     ctl.fuseDraft = {};
+    ctl.ropeDraft = {};
     ctl.pinnedNodeId = null;
     ctl.peekStack = [];
     ctl.laneListId = null;
@@ -2522,6 +2914,7 @@ return {
   pv_action_submitLockCode: pv_action_submitLockCode,
   pv_action_submitCrossReferenceAnswer: pv_action_submitCrossReferenceAnswer,
   pv_action_submitFusePanel: pv_action_submitFusePanel,
+  pv_action_submitRopeTying: pv_action_submitRopeTying,
   pv_action_revealHint: pv_action_revealHint,
 
   PLAYER_SCREEN_TYPES: PLAYER_SCREEN_TYPES,

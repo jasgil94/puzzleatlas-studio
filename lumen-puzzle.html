@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumen — Light, Lens & Mirror Puzzle (Beta v2)</title>
+<style>
+  :root{
+    --bg-a:#0a0e1a; --bg-b:#131c33; --panel:#141b2e; --panel-b:#1c2740;
+    --border:#2a3556; --accent:#7fd8ff; --accent2:#ffd27f; --good:#6bffb0;
+    --text:#e7edf7; --dim:#8a94ad;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:radial-gradient(1200px 700px at 50% -10%, #1a2544 0%, var(--bg-a) 55%, #060811 100%);
+    color:var(--text); display:flex; justify-content:center; padding:28px 16px 60px;
+  }
+  .wrap{ width:100%; max-width:900px; }
+  header{ text-align:center; margin-bottom:18px; }
+  h1{
+    margin:0 0 4px; font-size:28px; letter-spacing:1px; font-weight:700;
+    background:linear-gradient(90deg,#bfe9ff,#ffe6b0);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 30px rgba(127,216,255,0.25);
+  }
+  header p{ margin:0; color:var(--dim); font-size:13px; }
+  .badge{
+    display:inline-block; margin-top:6px; font-size:11px; letter-spacing:1.5px;
+    color:#0a0e1a; background:linear-gradient(90deg,var(--accent),var(--accent2));
+    padding:2px 10px; border-radius:20px; font-weight:700; text-transform:uppercase;
+  }
+
+  .levelNav{ display:flex; gap:8px; justify-content:center; margin:18px 0 10px; flex-wrap:wrap; }
+  .levelBtn{
+    background:var(--panel-b); border:1px solid var(--border); color:var(--dim);
+    padding:7px 14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;
+    transition:all .15s ease;
+  }
+  .levelBtn:hover{ color:var(--text); border-color:var(--accent); }
+  .levelBtn.active{
+    color:#08101f; background:linear-gradient(90deg,var(--accent),#9fe4ff);
+    border-color:var(--accent); box-shadow:0 0 16px rgba(127,216,255,0.45);
+  }
+  .levelBtn.solved::after{ content:" ✓"; }
+
+  .hintBar{
+    text-align:center; margin-bottom:14px; padding:0 10px;
+  }
+  .hintBar .name{ font-size:15px; font-weight:700; color:var(--accent2); }
+  .hintBar .hint{ font-size:13px; color:var(--dim); margin-top:2px; }
+
+  .stage{
+    position:relative; background:linear-gradient(160deg,var(--panel),#0e1526);
+    border:1px solid var(--border); border-radius:16px; padding:14px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.5), inset 0 0 40px rgba(127,216,255,0.03);
+    display:flex; justify-content:center;
+  }
+  canvas{ max-width:100%; height:auto; border-radius:10px; cursor:default; display:block; touch-action:none; }
+
+  .toast{
+    position:absolute; top:14px; left:50%; transform:translate(-50%,-14px);
+    background:linear-gradient(90deg,#1c3d2c,#12261c); border:1px solid var(--good);
+    color:var(--good); padding:8px 18px; border-radius:30px; font-weight:700; font-size:13px;
+    opacity:0; pointer-events:none; transition:all .35s ease; box-shadow:0 0 24px rgba(107,255,176,0.35);
+    letter-spacing:.5px;
+  }
+  .toast.show{ opacity:1; transform:translate(-50%,4px); }
+
+  .hud{
+    display:flex; align-items:center; gap:16px; margin-top:16px; flex-wrap:wrap;
+    justify-content:center;
+  }
+  .meterBox{ flex:1; min-width:220px; max-width:340px; }
+  .meterLabel{ display:flex; justify-content:space-between; font-size:11px; color:var(--dim); margin-bottom:4px; letter-spacing:.5px; text-transform:uppercase;}
+  .meterTrack{ height:10px; border-radius:6px; background:#0a0e1a; border:1px solid var(--border); overflow:hidden; }
+  .meterFill{ height:100%; width:0%; border-radius:6px; background:linear-gradient(90deg,#4a6fff,#7fd8ff); transition:width .2s ease, background .3s ease; }
+  .meterFill.solved{ background:linear-gradient(90deg,#2fe38a,#8bffce); box-shadow:0 0 12px rgba(107,255,176,0.6); }
+
+  .btnRow{ display:flex; gap:8px; }
+  button.ctrl{
+    background:var(--panel-b); border:1px solid var(--border); color:var(--text);
+    padding:9px 16px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;
+    transition:all .15s ease;
+  }
+  button.ctrl:hover{ border-color:var(--accent2); color:var(--accent2); }
+
+  .legend{
+    display:flex; gap:18px; justify-content:center; flex-wrap:wrap; margin-top:22px;
+    font-size:11.5px; color:var(--dim);
+  }
+  .legend .item{ display:flex; align-items:center; gap:6px; }
+  .swatch{ width:14px; height:14px; border-radius:4px; display:inline-block; }
+  .sw-source{ background:radial-gradient(circle,#fff,#ffd27f); box-shadow:0 0 8px #ffd27f;}
+  .sw-mirror{ background:linear-gradient(135deg,#cfd8e8,#7f8ba8); }
+  .sw-lens{ background:radial-gradient(circle,#bfeaff,#4a90c2); border-radius:50%; }
+  .sw-wall{ background:repeating-linear-gradient(45deg,#3a2f2f,#3a2f2f 3px,#241c1c 3px,#241c1c 6px); }
+  .sw-target{ background:radial-gradient(circle,#6bffb0,#1c8a58); }
+
+  footer{ text-align:center; margin-top:20px; color:var(--dim); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Lumen</h1>
+    <p>A light, lens &amp; mirror puzzle</p>
+    <span class="badge">Beta v2 — free rotation</span>
+  </header>
+
+  <div class="levelNav" id="levelNav"></div>
+  <div class="hintBar">
+    <div class="name" id="levelName"></div>
+    <div class="hint" id="levelHint"></div>
+  </div>
+
+  <div class="stage">
+    <canvas id="game"></canvas>
+    <div class="toast" id="toast">Level Solved ✨</div>
+  </div>
+
+  <div class="hud">
+    <div class="meterBox">
+      <div class="meterLabel"><span>Beam intensity</span><span id="meterText">0.0 / 0.0</span></div>
+      <div class="meterTrack"><div class="meterFill" id="meterFill"></div></div>
+    </div>
+    <div class="btnRow">
+      <button class="ctrl" id="resetBtn">Reset Level</button>
+      <button class="ctrl" id="prevBtn">◀ Prev</button>
+      <button class="ctrl" id="nextBtn">Next ▶</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="item"><span class="swatch sw-source"></span> Light source — drag its cylinder to aim the slit</div>
+    <div class="item"><span class="swatch sw-mirror"></span> Mirror — drag to rotate</div>
+    <div class="item"><span class="swatch sw-lens"></span> Lens — drag to rotate &amp; focus</div>
+    <div class="item"><span class="swatch sw-wall"></span> Wall — blocks light</div>
+    <div class="item"><span class="swatch sw-target"></span> Receiver</div>
+  </div>
+
+  <footer>Click and drag the source, a mirror, or a lens to spin it — each locks into place every 15°. The light source only emits through the slit in its rotating cylinder. Guide the beam into the receiver at full brightness to solve each level.</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const CELL = 64, PAD = 24, EPS = 0.75;
+  const LENS_BOOST = 1.6, LENS_PENALTY = 0.9;
+  const LENS_R = CELL*0.22, MIRROR_HALF = CELL*0.33, TARGET_R = CELL*0.22;
+
+  function rad(d){ return d*Math.PI/180; }
+  function norm360(d){ return ((d%360)+360)%360; }
+
+  const LEVELS = [
+    {
+      name:"1. First Light",
+      hint:"Aim the source cylinder's slit toward the lens, then align the lens with the beam.",
+      rows:4, cols:6,
+      source:{r:1,c:0,angle:105},
+      target:{r:1,c:5,threshold:1.5},
+      walls:[],
+      pieces:[{type:'lens',r:1,c:3,angle:60}]
+    },
+    {
+      name:"2. Bend It",
+      hint:"Aim the source, rotate the mirror to send the beam downward, then align the lens.",
+      rows:5, cols:6,
+      source:{r:1,c:0,angle:255},
+      target:{r:3,c:3,threshold:1.4},
+      walls:[],
+      pieces:[{type:'mirror',r:1,c:3,angle:150},{type:'lens',r:2,c:3,angle:30}]
+    },
+    {
+      name:"3. Double Boost",
+      hint:"Aim the source east, then route the beam up and across through two lenses before sending it back down.",
+      rows:6, cols:8,
+      source:{r:2,c:0,angle:180},
+      target:{r:2,c:6,threshold:2.3},
+      walls:[],
+      pieces:[
+        {type:'mirror',r:2,c:1,angle:90},
+        {type:'mirror',r:1,c:1,angle:0},
+        {type:'lens',r:1,c:2,angle:60},
+        {type:'lens',r:1,c:4,angle:150},
+        {type:'mirror',r:1,c:6,angle:120}
+      ]
+    },
+    {
+      name:"4. Obstacle Course",
+      hint:"A wall blocks the direct path — aim the source, climb around it, gather two boosts, then dive back down.",
+      rows:7, cols:9,
+      source:{r:3,c:0,angle:330},
+      target:{r:5,c:7,threshold:2.4},
+      walls:[[3,3],[3,4],[3,5]],
+      pieces:[
+        {type:'mirror',r:3,c:2,angle:75},
+        {type:'mirror',r:1,c:2,angle:165},
+        {type:'lens',r:1,c:3,angle:45},
+        {type:'lens',r:1,c:5,angle:105},
+        {type:'mirror',r:1,c:7,angle:15}
+      ]
+    }
+  ];
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const levelNavEl = document.getElementById('levelNav');
+  const levelNameEl = document.getElementById('levelName');
+  const levelHintEl = document.getElementById('levelHint');
+  const meterFillEl = document.getElementById('meterFill');
+  const meterTextEl = document.getElementById('meterText');
+  const toastEl = document.getElementById('toast');
+
+  let currentIndex = 0;
+  let level = null;
+  let hoverPiece = null;
+  let draggingPiece = null;
+  let dragMoved = false;
+  let dragStartClient = null;
+  let lastSnappedAngle = null;
+  let lastSolved = false;
+  const solvedLevels = new Set();
+
+  function cloneLevel(idx){
+    const L = JSON.parse(JSON.stringify(LEVELS[idx]));
+    L.pieces.forEach(p=>{
+      p.id = p.r+'_'+p.c;
+      p.angle = norm360(p.angle);
+      p.targetAngle = p.angle;
+    });
+    L.source.id = 'source';
+    L.source.angle = norm360(L.source.angle);
+    L.source.targetAngle = L.source.angle;
+    L.wallRects = L.walls.map(([r,c])=>{
+      const x0=PAD+c*CELL, y0=PAD+r*CELL, x1=x0+CELL, y1=y0+CELL;
+      return { edges:[
+        [{x:x0,y:y0},{x:x1,y:y0}],
+        [{x:x1,y:y0},{x:x1,y:y1}],
+        [{x:x1,y:y1},{x:x0,y:y1}],
+        [{x:x0,y:y1},{x:x0,y:y0}]
+      ]};
+    });
+    return L;
+  }
+
+  function initLevel(idx){
+    currentIndex = idx;
+    level = cloneLevel(idx);
+    canvas.width = level.cols*CELL + PAD*2;
+    canvas.height = level.rows*CELL + PAD*2;
+    lastSolved = false;
+    draggingPiece = null;
+    hoverPiece = null;
+    toastEl.classList.remove('show');
+    levelNameEl.textContent = level.name;
+    levelHintEl.textContent = level.hint;
+    buildNav();
+  }
+
+  function buildNav(){
+    levelNavEl.innerHTML = '';
+    LEVELS.forEach((L,i)=>{
+      const b = document.createElement('button');
+      b.className = 'levelBtn' + (i===currentIndex?' active':'') + (solvedLevels.has(i)?' solved':'');
+      b.textContent = 'Level ' + (i+1);
+      b.addEventListener('click', ()=>initLevel(i));
+      levelNavEl.appendChild(b);
+    });
+  }
+
+  function centerPx(r,c){
+    return { x: PAD + (c+0.5)*CELL, y: PAD + (r+0.5)*CELL };
+  }
+
+  function findPiece(r,c){
+    if(level.source.r===r && level.source.c===c) return level.source;
+    return level.pieces.find(p=>p.r===r && p.c===c);
+  }
+
+  // ---- geometry ----
+  function segIntersect(O,D,A,B,minT){
+    const v1x=O.x-A.x, v1y=O.y-A.y;
+    const v2x=B.x-A.x, v2y=B.y-A.y;
+    const v3x=-D.y, v3y=D.x;
+    const dot=v2x*v3x+v2y*v3y;
+    if(Math.abs(dot)<1e-9) return null;
+    const t1=(v2x*v1y - v2y*v1x)/dot;
+    const t2=(v1x*v3x+v1y*v3y)/dot;
+    if(t1>minT && t2>=0 && t2<=1) return {t:t1, x:O.x+D.x*t1, y:O.y+D.y*t1};
+    return null;
+  }
+  function circleIntersect(O,D,C,r,minT){
+    const ocx=O.x-C.x, ocy=O.y-C.y;
+    const b=2*(ocx*D.x+ocy*D.y);
+    const c=ocx*ocx+ocy*ocy-r*r;
+    const disc=b*b-4*c;
+    if(disc<0) return null;
+    const sq=Math.sqrt(disc);
+    let t0=(-b-sq)/2, t1=(-b+sq)/2;
+    if(t0>t1){ const tmp=t0; t0=t1; t1=tmp; }
+    let entry=null, exit=null;
+    if(t0>minT){ entry=t0; exit=t1; }
+    else if(t1>minT){ entry=t1; exit=t1; }
+    if(entry===null) return null;
+    return {tEntry:entry, tExit:exit, xEntry:O.x+D.x*entry, yEntry:O.y+D.y*entry, xExit:O.x+D.x*exit, yExit:O.y+D.y*exit};
+  }
+
+  function traceBeam(){
+    const O0 = centerPx(level.source.r, level.source.c);
+    let O = {x:O0.x, y:O0.y};
+    let D = {x:Math.cos(rad(level.source.angle)), y:Math.sin(rad(level.source.angle))};
+    let intensity = 1.0;
+    const segments = [];
+    const activated = new Set();
+    const closeness = new Map();
+    let hit=false, hitIntensity=0, blocked=false;
+
+    const boundaryEdges = [
+      [{x:PAD,y:PAD},{x:PAD+level.cols*CELL,y:PAD}],
+      [{x:PAD+level.cols*CELL,y:PAD},{x:PAD+level.cols*CELL,y:PAD+level.rows*CELL}],
+      [{x:PAD+level.cols*CELL,y:PAD+level.rows*CELL},{x:PAD,y:PAD+level.rows*CELL}],
+      [{x:PAD,y:PAD+level.rows*CELL},{x:PAD,y:PAD}]
+    ];
+
+    for(let bounce=0; bounce<60; bounce++){
+      let best = null;
+
+      boundaryEdges.forEach(([A,B])=>{
+        const h = segIntersect(O,D,A,B,EPS);
+        if(h && (!best || h.t<best.t)) best = {t:h.t, type:'boundary', x:h.x, y:h.y};
+      });
+      level.wallRects.forEach(rect=>{
+        rect.edges.forEach(([A,B])=>{
+          const h = segIntersect(O,D,A,B,EPS);
+          if(h && (!best || h.t<best.t)) best = {t:h.t, type:'wall', x:h.x, y:h.y};
+        });
+      });
+      level.pieces.forEach(p=>{
+        if(p.type==='mirror'){
+          const c = centerPx(p.r,p.c);
+          const rA = rad(p.angle);
+          const A = {x:c.x+Math.cos(rA)*MIRROR_HALF, y:c.y+Math.sin(rA)*MIRROR_HALF};
+          const B = {x:c.x-Math.cos(rA)*MIRROR_HALF, y:c.y-Math.sin(rA)*MIRROR_HALF};
+          const h = segIntersect(O,D,A,B,EPS);
+          if(h && (!best || h.t<best.t)) best = {t:h.t, type:'mirror', piece:p, x:h.x, y:h.y};
+        } else if(p.type==='lens'){
+          const c = centerPx(p.r,p.c);
+          const res = circleIntersect(O,D,c,LENS_R,EPS);
+          if(res && (!best || res.tEntry<best.t)) best = {t:res.tEntry, type:'lens', piece:p, x:res.xEntry, y:res.yEntry, exitX:res.xExit, exitY:res.yExit};
+        }
+      });
+      {
+        const c = centerPx(level.target.r, level.target.c);
+        const res = circleIntersect(O,D,c,TARGET_R,EPS);
+        if(res && (!best || res.tEntry<best.t)) best = {t:res.tEntry, type:'target', x:res.xEntry, y:res.yEntry};
+      }
+
+      if(!best) break;
+
+      segments.push({x1:O.x,y1:O.y,x2:best.x,y2:best.y,intensity});
+
+      if(best.type==='boundary'){ break; }
+      if(best.type==='wall'){ blocked = true; break; }
+
+      if(best.type==='mirror'){
+        const p = best.piece;
+        const rA = rad(p.angle);
+        const lineDir = {x:Math.cos(rA), y:Math.sin(rA)};
+        const normal = {x:-lineDir.y, y:lineDir.x};
+        const dDotN = D.x*normal.x + D.y*normal.y;
+        D = {x:D.x-2*dDotN*normal.x, y:D.y-2*dDotN*normal.y};
+        const len = Math.hypot(D.x,D.y); D.x/=len; D.y/=len;
+        O = {x:best.x+D.x*EPS*2, y:best.y+D.y*EPS*2};
+        activated.add(p.id);
+        continue;
+      }
+
+      if(best.type==='lens'){
+        const p = best.piece;
+        const rayAngle = norm360(Math.atan2(D.y,D.x)*180/Math.PI) % 180;
+        const lensAngle = norm360(p.angle) % 180;
+        let diff = Math.abs(rayAngle-lensAngle);
+        diff = Math.min(diff, 180-diff); // 0..90
+        const close = 1 - diff/90;       // 1 = perfectly aligned
+        const factor = LENS_PENALTY + (LENS_BOOST-LENS_PENALTY)*close;
+        intensity *= factor;
+        segments.push({x1:best.x,y1:best.y,x2:best.exitX,y2:best.exitY,intensity});
+        closeness.set(p.id, close);
+        if(close>0.5) activated.add(p.id);
+        O = {x:best.exitX+D.x*EPS*2, y:best.exitY+D.y*EPS*2};
+        continue;
+      }
+
+      if(best.type==='target'){ hit = true; hitIntensity = intensity; break; }
+    }
+
+    return { segments, hit, intensity:hitIntensity, blocked, activated, closeness };
+  }
+
+  function beamColor(i){
+    if(i<=0.05) return 'rgba(90,100,120,0.55)';
+    const hue = Math.max(45, 205 - i*55);
+    const light = Math.min(85, 48 + i*13);
+    return `hsl(${hue}, 95%, ${light}%)`;
+  }
+  function lerpColor(c1,c2,t){
+    const a=parseInt(c1.slice(1),16), b=parseInt(c2.slice(1),16);
+    const ar=(a>>16)&255, ag=(a>>8)&255, ab=a&255;
+    const br=(b>>16)&255, bg=(b>>8)&255, bb=b&255;
+    const r=Math.round(ar+(br-ar)*t), g=Math.round(ag+(bg-ag)*t), bl=Math.round(ab+(bb-ab)*t);
+    return `rgb(${r},${g},${bl})`;
+  }
+
+  function pointInCell(px,py){
+    return { r: Math.floor((py-PAD)/CELL), c: Math.floor((px-PAD)/CELL) };
+  }
+
+  function drawGrid(){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.045)';
+    ctx.lineWidth = 1;
+    for(let c=0;c<=level.cols;c++){
+      ctx.beginPath(); ctx.moveTo(PAD+c*CELL, PAD); ctx.lineTo(PAD+c*CELL, PAD+level.rows*CELL); ctx.stroke();
+    }
+    for(let r=0;r<=level.rows;r++){
+      ctx.beginPath(); ctx.moveTo(PAD, PAD+r*CELL); ctx.lineTo(PAD+level.cols*CELL, PAD+r*CELL); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function roundRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function drawWalls(){
+    level.walls.forEach(([r,c])=>{
+      const x = PAD+c*CELL, y = PAD+r*CELL;
+      ctx.save();
+      ctx.fillStyle = '#241c1c';
+      roundRect(x+4,y+4,CELL-8,CELL-8,8);
+      ctx.fill();
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(120,70,70,0.5)';
+      ctx.lineWidth = 3;
+      for(let i=-CELL;i<CELL*2;i+=10){
+        ctx.beginPath(); ctx.moveTo(x+i, y+CELL); ctx.lineTo(x+i+CELL, y); ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }
+
+  function drawBeam(trace){
+    ctx.save();
+    ctx.lineCap = 'round';
+    trace.segments.forEach(s=>{
+      const w = Math.min(4 + s.intensity*4, 20);
+      ctx.strokeStyle = beamColor(s.intensity);
+      ctx.globalAlpha = 0.25;
+      ctx.lineWidth = w*2.4;
+      ctx.shadowColor = beamColor(s.intensity);
+      ctx.shadowBlur = 18 + s.intensity*8;
+      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+    });
+    trace.segments.forEach(s=>{
+      const w = Math.min(3 + s.intensity*3, 12);
+      ctx.strokeStyle = beamColor(s.intensity);
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = w;
+      ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  const CYL_OUTER = CELL*0.40, CYL_INNER = CELL*0.30, SLIT_HALF_DEG = 20;
+
+  function drawSourceCylinder(trace){
+    const {x,y} = centerPx(level.source.r, level.source.c);
+    const pulse = 1 + Math.sin(Date.now()/260)*0.08;
+    const emitting = trace.segments.length>0;
+
+    ctx.save();
+    ctx.translate(x,y);
+
+    // glow bulb inside the cylinder
+    ctx.shadowColor = '#ffd27f';
+    ctx.shadowBlur = 22;
+    const grad = ctx.createRadialGradient(0,0,2,0,0,13*pulse);
+    grad.addColorStop(0,'#ffffff'); grad.addColorStop(0.5,'#ffe6b0'); grad.addColorStop(1,'rgba(255,210,127,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(0,0,13*pulse,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff8e8';
+    ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.fill();
+
+    // rotating cylinder wall with a slit gap facing the emission angle
+    const a = rad(level.source.angle);
+    const gapStart = a - rad(SLIT_HALF_DEG);
+    const gapEnd = a + rad(SLIT_HALF_DEG);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0,0,CYL_OUTER, gapEnd, gapStart + Math.PI*2);
+    ctx.arc(0,0,CYL_INNER, gapStart + Math.PI*2, gapEnd, true);
+    ctx.closePath();
+    const wallGrad = ctx.createLinearGradient(-CYL_OUTER,-CYL_OUTER,CYL_OUTER,CYL_OUTER);
+    wallGrad.addColorStop(0,'#5a6784');
+    wallGrad.addColorStop(0.5,'#9aa8c8');
+    wallGrad.addColorStop(1,'#3f4a66');
+    ctx.fillStyle = wallGrad;
+    ctx.shadowColor = 'rgba(160,180,220,0.4)';
+    ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.restore();
+
+    // warm glow spilling out of the slit
+    if(emitting){
+      ctx.save();
+      ctx.rotate(a);
+      const spillGrad = ctx.createRadialGradient(0,0,CYL_INNER,0,0,CYL_OUTER+10);
+      spillGrad.addColorStop(0,'rgba(255,230,176,0.85)');
+      spillGrad.addColorStop(1,'rgba(255,230,176,0)');
+      ctx.fillStyle = spillGrad;
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.arc(0,0,CYL_OUTER+10, -rad(SLIT_HALF_DEG), rad(SLIT_HALF_DEG));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawTarget(trace){
+    const {x,y} = centerPx(level.target.r, level.target.c);
+    const solved = trace.hit && trace.intensity >= level.target.threshold;
+    let color, glow;
+    if(solved){ color = '#6bffb0'; glow = '#6bffb0'; }
+    else if(trace.hit){ color = '#ff9f4a'; glow = '#ff9f4a'; }
+    else { color = '#3a4568'; glow = 'transparent'; }
+    const pulse = solved ? (1+Math.sin(Date.now()/200)*0.12) : 1;
+
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(Math.PI/4);
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = solved ? 30 : (trace.hit ? 14 : 0);
+    const s = 16*pulse;
+    ctx.fillStyle = color;
+    roundRect(-s,-s,s*2,s*2,6);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = '10px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('target', x, y+34);
+    ctx.restore();
+  }
+
+  function drawMirror(p, active){
+    const {x,y} = centerPx(p.r,p.c);
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(rad(p.angle));
+    const len = MIRROR_HALF*2, w = 9;
+    ctx.shadowColor = active ? '#bfeaff' : 'transparent';
+    ctx.shadowBlur = active ? 22 : 0;
+    const grad = ctx.createLinearGradient(-len/2,0,len/2,0);
+    grad.addColorStop(0,'#7f8ba8');
+    grad.addColorStop(0.5, active ? '#eaf7ff' : '#cfd8e8');
+    grad.addColorStop(1,'#7f8ba8');
+    ctx.fillStyle = grad;
+    roundRect(-len/2,-w/2,len,w,4);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawLens(p, active, close){
+    const {x,y} = centerPx(p.r,p.c);
+    const t = active ? close : 0;
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(rad(p.angle));
+    ctx.shadowColor = active ? lerpColor('#4a90c2','#ffbf5c', t) : 'transparent';
+    ctx.shadowBlur = active ? (8 + t*26) : 0;
+    const grad = ctx.createLinearGradient(0,-16,0,16);
+    grad.addColorStop(0, lerpColor('#bfeaff','#fff3d6', t));
+    grad.addColorStop(1, lerpColor('#4a90c2','#ffbf5c', t));
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.ellipse(0,0, CELL*0.16, CELL*0.30, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0,-CELL*0.30); ctx.lineTo(0,CELL*0.30); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawHoverAndDrag(){
+    if(hoverPiece && !draggingPiece){
+      const {x,y} = centerPx(hoverPiece.r, hoverPiece.c);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.arc(x,y,CELL*0.42,0,Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+    if(draggingPiece){
+      const {x,y} = centerPx(draggingPiece.r, draggingPiece.c);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,210,127,0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x,y,CELL*0.44,0,Math.PI*2); ctx.stroke();
+      // 15deg tick marks
+      for(let a=0;a<360;a+=15){
+        const rA = rad(a);
+        const inner = CELL*0.44, outer = CELL*0.50;
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x+Math.cos(rA)*inner, y+Math.sin(rA)*inner);
+        ctx.lineTo(x+Math.cos(rA)*outer, y+Math.sin(rA)*outer);
+        ctx.stroke();
+      }
+      const label = Math.round(norm360(draggingPiece.angle)) + '°';
+      ctx.font = 'bold 13px Segoe UI, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#0a0e1a';
+      ctx.shadowColor = 'rgba(255,210,127,0.8)';
+      ctx.shadowBlur = 8;
+      const ty = y - CELL*0.62;
+      roundRect(x-22, ty-13, 44, 20, 6);
+      ctx.fillStyle = '#ffd27f';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#0a0e1a';
+      ctx.fillText(label, x, ty+2);
+      ctx.restore();
+    }
+  }
+
+  function updateAngles(){
+    [level.source, ...level.pieces].forEach(p=>{
+      const diff = p.targetAngle - p.angle;
+      if(Math.abs(diff) > 0.4){
+        p.angle += diff*0.3;
+      } else {
+        p.angle = p.targetAngle = norm360(p.targetAngle);
+      }
+    });
+  }
+
+  function updateHUD(trace){
+    const solved = trace.hit && trace.intensity >= level.target.threshold;
+    const cur = trace.hit ? trace.intensity : 0;
+    const pct = Math.min(cur/level.target.threshold, 1)*100;
+    meterFillEl.style.width = pct+'%';
+    meterFillEl.classList.toggle('solved', solved);
+    meterTextEl.textContent = cur.toFixed(2) + ' / ' + level.target.threshold.toFixed(2);
+
+    if(solved && !lastSolved){
+      toastEl.classList.add('show');
+      solvedLevels.add(currentIndex);
+      buildNav();
+    } else if(!solved && lastSolved){
+      toastEl.classList.remove('show');
+    }
+    lastSolved = solved;
+  }
+
+  function render(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawGrid();
+    drawWalls();
+    const trace = traceBeam();
+    drawBeam(trace);
+    drawHoverAndDrag();
+    level.pieces.forEach(p=>{
+      const active = trace.activated.has(p.id);
+      if(p.type==='mirror') drawMirror(p, active);
+      else drawLens(p, active, trace.closeness.get(p.id)||0);
+    });
+    drawSourceCylinder(trace);
+    drawTarget(trace);
+    updateHUD(trace);
+  }
+
+  function frame(){
+    updateAngles();
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  function canvasCoords(evt){
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return { x: (evt.clientX-rect.left)*scaleX, y: (evt.clientY-rect.top)*scaleY };
+  }
+
+  function playTone(freq, dur, gainVal){
+    try{
+      const ac = new (window.AudioContext||window.webkitAudioContext)();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type='sine'; o.frequency.value=freq;
+      g.gain.value=gainVal;
+      o.connect(g); g.connect(ac.destination);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+dur);
+      o.stop(ac.currentTime+dur+0.01);
+    }catch(e){}
+  }
+  const tick = ()=>playTone(720,0.05,0.045);
+  const bump = ()=>playTone(480,0.12,0.06);
+
+  function setPieceTargetAngle(p, snapped){
+    const cur = p.targetAngle;
+    let diff = ((snapped - norm360(cur) + 540)%360)-180;
+    p.targetAngle = cur + diff;
+  }
+
+  canvas.addEventListener('pointerdown', evt=>{
+    const {x,y} = canvasCoords(evt);
+    const {r,c} = pointInCell(x,y);
+    const p = findPiece(r,c);
+    if(p){
+      draggingPiece = p;
+      dragMoved = false;
+      dragStartClient = {x:evt.clientX, y:evt.clientY};
+      lastSnappedAngle = Math.round(norm360(p.angle)/15)*15 % 360;
+      try{ canvas.setPointerCapture(evt.pointerId); }catch(e){}
+      evt.preventDefault();
+    }
+  });
+
+  canvas.addEventListener('pointermove', evt=>{
+    const {x,y} = canvasCoords(evt);
+    const {r,c} = pointInCell(x,y);
+
+    if(draggingPiece){
+      const moveDist = Math.hypot(evt.clientX-dragStartClient.x, evt.clientY-dragStartClient.y);
+      if(moveDist>3) dragMoved = true;
+      const center = centerPx(draggingPiece.r, draggingPiece.c);
+      const rawAngle = norm360(Math.atan2(y-center.y, x-center.x)*180/Math.PI);
+      const snapped = Math.round(rawAngle/15)*15 % 360;
+      if(snapped !== lastSnappedAngle){
+        lastSnappedAngle = snapped;
+        tick();
+      }
+      setPieceTargetAngle(draggingPiece, snapped);
+      canvas.style.cursor = 'grabbing';
+    } else {
+      hoverPiece = findPiece(r,c) || null;
+      canvas.style.cursor = hoverPiece ? 'grab' : 'default';
+    }
+  });
+
+  function endDrag(){
+    if(draggingPiece && !dragMoved){
+      setPieceTargetAngle(draggingPiece, norm360(draggingPiece.targetAngle+15));
+      bump();
+    }
+    draggingPiece = null;
+    canvas.style.cursor = hoverPiece ? 'grab' : 'default';
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  window.addEventListener('pointerup', ()=>{ if(draggingPiece) endDrag(); });
+
+  document.getElementById('resetBtn').addEventListener('click', ()=>initLevel(currentIndex));
+  document.getElementById('prevBtn').addEventListener('click', ()=>initLevel((currentIndex-1+LEVELS.length)%LEVELS.length));
+  document.getElementById('nextBtn').addEventListener('click', ()=>initLevel((currentIndex+1)%LEVELS.length));
+
+  initLevel(0);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

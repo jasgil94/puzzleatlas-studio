@@ -482,7 +482,7 @@ var SUGGESTED_LANE = {
   // puzzles in Leads; state-family goes to Inventory; the new Support
   // type goes to Hints, same as the existing Hint node.
   cipher: "leads", mathLogic: "leads", anagram: "leads", sequencePattern: "leads", slidingTile: "leads",
-  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads",
+  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads",
   gate: "leads", randomizer: "leads", teamSplitMerge: "leads", metaPuzzleCombine: "leads",
   timer: "leads", attemptLimiter: "leads",
   combineCraftItem: "inventory", trade: "inventory",
@@ -1863,6 +1863,29 @@ function buildNodeInspector(n) {
   return html;
 }
 
+// Rope Tying — adds/removes content.ends entries for one side to match a
+// newly chosen count (0-4), preserving existing ids/labels for ends that
+// stay and dropping any content.correctPairs that referenced a removed end
+// (same "trim stale refs on delete" idea as choice/switch/item removal
+// elsewhere in this file). New ends are appended with a blank label for the
+// creator to fill in.
+function resizeRopeSide(c, side, count) {
+  c.sides = c.sides || { left: 0, top: 0, right: 0, bottom: 0 };
+  c.ends = c.ends || [];
+  var list = c.ends.filter(function (e) { return e.side === side; });
+  while (list.length < count) {
+    var e = { id: uid("end"), side: side, label: "" };
+    c.ends.push(e);
+    list.push(e);
+  }
+  while (list.length > count) {
+    var removed = list.pop();
+    c.ends = c.ends.filter(function (e2) { return e2.id !== removed.id; });
+    c.correctPairs = (c.correctPairs || []).filter(function (p) { return p[0] !== removed.id && p[1] !== removed.id; });
+  }
+  c.sides[side] = count;
+}
+
 function buildTypeSpecificFields(n) {
   var c = n.content, hunt = Store.hunt, html = '<div class="section-title">Content</div>';
   switch (n.type) {
@@ -1961,6 +1984,38 @@ function buildTypeSpecificFields(n) {
             '<select class="fuseRequiredSelect" data-sid="' + s.id + '" style="flex:none"><option value="1"' + (s.requiredOn ? " selected" : "") + '>Must end ON</option><option value="0"' + (!s.requiredOn ? " selected" : "") + '>Must end OFF</option></select>' +
             '<button class="small-btn" data-sid="' + s.id + '">✕</button></div>';
         }).join("") + '</div><button class="small-btn" id="btnAddSwitch">+ Add switch</button></div>';
+      break;
+    case "ropeTying":
+      html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+      html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Set how many rope ends sit on each side of the frame (0-4), give each end its own brass label text, then drag one end onto another below to mark them as a correct pair. The player ties ends together in the Player view and presses Hoist to check their work — it only counts as complete when the tied set exactly matches the pairs set here.</p>';
+      html += '<div class="field"><label>Ropes per side</label><div class="rope-side-counts">' +
+        ["left", "top", "right", "bottom"].map(function (side) {
+          var label = side.charAt(0).toUpperCase() + side.slice(1);
+          var cur = (c.sides && c.sides[side]) || 0;
+          return '<div class="rope-side-count-row"><span>' + label + '</span><select class="ropeSideCount" data-side="' + side + '">' +
+            [0, 1, 2, 3, 4].map(function (v) { return '<option value="' + v + '"' + (cur === v ? " selected" : "") + '>' + v + '</option>'; }).join("") +
+            '</select></div>';
+        }).join("") + '</div></div>';
+      html += '<div class="field"><label>Rope ends — labels &amp; pairing (drag a tag onto another to pair them)</label>' +
+        '<div id="ropeEndsList">' +
+        ["left", "top", "right", "bottom"].map(function (side) {
+          var list = (c.ends || []).filter(function (e) { return e.side === side; });
+          if (!list.length) return "";
+          var sideLabel = side.charAt(0).toUpperCase() + side.slice(1);
+          return '<div class="rope-side-group"><div class="rope-side-group-label">' + sideLabel + '</div>' +
+            list.map(function (e, i) {
+              var pair = (c.correctPairs || []).find(function (p) { return p[0] === e.id || p[1] === e.id; });
+              var partner = pair ? (c.ends || []).find(function (x) { return x.id === (pair[0] === e.id ? pair[1] : pair[0]); }) : null;
+              var tagText = sideLabel.charAt(0) + (i + 1);
+              return '<div class="list-item rope-end-row" data-endid="' + e.id + '">' +
+                '<span class="rope-end-tag" draggable="true" data-endid="' + e.id + '" title="Drag onto another end to pair them">' + tagText + '</span>' +
+                '<input type="text" value="' + esc(e.label) + '" data-endid="' + e.id + '" class="ropeEndLabelInput" placeholder="Brass label text" style="flex:1" />' +
+                '<span class="rope-pair-indicator">' + (partner ? "↔ " + esc(partner.label || "(unlabeled)") : "unpaired") + '</span>' +
+                (pair ? '<button class="small-btn ropeUnpair" data-endid="' + e.id + '">✕</button>' : '') +
+                '</div>';
+            }).join("") + '</div>';
+        }).join("") +
+        '</div></div>';
       break;
     case "awardItem":
       html += fieldWrap("Item to award", '<select id="fItemId">' + selectOptions(hunt.items, "id", "name", c.itemId, "— choose item —") + '</select>');
@@ -2584,6 +2639,51 @@ function wireNodeInspector(n) {
         c.switches.push({ id: uid("sw"), label: "CKT " + (num < 10 ? "0" : "") + num, onLabel: "A", offLabel: "B", requiredOn: false });
         afterEdit(false); renderInspector();
       };
+      break;
+    case "ropeTying":
+      bindText("fPrompt", "prompt");
+      Array.prototype.forEach.call(document.querySelectorAll(".ropeSideCount"), function (sel) {
+        sel.onchange = function (e) {
+          resizeRopeSide(c, sel.dataset.side, Number(e.target.value));
+          afterEdit(false);
+          renderInspector();
+        };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".ropeEndLabelInput"), function (inp) {
+        inp.oninput = function (e) { var end = c.ends.find(function (x) { return x.id === inp.dataset.endid; }); if (end) end.label = e.target.value; };
+        inp.onblur = function () { afterEdit(false); renderInspector(); };
+      });
+      // Drag one end's tag onto another to mark them a correct pair —
+      // dropping replaces any existing pair either end was already part of,
+      // so an end is never in more than one pair at once.
+      Array.prototype.forEach.call(document.querySelectorAll(".rope-end-tag"), function (tag) {
+        tag.addEventListener("dragstart", function (e) {
+          e.dataTransfer.setData("text/plain", tag.dataset.endid);
+          e.dataTransfer.effectAllowed = "link";
+          tag.classList.add("dragging");
+        });
+        tag.addEventListener("dragend", function () { tag.classList.remove("dragging"); });
+        tag.addEventListener("dragover", function (e) { e.preventDefault(); e.dataTransfer.dropEffect = "link"; tag.classList.add("rope-drop-target"); });
+        tag.addEventListener("dragleave", function () { tag.classList.remove("rope-drop-target"); });
+        tag.addEventListener("drop", function (e) {
+          e.preventDefault();
+          tag.classList.remove("rope-drop-target");
+          var fromId = e.dataTransfer.getData("text/plain");
+          var toId = tag.dataset.endid;
+          if (!fromId || fromId === toId) return;
+          c.correctPairs = (c.correctPairs || []).filter(function (p) { return p.indexOf(fromId) === -1 && p.indexOf(toId) === -1; });
+          c.correctPairs.push([fromId, toId]);
+          afterEdit(false);
+          renderInspector();
+        });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".ropeUnpair"), function (btn) {
+        btn.onclick = function () {
+          c.correctPairs = (c.correctPairs || []).filter(function (p) { return p.indexOf(btn.dataset.endid) === -1; });
+          afterEdit(false);
+          renderInspector();
+        };
+      });
       break;
     case "awardItem":
       bindChange("fItemId", function (v) { c.itemId = v; });
