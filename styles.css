@@ -221,6 +221,26 @@ button{font-family:inherit;cursor:pointer;}
 .small-btn{background:var(--bg3);border:1px solid var(--line);color:var(--text-dim);border-radius:4px;padding:3px 7px;font-size:11px;cursor:pointer;}
 .small-btn:hover{color:var(--text);border-color:var(--accent);}
 .small-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+/* Rope Tying inspector — per-side rope-count selects, and the drag-and-drop
+   pairing builder (buildTypeSpecificFields/wireNodeInspector's "ropeTying"
+   case in app.js). Each rope end gets a small draggable ".rope-end-tag"
+   chip (its side+index, e.g. "L1") next to its editable brass-label text
+   input; dragging one chip onto another marks that pair as correct — see
+   NODE_TYPES.ropeTying/renderRopeBoardSvg in engine.js for the matching
+   player-facing puzzle. */
+.rope-side-counts{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 10px;}
+.rope-side-count-row{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;color:var(--text-dim);}
+.rope-side-count-row select{width:56px;flex:none;}
+.rope-side-group{margin-bottom:8px;}
+.rope-side-group-label{font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;margin:6px 0 4px;}
+.rope-end-row{flex-wrap:nowrap;}
+.rope-end-tag{flex:none;display:flex;align-items:center;justify-content:center;min-width:26px;height:22px;padding:0 6px;border-radius:5px;background:linear-gradient(155deg,#caa54c,#8a6a2c);color:#3a2a0c;font-size:11px;font-weight:700;cursor:grab;border:1px solid #6b4e1e;user-select:none;}
+.rope-end-tag:active{cursor:grabbing;}
+.rope-end-tag.dragging{opacity:.4;}
+.rope-end-tag.rope-drop-target{box-shadow:0 0 0 2px var(--accent);}
+.rope-pair-indicator{flex:none;font-size:10.5px;color:var(--text-dim);white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis;}
+
 .media-adjust-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .section-title{font-size:11.5px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;border-top:1px solid var(--line);padding-top:12px;}
 .section-title:first-child{border-top:none;padding-top:0;margin-top:0;}
@@ -485,6 +505,38 @@ button{font-family:inherit;cursor:pointer;}
 .pv-fuse-switch.on .pv-fuse-contact-on{background:linear-gradient(135deg,#ffd48a,#ff9a3c 45%,#6e4a1f);box-shadow:0 0 6px 2px rgba(255,154,60,.55);}
 .pv-fuse-switch.on .pv-fuse-poslabel-on{color:#ffd48a;opacity:1;}
 .pv-fuse-switch:not(.on) .pv-fuse-poslabel-off{color:#e8e0c8;opacity:1;}
+
+/* Rope Tying — a square rope-and-brass-plaque board rendered as inline SVG
+   (see renderRopeBoardSvg/wireRopeTyingInteractions in engine.js), adapted
+   from the standalone rope-tying-puzzle.html prototype. Colours are
+   hardcoded rope-brown/brass rather than --pv-* tokens (same choice as the
+   Physical Lock/Fuse Panel styles above) — this is meant to read as one
+   consistent prop regardless of the active style pack. The Hoist button is
+   just the node's normal .pv-choice-btn primary button (pvPrimaryButton),
+   with two extra flash states layered on: green+success on a correct
+   attempt (board then clears away and the view advances after a pause),
+   red+shake on a wrong one (board resets for another try). */
+.pv-rope-wrap{width:100%;text-align:center;transition:opacity .5s ease .1s, transform .5s ease .1s;}
+.rope-svg{touch-action:none;}
+.rope-end-cap{cursor:pointer;}
+.rope-knot-hit{cursor:pointer;}
+.rope-selected-ring{animation:pvRopeSelectPulse 1s ease-in-out infinite;}
+@keyframes pvRopeSelectPulse{0%,100%{r:18;opacity:.9;}50%{r:24;opacity:.25;}}
+
+@keyframes pvRopeKnotPop{0%{transform:scale(.1);opacity:0;}55%{transform:scale(1.3);opacity:1;}80%{transform:scale(.92);}100%{transform:scale(1);opacity:1;}}
+.rope-knot-pop .rope-knot-group{animation:pvRopeKnotPop .4s cubic-bezier(.34,1.56,.64,1) both;transform-box:fill-box;transform-origin:center;}
+
+@keyframes pvRopeShake{0%,100%{transform:translateX(0);}20%{transform:translateX(-9px);}40%{transform:translateX(9px);}60%{transform:translateX(-6px);}80%{transform:translateX(6px);}}
+.pv-rope-wrap.rope-shake{animation:pvRopeShake .4s ease;}
+
+/* Correct attempt: the whole board fades/shrinks away in place, held there
+   by wireRopeTyingInteractions' 2s timeout before the view actually
+   advances (so the player gets to see it clear, same idea as the
+   Cryptex's held-open shackle pose). */
+.pv-rope-wrap.rope-clear-away{opacity:0;transform:scale(.85);}
+
+.pv-hoist-success{background:#3f6b3a !important;border-color:#6fae5c !important;color:#eafbe6 !important;transition:background .15s ease,border-color .15s ease;}
+.pv-hoist-fail{background:#6b3a3a !important;border-color:#b8534a !important;color:#ffe6e2 !important;transition:background .15s ease,border-color .15s ease;}
 
 /* Image Reveal — framed/cropped display of the node's own uploaded image
    (c.imageAsset). Deliberately built as normal-flow content (not an inset
