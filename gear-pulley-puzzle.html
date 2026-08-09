@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gearworks — Drive Assembly</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Oswald:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --metal-dark:#171614;
+    --metal-mid:#2c2a26;
+    --metal-light:#4b4740;
+    --rust-1:#5a3420;
+    --rust-2:#3a2417;
+    --brass:#b8863f;
+    --brass-light:#e9c47b;
+    --brass-dark:#6e4a1f;
+    --copper:#a45a34;
+    --copper-light:#d98a5c;
+    --steel:#9aa0a6;
+    --steel-light:#d7dade;
+    --steel-dark:#4b4f54;
+    --label-cream:#d9cca0;
+    --label-ink:#2b2a1f;
+    --good:#6fbf6f;
+    --good-glow:rgba(120,220,120,0.55);
+    --bad:#c85a4a;
+    --bad-glow:rgba(220,90,70,0.5);
+    --glow:#ff9a3c;
+    --glow-soft:rgba(255,154,60,0.55);
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0;
+    min-height:100vh;
+    background:#0a0908;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:26px 14px;
+    font-family:'Oswald', sans-serif;
+  }
+
+  .board{
+    position:relative;
+    width:100%;
+    max-width:960px;
+    padding:32px 30px 34px;
+    border-radius:6px;
+    background:
+      radial-gradient(ellipse at 15% 8%, rgba(255,255,255,0.05), transparent 45%),
+      radial-gradient(ellipse at 85% 95%, rgba(0,0,0,0.5), transparent 50%),
+      radial-gradient(circle at 30% 70%, var(--rust-2) 0%, transparent 35%),
+      radial-gradient(circle at 80% 20%, var(--rust-1) 0%, transparent 28%),
+      repeating-linear-gradient(90deg, rgba(0,0,0,0.12) 0px, transparent 1px 3px),
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.10) 0px, transparent 1px 3px),
+      linear-gradient(155deg, var(--metal-light) 0%, var(--metal-mid) 45%, var(--metal-dark) 100%);
+    box-shadow:
+      inset 0 0 90px rgba(0,0,0,0.85),
+      inset 0 2px 0 rgba(255,255,255,0.05),
+      0 25px 60px rgba(0,0,0,0.7);
+    border:5px solid #0c0b0a;
+    outline:2px solid #2a2722;
+    outline-offset:-9px;
+  }
+
+  .screw{
+    position:absolute; width:14px; height:14px; border-radius:50%;
+    background:linear-gradient(135deg, #8d8d8d, #302f2d 55%, #131211);
+    box-shadow:0 1px 2px rgba(0,0,0,0.8), inset 0 0 2px rgba(0,0,0,0.9);
+  }
+  .screw::after{
+    content:""; position:absolute; top:50%; left:50%; width:9px; height:1.5px;
+    background:#161513; transform:translate(-50%,-50%) rotate(35deg);
+    box-shadow:0 1px 0 rgba(255,255,255,0.08);
+  }
+  .screw.tl{ top:14px; left:14px; }
+  .screw.tr{ top:14px; right:14px; }
+  .screw.bl{ bottom:14px; left:14px; }
+  .screw.br{ bottom:14px; right:14px; }
+
+  .board-title{
+    position:relative; text-align:center; font-weight:600; letter-spacing:5px;
+    font-size:16px; color:#c7a765; margin:0 0 6px;
+    text-shadow:0 1px 0 rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.4);
+  }
+  .board-subtitle{
+    position:relative; text-align:center; font-family:'Special Elite', monospace;
+    letter-spacing:2px; font-size:10.5px; color:#8b8578; margin:0 0 18px; opacity:0.8;
+  }
+
+  .stage-wrap{
+    position:relative;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.02), transparent 30%),
+      linear-gradient(175deg, #201e1a, #17150f 85%);
+    border-radius:6px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6), inset 0 2px 10px rgba(0,0,0,0.6);
+    padding:6px;
+    overflow:hidden;
+  }
+  #stage{ display:block; width:100%; height:auto; max-height:74vh; }
+
+  .status-line{
+    text-align:center;
+    font-family:'Special Elite', monospace;
+    font-size:11.5px;
+    letter-spacing:0.5px;
+    color:#c9bfa4;
+    margin:14px 4px 4px;
+    min-height:1.6em;
+  }
+
+  /* ---- tray ---- */
+  .tray{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:10px;
+    margin:14px 0 6px;
+    padding:14px 10px;
+    border-radius:6px;
+    background:
+      repeating-linear-gradient(45deg, rgba(0,0,0,0.12) 0 2px, transparent 2px 7px),
+      linear-gradient(175deg, #262420, #1a1815 85%);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6), inset 0 2px 8px rgba(0,0,0,0.55);
+  }
+  .tray-tile{
+    width:66px;
+    padding:6px 4px 7px;
+    border-radius:5px;
+    text-align:center;
+    cursor:pointer;
+    user-select:none;
+    background:linear-gradient(160deg, rgba(255,255,255,0.04), transparent 40%), linear-gradient(175deg, #2c2a25, #201e1a 85%);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.55), 0 3px 6px rgba(0,0,0,0.45);
+    outline:none;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .tray-tile:hover{ transform:translateY(-2px); }
+  .tray-tile:focus-visible{ box-shadow: inset 0 0 0 1px rgba(0,0,0,0.55), 0 0 0 2px var(--glow-soft); }
+  .tray-tile.selected{
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.55), 0 0 10px 2px var(--glow-soft), 0 0 0 2px var(--brass-light);
+    transform:translateY(-3px);
+  }
+  .tray-tile.placed{
+    opacity:0.38;
+    cursor:pointer;
+  }
+  .tray-tile.placed .tray-icon{ filter:grayscale(0.6); }
+  .tray-tile svg.tray-icon{ width:44px; height:44px; display:block; margin:0 auto; }
+  .tray-num{
+    font-family:'Special Elite', monospace;
+    font-size:10.5px;
+    color:var(--label-cream);
+    margin-top:3px;
+    letter-spacing:0.5px;
+  }
+  .tray-tag{
+    font-family:'Special Elite', monospace;
+    font-size:7.5px;
+    color:#8b8578;
+    letter-spacing:1px;
+    margin-top:1px;
+  }
+
+  .controls{ display:flex; justify-content:center; gap:12px; margin-top:14px; }
+  .btn-mech{
+    font-family:'Oswald', sans-serif;
+    font-weight:500;
+    letter-spacing:1px;
+    font-size:11.5px;
+    color:#e9dcc0;
+    background:linear-gradient(160deg, #4a4238, #2a251f 70%);
+    border:1px solid #6e5c3d;
+    border-radius:4px;
+    padding:9px 18px;
+    cursor:pointer;
+    box-shadow:0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  .btn-mech:hover{ transform:translateY(-1px); box-shadow:0 3px 7px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.1); }
+  .btn-mech:active{ transform:translateY(0); }
+
+  footer{
+    text-align:center; margin-top:16px; font-family:'Special Elite', monospace;
+    font-size:9px; letter-spacing:1px; color:#726c5e;
+  }
+
+  /* ---- win banner ---- */
+  .win-banner{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(10,9,7,0.55);
+    opacity:0; pointer-events:none;
+    border-radius:6px;
+    transition:opacity 0.4s ease;
+    z-index:5;
+  }
+  .win-banner.show{ opacity:1; pointer-events:auto; }
+  .win-box{
+    text-align:center;
+    font-family:'Oswald', sans-serif;
+    font-weight:600;
+    letter-spacing:3px;
+    font-size:22px;
+    color:#ffe6b3;
+    text-shadow:0 0 18px var(--glow-soft), 0 2px 4px rgba(0,0,0,0.8);
+    background:linear-gradient(160deg, #3a3126, #221d16);
+    border:1px solid var(--brass);
+    border-radius:8px;
+    padding:22px 34px;
+    box-shadow:0 10px 40px rgba(0,0,0,0.7), 0 0 30px var(--glow-soft);
+    transform:scale(0.85);
+    transition:transform 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  .win-banner.show .win-box{ transform:scale(1); }
+  .win-box span{
+    display:block;
+    font-family:'Special Elite', monospace;
+    font-weight:400;
+    font-size:11px;
+    letter-spacing:1px;
+    color:#c9bfa4;
+    margin-top:8px;
+    text-shadow:none;
+  }
+
+  /* ---- SVG spin keyframes ---- */
+  @keyframes spinCW{ to{ transform:rotate(360deg); } }
+  @keyframes spinCCW{ to{ transform:rotate(-360deg); } }
+  .spin-cw{ animation-name:spinCW; animation-timing-function:linear; animation-iteration-count:infinite; }
+  .spin-ccw{ animation-name:spinCCW; animation-timing-function:linear; animation-iteration-count:infinite; }
+
+  .axle-hit{ cursor:pointer; }
+  .axle-hit:focus-visible{ outline:2px solid var(--glow-soft); }
+
+  @keyframes idleBob{
+    0%,100%{ transform:translateY(0); }
+    50%{ transform:translateY(4px); }
+  }
+  .weight-idle{ animation:idleBob 2.6s ease-in-out infinite; }
+
+  @media (max-width:560px){
+    .board{ padding:24px 14px 26px; }
+    .tray-tile{ width:56px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="board" id="board">
+  <span class="screw tl"></span>
+  <span class="screw tr"></span>
+  <span class="screw bl"></span>
+  <span class="screw br"></span>
+
+  <h1 class="board-title">GEARWORKS — DRIVE ASSEMBLY</h1>
+  <p class="board-subtitle">— FIT BY EYE · HANDLE TO HOIST —</p>
+
+  <div class="stage-wrap">
+    <svg id="stage" viewBox="0 0 900 460" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="win-banner" id="winBanner">
+      <div class="win-box">DRIVE CONNECTED<br><span>Handle to hoist — full power through the line.</span></div>
+    </div>
+  </div>
+
+  <p class="status-line" id="status">The axles are scattered with no marked order. Try cogs by eye — a true fit meshes clean and starts turning.</p>
+
+  <div class="tray" id="tray"></div>
+
+  <div class="controls">
+    <button class="btn-mech" id="btnNew">⟲ New Assembly</button>
+    <button class="btn-mech" id="btnReset">✕ Clear Gears</button>
+  </div>
+
+  <footer>WORKS DIVISION · WINCH No. 4</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var SVG_NS = "http://www.w3.org/2000/svg";
+
+  // ---------------------------------------------------------------
+  // Geometry / puzzle constants
+  // ---------------------------------------------------------------
+  var POOL = [8,10,12,14,16,18,20,22,24,26];   // candidate tooth counts (10 total)
+  var BASE = 16, PITCH = 2.6;                   // radius(px) = BASE + teeth*PITCH
+  var MARGIN = 46;                              // outer padding around the whole assembly
+  var MAX_LAYOUT_ATTEMPTS = 800;
+  var TRUE_CLEARANCE = 30;   // non-adjacent nodes must clear each other's TRUE gear by this much
+  var POOL_SUM_BUFFER = 14;  // ...and stay this far from ANY possible gear-pair size, so no
+                              // wrong pair of cogs can ever look like an accidental fit
+  var MESH_TOL = 0.5;        // float tolerance when checking if two placed gears truly mesh
+  var LABEL_BELOW = 20;      // room reserved under the handle/pulley for their tag text
+  var BEAM_GAP = 34;         // gap between the pulley rim and its overhead anchor beam
+  var WEIGHT_DROP = 90;      // how far the idle hoist weight hangs below the pulley
+
+  function radiusOf(teeth){ return BASE + teeth * PITCH; }
+
+  // Every possible gear radius, and every possible sum of two of them — used
+  // to keep unrelated axles from ever accidentally lining up like a real mesh.
+  var POOL_RADII = POOL.map(radiusOf);
+  var POOL_MIN_R = Math.min.apply(null, POOL_RADII);
+  var POOL_MAX_R = Math.max.apply(null, POOL_RADII);
+  var POOL_SUMS = (function(){
+    var s = [];
+    for (var i = 0; i < POOL_RADII.length; i++)
+      for (var j = i; j < POOL_RADII.length; j++) s.push(POOL_RADII[i] + POOL_RADII[j]);
+    return s;
+  })();
+
+  // Lays out the 6 machine nodes (handle, 4 axles, pulley) as a scattered set
+  // of points in 2D. Each edge keeps the same meshing rule as before — the
+  // distance between two meshed centres equals the sum of their radii — but
+  // the direction of every edge is fully randomised (any compass heading), and
+  // no line is ever drawn between them, so nothing about the layout hints at
+  // which axle is meant to connect to which. Retries until no two AXLES that
+  // aren't meant to mesh could ever be confused for a real connection, for any
+  // pair of gears that might land on them.
+  function buildLayout(rH, rArr, rP){
+    var radii = [rH, rArr[0], rArr[1], rArr[2], rArr[3], rP];
+    var dist = [rH + rArr[0], rArr[0] + rArr[1], rArr[1] + rArr[2], rArr[2] + rArr[3], rArr[3] + rP];
+    var best = null;
+    for (var attempt = 0; attempt < MAX_LAYOUT_ATTEMPTS; attempt++){
+      var pts = [{ x: 0, y: 0 }];
+      for (var i = 0; i < 5; i++){
+        var rad = Math.random() * Math.PI * 2;
+        var prev = pts[i];
+        pts.push({ x: prev.x + Math.cos(rad) * dist[i], y: prev.y + Math.sin(rad) * dist[i] });
+      }
+      var ok = true;
+      for (var a = 0; a < 6 && ok; a++){
+        for (var b = a + 2; b < 6 && ok; b++){
+          var dx = pts[a].x - pts[b].x, dy = pts[a].y - pts[b].y;
+          var d = Math.sqrt(dx * dx + dy * dy);
+          if (d < radii[a] + radii[b] + TRUE_CLEARANCE) { ok = false; break; }
+          for (var s = 0; s < POOL_SUMS.length; s++){
+            if (Math.abs(d - POOL_SUMS[s]) < POOL_SUM_BUFFER) { ok = false; break; }
+          }
+        }
+      }
+      if (ok) return pts;
+      if (!best) best = pts; // keep the first attempt as a fallback in case none pass
+    }
+    return best;
+  }
+
+  // Bounding box (in raw layout space) that comfortably contains every node's
+  // gear, the handle's spinning crank envelope, and the pulley's beam and
+  // hanging weight. No plaques or connecting lines to account for any more.
+  function computeBoundingBox(pts, radii){
+    var xs = [], ys = [];
+    function add(x, y){ xs.push(x); ys.push(y); }
+    for (var i = 0; i < 6; i++){
+      var r = radii[i], p = pts[i];
+      if (i === 0){
+        var env = r + 16 + 9 + 4; // crank arm + knob, full rotation envelope
+        add(p.x - env, p.y - env); add(p.x + env, p.y + env);
+        add(p.x, p.y - (r + 12) - 14);
+        add(p.x, p.y + r + LABEL_BELOW + 10);
+        continue;
+      }
+      if (i === 5){
+        add(p.x - r - 4, p.y - r - BEAM_GAP - 16 - 4);
+        add(p.x + r + 4, p.y - r - BEAM_GAP - 16 - 4);
+        add(p.x - r - 20, p.y + WEIGHT_DROP + 30);
+        add(p.x + r + 20, p.y + WEIGHT_DROP + 30);
+        add(p.x, p.y + r + LABEL_BELOW + 10);
+        continue;
+      }
+      add(p.x - r - 4, p.y - r - 4); add(p.x + r + 4, p.y + r + 4);
+    }
+    var minX = Math.min.apply(null, xs) - MARGIN, maxX = Math.max.apply(null, xs) + MARGIN;
+    var minY = Math.min.apply(null, ys) - MARGIN, maxY = Math.max.apply(null, ys) + MARGIN;
+    return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+  }
+
+  function shuffle(arr){
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--){
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  // ---------------------------------------------------------------
+  // Puzzle state
+  // ---------------------------------------------------------------
+  var handleTeeth, pulleyTeeth, chainTeeth, trayItems, slots, positions, edgeLen, solved;
+  var stageW, stageH; // current viewBox size, set in generate()
+  var selected = null; // {trayId, teeth, originAxleIdx}
+  var nextTrayId = 0;
+
+  var stage = document.getElementById('stage');
+  var trayEl = document.getElementById('tray');
+  var statusEl = document.getElementById('status');
+  var winBanner = document.getElementById('winBanner');
+
+  function el(tag, attrs){
+    var e = document.createElementNS(SVG_NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  function generate(){
+    var pool = shuffle(POOL);
+    handleTeeth = pool[0];
+    pulleyTeeth = pool[1];
+    chainTeeth = [pool[2], pool[3], pool[4], pool[5]];
+    var decoys = [pool[6], pool[7], pool[8], pool[9]];
+
+    slots = [null, null, null, null];
+    selected = null;
+    solved = false;
+    winBanner.classList.remove('show');
+
+    // positions computed from the TRUE solution radii — the chassis is fixed
+    // machinery; only the gears you fit into it change. The chain is laid out
+    // as points in 2D (each edge at its own angle), not a single straight row.
+    var rH = radiusOf(handleTeeth);
+    var rP = radiusOf(pulleyTeeth);
+    var rArr = chainTeeth.map(radiusOf);
+    var radii = [rH, rArr[0], rArr[1], rArr[2], rArr[3], rP];
+
+    // fixed centre-to-centre distance required for each of the 5 true meshes —
+    // used only internally to judge fit; never shown on the board
+    edgeLen = [rH + rArr[0], rArr[0] + rArr[1], rArr[1] + rArr[2], rArr[2] + rArr[3], rArr[3] + rP];
+
+    var rawPts = buildLayout(rH, rArr, rP);
+    var bb = computeBoundingBox(rawPts, radii);
+    positions = rawPts.map(function(p){ return { x: p.x - bb.minX, y: p.y - bb.minY }; });
+    stageW = bb.maxX - bb.minX;
+    stageH = bb.maxY - bb.minY;
+
+    stage.setAttribute('viewBox', '0 0 ' + stageW.toFixed(1) + ' ' + stageH.toFixed(1));
+
+    // tray items: 4 correct + 4 decoys, shuffled, each with a stable id
+    nextTrayId = 0;
+    var pieces = shuffle(chainTeeth.concat(decoys));
+    trayItems = pieces.map(function(t){ return { id: nextTrayId++, teeth: t }; });
+
+    renderAll();
+  }
+
+  function getTeeth(trayId){
+    for (var i = 0; i < trayItems.length; i++) if (trayItems[i].id === trayId) return trayItems[i].teeth;
+    return null;
+  }
+
+  function isOnBoard(trayId){ return slots.indexOf(trayId) !== -1; }
+
+  // ---------------------------------------------------------------
+  // Gear path drawing
+  // ---------------------------------------------------------------
+  function gearPathD(r, teethCount){
+    teethCount = Math.max(6, Math.round(teethCount));
+    var step = (Math.PI * 2) / teethCount;
+    var toothH = Math.max(4, r * 0.16);
+    var rOut = r + toothH * 0.5;
+    var rIn = r - toothH * 0.5;
+    var d = '';
+    function pt(ang, rad){ return [Math.cos(ang) * rad, Math.sin(ang) * rad]; }
+    for (var i = 0; i < teethCount; i++){
+      var a0 = i * step;
+      var a1 = a0 + step * 0.28;
+      var a2 = a0 + step * 0.5;
+      var a3 = a0 + step * 0.78;
+      var a4 = a0 + step;
+      var p0 = pt(a0, rIn), p1 = pt(a1, rIn), p2 = pt(a1, rOut),
+          p3 = pt(a2, rOut), p4 = pt(a3, rOut), p5 = pt(a3, rIn), p6 = pt(a4, rIn);
+      if (i === 0) d += 'M ' + p0[0].toFixed(2) + ' ' + p0[1].toFixed(2) + ' ';
+      d += 'L ' + p1[0].toFixed(2) + ' ' + p1[1].toFixed(2) +
+           ' L ' + p2[0].toFixed(2) + ' ' + p2[1].toFixed(2) +
+           ' L ' + p3[0].toFixed(2) + ' ' + p3[1].toFixed(2) +
+           ' L ' + p4[0].toFixed(2) + ' ' + p4[1].toFixed(2) +
+           ' L ' + p5[0].toFixed(2) + ' ' + p5[1].toFixed(2) +
+           ' L ' + p6[0].toFixed(2) + ' ' + p6[1].toFixed(2) + ' ';
+    }
+    return d + 'Z';
+  }
+
+  // Builds a <g> gear body (fill only, no positioning) meant to sit inside a
+  // rotating wrapper already translated to the gear's centre.
+  function buildGearBody(r, teeth, opts){
+    opts = opts || {};
+    var g = el('g', {});
+    g.appendChild(el('path', {
+      d: gearPathD(r, teeth),
+      fill: opts.fill || 'url(#steelGrad)',
+      stroke: '#1c1b19', 'stroke-width': 1.4, 'stroke-linejoin':'round'
+    }));
+    g.appendChild(el('circle', { cx:0, cy:0, r: r*0.72, fill:'none', stroke:'rgba(0,0,0,0.35)', 'stroke-width': r*0.06 }));
+    g.appendChild(el('circle', { cx:0, cy:0, r: Math.max(5, r*0.24), fill:'url(#hubGrad)', stroke:'#1c1b19', 'stroke-width':1.2 }));
+    g.appendChild(el('circle', { cx:0, cy:0, r: Math.max(2, r*0.09), fill:'#171513' }));
+    return g;
+  }
+
+  function spinWrapper(index, teeth, driven){
+    var g = el('g', { class: (index % 2 === 0 ? 'spin-cw' : 'spin-ccw') });
+    var dur = Math.max(1.4, teeth * 0.32);
+    g.style.animationDuration = dur.toFixed(2) + 's';
+    g.style.animationPlayState = driven ? 'running' : 'paused';
+    return g;
+  }
+
+  // ---------------------------------------------------------------
+  // Drive propagation
+  // ---------------------------------------------------------------
+  function computeDrive(){
+    var values = [handleTeeth, slots[0] == null ? null : getTeeth(slots[0]),
+                  slots[1] == null ? null : getTeeth(slots[1]),
+                  slots[2] == null ? null : getTeeth(slots[2]),
+                  slots[3] == null ? null : getTeeth(slots[3]),
+                  pulleyTeeth];
+    var driven = [true, false, false, false, false, false];
+    var boundary = []; // 'ok' | 'bad' | 'pending'
+    for (var k = 0; k < 5; k++){
+      var lv = values[k], rv = values[k + 1];
+      var state;
+      if (lv == null || rv == null) state = 'pending';
+      else state = (Math.abs((radiusOf(lv) + radiusOf(rv)) - edgeLen[k]) < MESH_TOL) ? 'ok' : 'bad';
+      boundary.push(state);
+      driven[k + 1] = driven[k] && state === 'ok';
+    }
+    return { values: values, driven: driven, boundary: boundary };
+  }
+
+  // ---------------------------------------------------------------
+  // Rendering — stage
+  // ---------------------------------------------------------------
+  function renderAll(){
+    renderStage();
+    renderTray();
+  }
+
+  function renderStage(){
+    var drive = computeDrive();
+    var values = drive.values, driven = drive.driven, boundary = drive.boundary;
+
+    stage.innerHTML = '';
+    var defs = el('defs', {});
+    stage.appendChild(defs);
+
+    var steelGrad = el('linearGradient', { id:'steelGrad', x1:'0%', y1:'0%', x2:'100%', y2:'100%' });
+    steelGrad.appendChild(el('stop', { offset:'0%', 'stop-color': '#e2e5e8' }));
+    steelGrad.appendChild(el('stop', { offset:'45%', 'stop-color': '#9aa0a6' }));
+    steelGrad.appendChild(el('stop', { offset:'100%', 'stop-color': '#54585d' }));
+    defs.appendChild(steelGrad);
+
+    var hubGrad = el('radialGradient', { id:'hubGrad', cx:'35%', cy:'30%', r:'75%' });
+    hubGrad.appendChild(el('stop', { offset:'0%', 'stop-color': '#f0d9a0' }));
+    hubGrad.appendChild(el('stop', { offset:'100%', 'stop-color': '#8a6a2c' }));
+    defs.appendChild(hubGrad);
+
+    var brassGrad = el('linearGradient', { id:'brassGrad', x1:'0%', y1:'0%', x2:'100%', y2:'100%' });
+    brassGrad.appendChild(el('stop', { offset:'0%', 'stop-color': '#f6dfa0' }));
+    brassGrad.appendChild(el('stop', { offset:'50%', 'stop-color': '#caa54c' }));
+    brassGrad.appendChild(el('stop', { offset:'100%', 'stop-color': '#8a6a2c' }));
+    defs.appendChild(brassGrad);
+
+    // overhead beam (for the pulley rope anchor) — sits above wherever the
+    // pulley node actually landed. No rail or plaques: the axles are just a
+    // scattered set of mounting points, nothing on the board hints at which
+    // ones are meant to connect — that's discovered by trying gears in place.
+    var pulleyR = radiusOf(pulleyTeeth);
+    var beamY = positions[5].y - pulleyR - BEAM_GAP - 6;
+    stage.appendChild(el('rect', {
+      x: positions[5].x - 60, y: beamY, width: 120, height: 12, rx: 3,
+      fill: '#100f0d', stroke: '#332d24', 'stroke-width': 1
+    }));
+
+    // ---- handle (index 0) ----
+    stage.appendChild(buildHandle(positions[0].x, positions[0].y, radiusOf(handleTeeth), handleTeeth, driven[0]));
+
+    // ---- axle gears (index 1..4) ----
+    for (var i = 0; i < 4; i++){
+      var axleIdx = i;                    // slot index 0..3
+      var nodeIdx = i + 1;                // node index 1..4
+      var cx = positions[nodeIdx].x, cyN = positions[nodeIdx].y;
+      var teeth = values[nodeIdx];
+
+      if (teeth == null){
+        stage.appendChild(buildEmptyPost(cx, cyN, axleIdx, selected != null));
+      } else {
+        var r = radiusOf(teeth);
+        var wrap = el('g', { transform: 'translate(' + cx.toFixed(1) + ',' + cyN.toFixed(1) + ')', class:'axle-hit', tabindex:'0', role:'button',
+          'aria-label': 'Axle ' + (axleIdx + 1) + ', fitted with a ' + teeth + '-tooth gear' });
+        wrap.dataset.axle = axleIdx;
+        var spin = spinWrapper(nodeIdx, teeth, driven[nodeIdx]);
+        spin.appendChild(buildGearBody(r, teeth, {}));
+        wrap.appendChild(spin);
+        if (selected && selected.originAxleIdx === axleIdx){
+          wrap.appendChild(el('circle', { cx:0, cy:0, r: r + 7, fill:'none', stroke:'#fff8e0', 'stroke-width':2.4, opacity:0.85 }));
+        }
+        // hit target (bigger than the gear for easy tapping)
+        wrap.appendChild(el('circle', { cx:0, cy:0, r: r + 10, fill:'transparent', 'pointer-events':'all' }));
+        stage.appendChild(wrap);
+      }
+    }
+
+    // ---- pulley (index 5) ----
+    stage.appendChild(buildPulley(positions[5].x, positions[5].y, radiusOf(pulleyTeeth), pulleyTeeth, driven[5], beamY));
+
+    // status + win check
+    updateStatus(boundary, driven);
+    checkWin(driven);
+  }
+
+  function buildHandle(cx, cy, r, teeth, driven){
+    var g = el('g', { transform:'translate(' + cx.toFixed(1) + ',' + cy + ')' });
+    var spin = spinWrapper(0, teeth, driven);
+    // wheel rim
+    var body = el('g', {});
+    body.appendChild(el('circle', { cx:0, cy:0, r:r, fill:'url(#steelGrad)', stroke:'#1c1b19', 'stroke-width':1.6 }));
+    body.appendChild(el('circle', { cx:0, cy:0, r:r*0.8, fill:'none', stroke:'rgba(0,0,0,0.3)', 'stroke-width':r*0.05 }));
+    // spokes
+    for (var s = 0; s < 5; s++){
+      var ang = s * (Math.PI * 2 / 5);
+      var x2 = Math.cos(ang) * r * 0.72, y2 = Math.sin(ang) * r * 0.72;
+      body.appendChild(el('line', { x1:0, y1:0, x2:x2, y2:y2, stroke:'#54585d', 'stroke-width': Math.max(3, r*0.09), 'stroke-linecap':'round' }));
+    }
+    body.appendChild(el('circle', { cx:0, cy:0, r:r*0.22, fill:'url(#hubGrad)', stroke:'#1c1b19', 'stroke-width':1.2 }));
+    // crank arm + knob (sticks out past the rim so it visibly rotates)
+    var armLen = r + 16;
+    body.appendChild(el('line', { x1:0, y1:0, x2:armLen, y2:0, stroke:'#3a3530', 'stroke-width':6, 'stroke-linecap':'round' }));
+    body.appendChild(el('circle', { cx:armLen, cy:0, r:9, fill:'url(#brassGrad)', stroke:'#4a3510', 'stroke-width':1.4 }));
+    spin.appendChild(body);
+    g.appendChild(spin);
+
+    var lbl = el('text', { x:0, y: r + 20, 'text-anchor':'middle', 'font-family':"'Special Elite', monospace", 'font-size':10, fill:'#c9bfa4' });
+    lbl.textContent = 'HANDLE';
+    g.appendChild(lbl);
+    var capText = el('text', { x:0, y: -(r + 12), 'text-anchor':'middle', 'font-family':"'Oswald', sans-serif", 'font-size':9, 'letter-spacing':'2px', fill:'#8b8578' });
+    capText.textContent = 'IN';
+    g.appendChild(capText);
+    return g;
+  }
+
+  function buildPulley(cx, cy, r, teeth, driven, beamY){
+    var g = el('g', { transform:'translate(' + cx.toFixed(1) + ',' + cy + ')' });
+
+    // rope from overhead beam down to the pulley rim
+    var ropeTopY = beamY + 12 - cy;
+    g.appendChild(el('line', { x1:0, y1: ropeTopY, x2:0, y2: -r, stroke:'#7a6a4c', 'stroke-width':3 }));
+
+    var spin = spinWrapper(5, teeth, driven);
+    var body = el('g', {});
+    body.appendChild(el('circle', { cx:0, cy:0, r:r, fill:'url(#steelGrad)', stroke:'#1c1b19', 'stroke-width':1.6 }));
+    body.appendChild(el('circle', { cx:0, cy:0, r:r*0.86, fill:'none', stroke:'#54585d', 'stroke-width':r*0.14 }));
+    body.appendChild(el('circle', { cx:0, cy:0, r:r*0.86, fill:'none', stroke:'rgba(0,0,0,0.35)', 'stroke-width':2 }));
+    for (var s = 0; s < 6; s++){
+      var ang = s * (Math.PI * 2 / 6);
+      body.appendChild(el('line', {
+        x1: Math.cos(ang) * r * 0.2, y1: Math.sin(ang) * r * 0.2,
+        x2: Math.cos(ang) * r * 0.7, y2: Math.sin(ang) * r * 0.7,
+        stroke:'#4b4f54', 'stroke-width': Math.max(3, r * 0.08), 'stroke-linecap':'round'
+      }));
+    }
+    body.appendChild(el('circle', { cx:0, cy:0, r:r*0.22, fill:'url(#hubGrad)', stroke:'#1c1b19', 'stroke-width':1.2 }));
+    spin.appendChild(body);
+    g.appendChild(spin);
+
+    // hanging weight
+    var weightY = driven ? -r - 6 : 78;
+    var wg = el('g', { class: driven ? '' : 'weight-idle', transform: 'translate(0,' + weightY + ')' });
+    wg.appendChild(el('line', { x1:0, y1: driven ? 0 : -70, x2:0, y2:0, stroke:'#7a6a4c', 'stroke-width':3 }));
+    var boxFill = driven ? 'url(#brassGrad)' : '#5a4f3e';
+    wg.appendChild(el('rect', { x:-14, y:0, width:28, height:22, rx:3, fill:boxFill, stroke:'#241c10', 'stroke-width':1.4 }));
+    if (driven){
+      wg.appendChild(el('circle', { cx:0, cy:11, r:24, fill:'none', stroke:'var(--good)', 'stroke-width':2, opacity:0.5 }));
+    }
+    g.appendChild(wg);
+
+    var lbl = el('text', { x:0, y: r + 20, 'text-anchor':'middle', 'font-family':"'Special Elite', monospace", 'font-size':10, fill:'#c9bfa4' });
+    lbl.textContent = 'HOIST';
+    g.appendChild(lbl);
+    var capText = el('text', { x:0, y: -(r + 12), 'text-anchor':'middle', 'font-family':"'Oswald', sans-serif", 'font-size':9, 'letter-spacing':'2px', fill:'#8b8578' });
+    capText.textContent = 'OUT';
+    g.appendChild(capText);
+    return g;
+  }
+
+  function buildEmptyPost(cx, cy, axleIdx, hasSelection){
+    var g = el('g', { transform:'translate(' + cx.toFixed(1) + ',' + cy + ')', class:'axle-hit', tabindex:'0', role:'button',
+      'aria-label': 'Empty axle ' + (axleIdx + 1) });
+    g.dataset.axle = axleIdx;
+    g.appendChild(el('circle', { cx:0, cy:0, r:9, fill:'#231f1a', stroke:'#4a4238', 'stroke-width':2 }));
+    g.appendChild(el('circle', { cx:0, cy:0, r:3, fill:'#0c0b0a' }));
+    if (hasSelection){
+      var ring = el('circle', { cx:0, cy:0, r:16, fill:'none', stroke:'#fff8e0', 'stroke-width':2, opacity:0.7 });
+      ring.appendChild(el('animate', { attributeName:'r', values:'15;20;15', dur:'1s', repeatCount:'indefinite' }));
+      ring.appendChild(el('animate', { attributeName:'opacity', values:'0.7;0.2;0.7', dur:'1s', repeatCount:'indefinite' }));
+      g.appendChild(ring);
+    }
+    g.appendChild(el('circle', { cx:0, cy:0, r:38, fill:'transparent', 'pointer-events':'all' }));
+    return g;
+  }
+
+  // ---------------------------------------------------------------
+  // Rendering — tray
+  // ---------------------------------------------------------------
+  function renderTray(){
+    trayEl.innerHTML = '';
+    trayItems.forEach(function(item){
+      var tile = document.createElement('div');
+      tile.className = 'tray-tile';
+      tile.tabIndex = 0;
+      tile.setAttribute('role', 'button');
+      tile.dataset.teeth = item.teeth; // not shown visually — for automated testing only
+
+      var placed = isOnBoard(item.id);
+      var isSelected = selected && selected.trayId === item.id;
+      if (placed) tile.classList.add('placed');
+      if (isSelected) tile.classList.add('selected');
+
+      // icon radius scales with the gear's TRUE physical size (mapped into a
+      // compact display range) so relative size is the only clue the tray
+      // gives — no numbers, just eyeballing which cog looks right.
+      var actualR = radiusOf(item.teeth);
+      var r = 13 + (actualR - POOL_MIN_R) / (POOL_MAX_R - POOL_MIN_R) * 21; // -> ~13..34
+      var d = gearPathD(r, item.teeth);
+      var gradId = 'trayGrad' + item.id;
+      tile.innerHTML =
+        '<svg class="tray-icon" viewBox="-38 -38 76 76">' +
+          '<defs><linearGradient id="' + gradId + '" x1="0%" y1="0%" x2="100%" y2="100%">' +
+            '<stop offset="0%" stop-color="#e2e5e8"/><stop offset="45%" stop-color="#9aa0a6"/><stop offset="100%" stop-color="#54585d"/>' +
+          '</linearGradient></defs>' +
+          '<path d="' + d + '" fill="url(#' + gradId + ')" stroke="#1c1b19" stroke-width="1.2"/>' +
+          '<circle cx="0" cy="0" r="' + (r*0.24) + '" fill="#caa54c" stroke="#1c1b19" stroke-width="1"/>' +
+        '</svg>' +
+        '<div class="tray-tag">' + (placed ? 'ON AXLE — TAP' : (isSelected ? 'IN HAND' : 'TAP TO LIFT')) + '</div>';
+
+      tile.setAttribute('aria-label', item.teeth + '-tooth gear' + (placed ? ', currently fitted' : ''));
+      tile.addEventListener('click', function(){ onTrayClick(item.id); });
+      tile.addEventListener('keydown', function(e){
+        if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); onTrayClick(item.id); }
+      });
+      trayEl.appendChild(tile);
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Interaction
+  // ---------------------------------------------------------------
+  function onTrayClick(trayId){
+    if (selected && selected.trayId === trayId){
+      if (selected.originAxleIdx != null) slots[selected.originAxleIdx] = selected.trayId;
+      selected = null;
+      renderAll();
+      return;
+    }
+    if (isOnBoard(trayId)){
+      var axleIdx = slots.indexOf(trayId);
+      if (selected && selected.originAxleIdx != null) slots[selected.originAxleIdx] = selected.trayId;
+      slots[axleIdx] = null;
+      selected = { trayId: trayId, teeth: getTeeth(trayId), originAxleIdx: axleIdx };
+      renderAll();
+      return;
+    }
+    if (selected && selected.originAxleIdx != null) slots[selected.originAxleIdx] = selected.trayId;
+    selected = { trayId: trayId, teeth: getTeeth(trayId), originAxleIdx: null };
+    renderAll();
+  }
+
+  function onAxleClick(axleIdx){
+    var occ = slots[axleIdx];
+    if (occ == null){
+      if (!selected) return;
+      slots[axleIdx] = selected.trayId;
+      selected = null;
+      renderAll();
+      return;
+    }
+    if (selected && selected.originAxleIdx === axleIdx){
+      slots[axleIdx] = selected.trayId;
+      selected = null;
+      renderAll();
+      return;
+    }
+    if (selected){
+      var displaced = occ;
+      slots[axleIdx] = selected.trayId;
+      selected = { trayId: displaced, teeth: getTeeth(displaced), originAxleIdx: null };
+      renderAll();
+      return;
+    }
+    slots[axleIdx] = null;
+    selected = { trayId: occ, teeth: getTeeth(occ), originAxleIdx: axleIdx };
+    renderAll();
+  }
+
+  stage.addEventListener('click', function(e){
+    var target = e.target.closest('.axle-hit');
+    if (!target) return;
+    onAxleClick(Number(target.dataset.axle));
+  });
+  stage.addEventListener('keydown', function(e){
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var target = e.target.closest && e.target.closest('.axle-hit');
+    if (!target) return;
+    e.preventDefault();
+    onAxleClick(Number(target.dataset.axle));
+  });
+
+  // ---------------------------------------------------------------
+  // Status + win
+  // ---------------------------------------------------------------
+  function updateStatus(boundary, driven){
+    if (solved){
+      statusEl.textContent = 'Drive connected — the hoist is running at full power.';
+      return;
+    }
+    var filled = slots.filter(function(s){ return s != null; }).length;
+    if (filled === 0){
+      statusEl.textContent = 'The axles are scattered with no marked order. Try cogs by eye — a true fit meshes clean and starts turning.';
+      return;
+    }
+    var drivenCount = driven.filter(Boolean).length; // 1..6, node 0 (handle) always counts
+    if (drivenCount <= 1){
+      statusEl.textContent = 'Nothing turning yet. Swap gears around and watch for a clean, gapless mesh.';
+    } else if (drivenCount < 5){
+      statusEl.textContent = 'Something is turning — part of the train has caught. Keep going.';
+    } else {
+      statusEl.textContent = 'Nearly there — the drive almost reaches the hoist.';
+    }
+  }
+
+  function checkWin(driven){
+    var win = driven[5];
+    if (win && !solved){
+      solved = true;
+      setTimeout(function(){
+        winBanner.classList.add('show');
+        statusEl.textContent = 'Drive connected — the hoist is running at full power.';
+      }, 150);
+    } else if (!win && solved){
+      solved = false;
+      winBanner.classList.remove('show');
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Controls + public API
+  // ---------------------------------------------------------------
+  document.getElementById('btnNew').addEventListener('click', generate);
+  document.getElementById('btnReset').addEventListener('click', function(){
+    slots = [null, null, null, null];
+    selected = null;
+    solved = false;
+    winBanner.classList.remove('show');
+    renderAll();
+  });
+
+  window.gearPulleyPuzzle = {
+    newPuzzle: generate,
+    reset: function(){ document.getElementById('btnReset').click(); },
+    isSolved: function(){ return solved; },
+    getState: function(){
+      return {
+        handleTeeth: handleTeeth, pulleyTeeth: pulleyTeeth,
+        solutionTeeth: chainTeeth.slice(), // debug/testing hook only — not shown in the UI
+        slots: slots.map(function(id){ return id == null ? null : getTeeth(id); })
+      };
+    }
+  };
+
+  generate();
+})();
+</script>
+</body>
+</html>

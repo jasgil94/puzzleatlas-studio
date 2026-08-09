@@ -68,6 +68,15 @@ var pv_action_submitOrdering = PAEngine.pv_action_submitOrdering;
 var pv_action_submitMatching = PAEngine.pv_action_submitMatching;
 var pv_action_revealHint = PAEngine.pv_action_revealHint;
 
+// Category Grid — grouping/validation math shared with engine.js's player
+// runtime (see the comment above NODE_TYPES.categoryGrid in engine.js),
+// reused here to drive the inspector's per-image partner dropdowns and the
+// live-computed categories list (buildTypeSpecificFields/wireNodeInspector's
+// "categoryGrid" case, below).
+var caGridGroups = PAEngine.caGridGroups;
+var caGridGroupIndexMap = PAEngine.caGridGroupIndexMap;
+var caGridValidate = PAEngine.caGridValidate;
+
 // Lumen Puzzle — hex geometry/beam-tracing math and canvas drawing shared
 // with engine.js's player runtime (see the comment above NODE_TYPES.lumenPuzzle
 // in engine.js), reused here to drive the inspector-embedded level designer
@@ -502,7 +511,7 @@ var SUGGESTED_LANE = {
   // puzzles in Leads; state-family goes to Inventory; the new Support
   // type goes to Hints, same as the existing Hint node.
   cipher: "leads", mathLogic: "leads", anagram: "leads", sequencePattern: "leads", slidingTile: "leads",
-  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads", lumenPuzzle: "leads",
+  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads", lumenPuzzle: "leads", categoryGrid: "leads",
   gate: "leads", randomizer: "leads", teamSplitMerge: "leads", metaPuzzleCombine: "leads",
   timer: "leads", attemptLimiter: "leads",
   combineCraftItem: "inventory", trade: "inventory",
@@ -2052,6 +2061,9 @@ function buildTypeSpecificFields(n) {
       html += '<button type="button" class="small-btn" id="btnOpenLumenBuilder" style="margin-bottom:8px">⛶ Open in Larger Pane</button>';
       html += '<button type="button" class="small-btn" style="color:var(--danger)" id="lumenBtnClear">Clear level</button>';
       break;
+    case "categoryGrid":
+      html += buildCategoryGridFields(c);
+      break;
     case "awardItem":
       html += fieldWrap("Item to award", '<select id="fItemId">' + selectOptions(hunt.items, "id", "name", c.itemId, "— choose item —") + '</select>');
       break;
@@ -2231,6 +2243,139 @@ function wirePdfRevealFields(c) {
     byId("fPdfCaption").oninput = function (e) { c.caption = e.target.value; };
     byId("fPdfCaption").onblur = function () { afterEdit(); };
   }
+}
+
+/* Category Grid — bespoke inspector: 9 image sections (title, upload, two
+   dropdowns for each of the two hidden categories the image belongs to)
+   followed by a live-computed Categories section (6 rows — 3 "first
+   category" groups, 3 "second category" groups — each showing its current
+   member titles and a name field). The categories section is entirely
+   derived from the 9 images' partner selections (see caGridGroups/
+   caGridValidate in engine.js) rather than authored directly, so it always
+   reflects whatever grouping the partner dropdowns currently describe,
+   including mid-edit invalid states (flagged with a warning banner instead
+   of hidden — see caGridValidate's issues list). */
+function buildCategoryGridFields(c) {
+  var images = c.images || [];
+  var html = playerTextField("Body text (player-visible, shown above the grid)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
+
+  html += '<div class="section-title">Images (9)</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">For each image, pick the two other images it shares a hidden "first category" with, and the two it shares a hidden "second category" with. Each category needs exactly 3 images in the end — see the validation under Categories below.</p>';
+  html += '<div id="cgImageList">' + images.map(function (im, idx) {
+    var others = images.filter(function (x) { return x.id !== im.id; });
+    var mkPartnerSelect = function (selId, partnerKey, slot) {
+      var cur = (im[partnerKey] || [])[slot] || "";
+      return '<select id="' + selId + '" class="cgPartnerSelect" data-imgid="' + im.id + '" data-key="' + partnerKey + '">' +
+        '<option value="">— choose —</option>' +
+        others.map(function (o) { return '<option value="' + o.id + '"' + (cur === o.id ? " selected" : "") + '>' + esc(o.title || "(untitled)") + '</option>'; }).join("") +
+        '</select>';
+    };
+    return '<div class="cgrid-image-block" data-imgid="' + im.id + '">' +
+      '<div class="cgrid-image-header"><span class="chip">' + (idx + 1) + '</span>' +
+      '<input type="text" class="cgTitleInput" data-imgid="' + im.id + '" value="' + esc(im.title || "") + '" placeholder="Image title" style="flex:1" /></div>' +
+      '<div class="cgrid-image-body">' +
+        '<div class="cgrid-image-upload">' +
+          '<input type="file" id="cgImgFile_' + im.id + '" accept="image/*" style="display:none" />' +
+          (im.imageAsset ? '<img class="cgrid-image-thumb" src="' + esc(im.imageAsset) + '" alt="" />' : '<div class="cgrid-image-thumb cgrid-image-thumb-empty">No image</div>') +
+          '<div style="display:flex;gap:6px;margin-top:4px">' +
+            '<button type="button" class="small-btn cgImgUploadBtn" data-imgid="' + im.id + '">⬆ Upload</button>' +
+            (im.imageAsset ? '<button type="button" class="small-btn cgImgClearBtn" data-imgid="' + im.id + '" style="color:var(--danger)">✕</button>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="cgrid-image-partners">' +
+          fieldWrap("First category partners", mkPartnerSelect("cgFirst1_" + im.id, "firstPartners", 0) + mkPartnerSelect("cgFirst2_" + im.id, "firstPartners", 1)) +
+          fieldWrap("Second category partners", mkPartnerSelect("cgSecond1_" + im.id, "secondPartners", 0) + mkPartnerSelect("cgSecond2_" + im.id, "secondPartners", 1)) +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join("") + '</div>';
+
+  var v = caGridValidate(c);
+  html += '<div class="section-title">Categories</div>';
+  if (!v.valid) {
+    html += '<p class="lane-warn-note">⚠ ' + v.issues.map(esc).join("<br>⚠ ") + '</p>';
+  } else {
+    html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Not shown to the player until they solve the puzzle. Naming them is optional but they appear in the completion graphic (row names, then column names) once solved.</p>';
+  }
+  c.categoryNames = c.categoryNames || { first: ["", "", ""], second: ["", "", ""] };
+  ["first", "second"].forEach(function (axis) {
+    var groups = v.groups[axis];
+    for (var gi = 0; gi < 3; gi++) {
+      var members = groups[gi] || [];
+      var memberTitles = members.map(function (id) {
+        var im = images.find(function (x) { return x.id === id; });
+        return im ? (im.title || "(untitled)") : "?";
+      });
+      var nameVal = (c.categoryNames[axis] && c.categoryNames[axis][gi]) || "";
+      html += '<div class="cgrid-category-row">' +
+        '<div class="cgrid-category-members">' + (axis === "first" ? "First" : "Second") + ' category ' + (gi + 1) + (memberTitles.length ? ': ' + esc(memberTitles.join(", ")) : ' — not yet formed') + '</div>' +
+        '<input type="text" class="cgCategoryNameInput" data-axis="' + axis + '" data-idx="' + gi + '" value="' + esc(nameVal) + '" placeholder="Name this category" />' +
+      '</div>';
+    }
+  });
+  return html;
+}
+
+function wireCategoryGridFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+
+  Array.prototype.forEach.call(document.querySelectorAll(".cgTitleInput"), function (inp) {
+    inp.oninput = function (e) {
+      var im = c.images.find(function (x) { return x.id === inp.dataset.imgid; });
+      if (im) im.title = e.target.value;
+    };
+    inp.onblur = function () { afterEdit(false); renderInspector(); };
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".cgImgUploadBtn"), function (btn) {
+    btn.onclick = function () { byId("cgImgFile_" + btn.dataset.imgid).click(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#cgImageList input[type="file"]'), function (fileInp) {
+    fileInp.onchange = function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var imgid = fileInp.id.replace("cgImgFile_", "");
+      readImageFileCompressed(file, function (dataUrl) {
+        if (!dataUrl) { toast("Couldn't read that image file."); return; }
+        var im = c.images.find(function (x) { return x.id === imgid; });
+        if (im) im.imageAsset = dataUrl;
+        afterEdit(); renderInspector();
+        toast("Image attached.");
+      });
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cgImgClearBtn"), function (btn) {
+    btn.onclick = function () {
+      var im = c.images.find(function (x) { return x.id === btn.dataset.imgid; });
+      if (im) im.imageAsset = "";
+      afterEdit(); renderInspector();
+    };
+  });
+
+  // Each of the two dropdowns for a given image+category is re-read
+  // together on every change (rather than patched slot-by-slot), so
+  // clearing one back to "— choose —" cleanly drops just that partner
+  // without leaving a hole in the other slot.
+  Array.prototype.forEach.call(document.querySelectorAll(".cgPartnerSelect"), function (sel) {
+    sel.onchange = function () {
+      var imgid = sel.dataset.imgid, key = sel.dataset.key;
+      var im = c.images.find(function (x) { return x.id === imgid; });
+      if (!im) return;
+      var prefix = key === "firstPartners" ? "cgFirst" : "cgSecond";
+      var v0 = (byId(prefix + "1_" + imgid) || {}).value || "";
+      var v1 = (byId(prefix + "2_" + imgid) || {}).value || "";
+      im[key] = [v0, v1].filter(function (v) { return !!v; });
+      afterEdit(false); renderInspector();
+    };
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".cgCategoryNameInput"), function (inp) {
+    inp.oninput = function (e) {
+      c.categoryNames = c.categoryNames || { first: ["", "", ""], second: ["", "", ""] };
+      c.categoryNames[inp.dataset.axis][Number(inp.dataset.idx)] = e.target.value;
+    };
+    inp.onblur = function () { afterEdit(false); };
+  });
 }
 
 /* Background media — standard on every node type. When set, the node's
@@ -3042,6 +3187,10 @@ function wireNodeInspector(n) {
       bindText("fPrompt", "prompt");
       wireLumenDesigner(n);
       if (byId("btnOpenLumenBuilder")) byId("btnOpenLumenBuilder").onclick = function () { openLumenBuilder(n.id); };
+      break;
+    case "categoryGrid":
+      bindText("fBody", "body");
+      wireCategoryGridFields(c);
       break;
     case "awardItem":
       bindChange("fItemId", function (v) { c.itemId = v; });

@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Ferryman's Dilemma</title>
+<style>
+  :root{
+    --wood-dark:#3d2f22;
+    --wood-mid:#7a5233;
+    --wood-light:#c9a876;
+    --cream:#f2e8d8;
+    --danger:#d97a5f;
+    --win:#e8d5b5;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+    background: radial-gradient(circle at 50% 20%, #3a2f28, #1c1712 75%);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color:var(--cream);
+    padding:18px;
+    touch-action:manipulation;
+    overflow-x:hidden;
+  }
+  h1{
+    margin:0;
+    font-size:1.5rem;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:var(--wood-light);
+    text-align:center;
+  }
+  .subtitle{
+    margin-top:-10px;
+    font-size:0.82rem;
+    color:#b9a789;
+    text-align:center;
+    max-width:520px;
+  }
+  #message{
+    min-height:2.4em;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:1rem;
+    text-align:center;
+    color:var(--wood-light);
+    max-width:560px;
+    padding:4px 10px;
+    transition: color 0.2s;
+  }
+  #message.danger{ color:var(--danger); font-weight:600; }
+  #message.win{ color:var(--win); font-weight:700; font-size:1.1rem; }
+
+  .board-wrap{
+    position:relative;
+    width:min(94vw, 780px);
+    height:min(66vh, 420px);
+    min-height:320px;
+    border-radius:14px;
+    box-shadow: 0 0 0 8px #241b13, 0 10px 30px rgba(0,0,0,0.6), inset 0 0 40px rgba(0,0,0,0.4);
+    overflow:hidden;
+    display:flex;
+  }
+  .bank{
+    flex:0 0 27%;
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    gap:10px;
+    padding:16px 8px;
+    background: linear-gradient(180deg,#4a5a2e 0%, #35431f 55%, #2a3418 100%);
+  }
+  .bank::after{
+    content:"";
+    position:absolute;
+    top:0; bottom:0;
+    width:14px;
+  }
+  .bank.left::after{ right:-14px; background:linear-gradient(90deg, rgba(0,0,0,0.25), transparent); }
+  .bank.right::after{ left:-14px; background:linear-gradient(270deg, rgba(0,0,0,0.25), transparent); }
+  .bank-label{
+    font-size:0.65rem;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:#cfe0b0;
+    opacity:0.75;
+    margin-bottom:2px;
+  }
+  .piece-stack{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    width:100%;
+  }
+
+  .river{
+    flex:1;
+    position:relative;
+    background:
+      repeating-linear-gradient(100deg, rgba(255,255,255,0.05) 0 3px, transparent 3px 22px),
+      linear-gradient(180deg,#2d5f7a 0%, #1c4a63 50%, #163d54 100%);
+    overflow:hidden;
+  }
+  .river::before{
+    content:"";
+    position:absolute; inset:0;
+    background: repeating-linear-gradient(-100deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 30px);
+    animation: flow 6s linear infinite;
+  }
+  @keyframes flow{
+    from{ transform:translateX(0); }
+    to{ transform:translateX(-120px); }
+  }
+
+  .boat{
+    position:absolute;
+    top:50%;
+    width:132px;
+    height:64px;
+    transform:translateY(-50%);
+    cursor:grab;
+    touch-action:none;
+    z-index:5;
+  }
+  .boat.dragging{ cursor:grabbing; }
+  .boat-hull{
+    position:absolute;
+    inset:0;
+    clip-path: polygon(6% 30%, 94% 30%, 100% 100%, 0% 100%);
+    background: radial-gradient(circle at 35% 20%, #a9764a, #6b4423 65%, #4a2f1a);
+    box-shadow: inset 0 4px 6px rgba(255,255,255,0.15), inset 0 -6px 10px rgba(0,0,0,0.45);
+    border: 2px solid #3a2413;
+  }
+  .boat-hull::before{
+    content:"";
+    position:absolute; inset:0;
+    background: repeating-linear-gradient(90deg, rgba(0,0,0,0.12) 0 2px, transparent 2px 14px);
+    mix-blend-mode:multiply;
+    opacity:0.6;
+  }
+  .boat-slots{
+    position:absolute;
+    top:8px; left:0; right:0;
+    display:flex;
+    justify-content:center;
+    gap:10px;
+    pointer-events:auto;
+  }
+  .boat-slot{
+    width:46px;
+    height:46px;
+    border-radius:50%;
+    background:rgba(0,0,0,0.18);
+    box-shadow: inset 0 3px 6px rgba(0,0,0,0.5);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .piece{
+    width:60px;
+    height:60px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+    background: radial-gradient(circle at 32% 28%, #c8935b, #8b5a2b 65%, #6b4423 100%);
+    box-shadow: inset -4px -6px 8px rgba(0,0,0,0.4), inset 3px 3px 6px rgba(255,255,255,0.18), 0 3px 6px rgba(0,0,0,0.45);
+    border: 2px solid #4a2f1a;
+    cursor:pointer;
+    transition: transform 0.15s ease;
+    flex-shrink:0;
+  }
+  .piece::before{
+    content:"";
+    position:absolute; inset:0;
+    border-radius:inherit;
+    background: repeating-linear-gradient(18deg, rgba(0,0,0,0.14) 0 2px, transparent 2px 9px);
+    mix-blend-mode:multiply;
+    opacity:0.55;
+  }
+  .piece:hover{ transform:translateY(-2px) scale(1.04); }
+  .piece:active{ transform:translateY(0) scale(0.97); }
+  .piece .icon{
+    font-size:1.5rem;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
+    z-index:1;
+    color:#2a1a0e;
+  }
+  .boat-slot .piece{
+    width:44px; height:44px;
+  }
+  .boat-slot .piece .icon{ font-size:1.15rem; }
+
+  .piece[data-name="King"]{ border-radius:50% 50% 46% 54%/54% 46% 54% 46%; transform:rotate(-3deg); }
+  .piece[data-name="Knight"]{ border-radius:42% 58% 55% 45%/48% 52% 45% 55%; transform:rotate(2deg); }
+  .piece[data-name="Bishop"]{ border-radius:55% 45% 48% 52%/45% 55% 50% 50%; transform:rotate(-1deg); }
+  .piece[data-name="Jester"]{ border-radius:46% 54% 58% 42%/58% 42% 48% 52%; transform:rotate(4deg); }
+  .piece[data-name="Peasant"]{ border-radius:52% 48% 44% 56%/50% 50% 56% 44%; transform:rotate(-4deg); }
+
+  .piece-name{
+    position:absolute;
+    bottom:-16px;
+    left:50%;
+    transform:translateX(-50%);
+    font-size:0.6rem;
+    color:#d8c9ab;
+    letter-spacing:0.03em;
+    white-space:nowrap;
+    text-transform:uppercase;
+    opacity:0.85;
+  }
+  .boat-slot .piece-name{ display:none; }
+  .piece-stack .piece{ margin-bottom:14px; }
+
+  .controls{
+    display:flex;
+    align-items:center;
+    gap:16px;
+  }
+  button{
+    background:var(--wood-mid);
+    color:#f6ecd9;
+    border:2px solid var(--wood-light);
+    border-radius:8px;
+    padding:8px 18px;
+    font-size:0.9rem;
+    cursor:pointer;
+    transition: transform 0.15s, background 0.15s;
+  }
+  button:hover{ background:#8f6440; transform:translateY(-1px); }
+  button:active{ transform:translateY(0); }
+  #counter{ font-size:0.85rem; color:#c9a876; }
+
+  details{
+    max-width:600px;
+    color:#cbb996;
+    font-size:0.82rem;
+    line-height:1.5;
+  }
+  summary{ cursor:pointer; color:var(--wood-light); margin-bottom:6px; }
+
+  .win-overlay{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(15,12,8,0.55);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.4s;
+    z-index:10;
+  }
+  .win-overlay.show{ opacity:1; }
+  .win-overlay span{
+    font-size:1.4rem;
+    font-weight:700;
+    color:var(--win);
+    text-shadow:0 2px 10px rgba(0,0,0,0.8);
+    text-align:center;
+    padding:20px 30px;
+  }
+</style>
+</head>
+<body>
+  <h1>The Ferryman's Dilemma</h1>
+  <div class="subtitle">Tap a courtier to board the ferry. Drag the boat across the river to depart.</div>
+  <div id="message">The court waits on the near bank. The boat holds the ferryman and up to two passengers.</div>
+
+  <div class="board-wrap" id="board">
+    <div class="bank left" id="leftBank">
+      <div class="bank-label">Far Bank</div>
+      <div class="piece-stack" id="leftStack"></div>
+    </div>
+    <div class="river" id="river">
+      <div class="boat" id="boat">
+        <div class="boat-hull"></div>
+        <div class="boat-slots" id="boatSlots">
+          <div class="boat-slot" data-slot="0"></div>
+          <div class="boat-slot" data-slot="1"></div>
+        </div>
+      </div>
+    </div>
+    <div class="bank right" id="rightBank">
+      <div class="bank-label">Near Bank</div>
+      <div class="piece-stack" id="rightStack"></div>
+    </div>
+    <div class="win-overlay" id="winOverlay"><span id="winText"></span></div>
+  </div>
+
+  <div class="controls">
+    <button id="resetBtn">Reset</button>
+    <span id="counter">Crossings: 0</span>
+  </div>
+
+  <details>
+    <summary>The rules of the crossing</summary>
+    <p>The boat holds the ferryman and no more than two passengers. If left alone without the ferryman:</p>
+    <p>King &amp; Knight quarrel &middot; Knight &amp; Bishop duel &middot; Bishop &amp; Jester clash over blasphemy &middot; Jester &amp; Peasant torment &middot; King &amp; Jester can never coexist &middot; Peasant &amp; King risk revolt (unless the Bishop is present) &middot; Bishop &amp; Peasant risk heresy charges (unless the King is present).</p>
+  </details>
+
+  <script>
+  (function(){
+    const PEOPLE = [
+      { name:'King',    icon:'&#9812;' },
+      { name:'Knight',  icon:'&#9822;' },
+      { name:'Bishop',  icon:'&#9819;' },
+      { name:'Jester',  icon:'&#127183;' },
+      { name:'Peasant', icon:'&#127806;' }
+    ];
+
+    const DANGERS = [
+      { a:'King', b:'Knight', mitigator:null, reason:"The King has the Knight thrown in the dungeon on a whim." },
+      { a:'Knight', b:'Bishop', mitigator:null, reason:"The Knight provokes the Bishop into a duel." },
+      { a:'Bishop', b:'Jester', mitigator:null, reason:"The Bishop has the Jester excommunicated for his blasphemous jokes." },
+      { a:'Jester', b:'Peasant', mitigator:null, reason:"The Jester torments the poor Peasant mercilessly." },
+      { a:'King', b:'Jester', mitigator:null, reason:"The King cannot abide the Jester — the fool is flogged." },
+      { a:'Peasant', b:'King', mitigator:'Bishop', reason:"The Peasant rallies the mob and topples the crown." },
+      { a:'Bishop', b:'Peasant', mitigator:'King', reason:"The Bishop brands the Peasant a heretic." }
+    ];
+
+    function validate(names){
+      for(const d of DANGERS){
+        if(names.includes(d.a) && names.includes(d.b)){
+          if(d.mitigator && names.includes(d.mitigator)) continue;
+          return d.reason;
+        }
+      }
+      return null;
+    }
+
+    const rightStack = document.getElementById('rightStack');
+    const leftStack = document.getElementById('leftStack');
+    const river = document.getElementById('river');
+    const boat = document.getElementById('boat');
+    const boatSlots = Array.from(document.querySelectorAll('.boat-slot'));
+    const messageEl = document.getElementById('message');
+    const counterEl = document.getElementById('counter');
+    const resetBtn = document.getElementById('resetBtn');
+    const board = document.getElementById('board');
+    const winOverlay = document.getElementById('winOverlay');
+    const winText = document.getElementById('winText');
+
+    let currentSide = 'right';
+    let isCrossing = false;
+    let crossingCount = 0;
+    let dragState = null;
+
+    function bankEl(side){ return side === 'right' ? rightStack : leftStack; }
+
+    function makePiece(person){
+      const el = document.createElement('div');
+      el.className = 'piece';
+      el.dataset.name = person.name;
+      el.innerHTML = '<span class="icon">' + person.icon + '</span><span class="piece-name">' + person.name + '</span>';
+      return el;
+    }
+
+    function initGame(){
+      rightStack.innerHTML = '';
+      leftStack.innerHTML = '';
+      boatSlots.forEach(s => s.innerHTML = '');
+      PEOPLE.forEach(p => rightStack.appendChild(makePiece(p)));
+      currentSide = 'right';
+      isCrossing = false;
+      crossingCount = 0;
+      dragState = null;
+      winOverlay.classList.remove('show');
+      updateCounter();
+      clearMessage();
+      requestAnimationFrame(() => setBoatPos(dockPositionPx('right'), false));
+    }
+
+    function dockPositionPx(side){
+      const riverW = river.clientWidth;
+      const boatW = boat.offsetWidth;
+      return side === 'left' ? 0 : Math.max(0, riverW - boatW);
+    }
+
+    const CROSSING_MS = 700;
+
+    function setBoatPos(px, animate){
+      boat.style.transition = animate ? ('left ' + CROSSING_MS + 'ms cubic-bezier(.4,.1,.3,1)') : 'none';
+      boat.style.left = px + 'px';
+    }
+
+    function showMessage(text, isDanger, isWin){
+      messageEl.textContent = text;
+      messageEl.classList.toggle('danger', !!isDanger);
+      messageEl.classList.toggle('win', !!isWin);
+    }
+    function clearMessage(){
+      showMessage('The boat is ready. Choose who boards.', false, false);
+    }
+
+    function updateCounter(){
+      counterEl.textContent = 'Crossings: ' + crossingCount;
+    }
+
+    function emptySlot(){
+      return boatSlots.find(s => !s.firstElementChild) || null;
+    }
+
+    board.addEventListener('click', function(e){
+      if(isCrossing) return;
+      const pieceEl = e.target.closest('.piece');
+      if(!pieceEl) return;
+      const parent = pieceEl.parentElement;
+
+      if(parent.classList.contains('boat-slot')){
+        bankEl(currentSide).appendChild(pieceEl);
+        clearMessage();
+        return;
+      }
+
+      const onCurrentBank = parent.id === (currentSide === 'right' ? 'rightStack' : 'leftStack');
+      if(!onCurrentBank){
+        showMessage("The ferryman isn't on that bank — he can't take them aboard yet.", false);
+        return;
+      }
+      const slot = emptySlot();
+      if(!slot){
+        showMessage('The boat already carries two — no room for another.', false);
+        return;
+      }
+      slot.appendChild(pieceEl);
+      clearMessage();
+    });
+
+    function tryDepart(){
+      const departingBank = bankEl(currentSide);
+      const remaining = Array.from(departingBank.children).map(el => el.dataset.name);
+      const reason = validate(remaining);
+      const targetSide = currentSide === 'right' ? 'left' : 'right';
+
+      if(reason){
+        showMessage(reason, true);
+        setBoatPos(dockPositionPx(currentSide), true);
+        return;
+      }
+
+      clearMessage();
+      isCrossing = true;
+      setBoatPos(dockPositionPx(targetSide), true);
+
+      // Use a timer rather than a 'transitionend' listener: transitions can
+      // be skipped, coalesced, or interrupted by the browser (e.g. a
+      // backgrounded tab, reduced-motion settings, or rapid re-triggering),
+      // and a transitionend that never fires would leave the passengers
+      // stranded in the boat with the game permanently locked. A timer
+      // matched to the animation duration always completes.
+      setTimeout(function(){
+        const targetBank = bankEl(targetSide);
+        boatSlots.forEach(slot => {
+          const piece = slot.firstElementChild;
+          if(piece) targetBank.appendChild(piece);
+        });
+        currentSide = targetSide;
+        isCrossing = false;
+        crossingCount++;
+        updateCounter();
+        checkWin();
+      }, CROSSING_MS + 30);
+    }
+
+    function checkWin(){
+      if(leftStack.children.length === 5){
+        showMessage('The court is reunited safely on the far bank!', false, true);
+        winText.textContent = 'Crossed in ' + crossingCount + ' trip' + (crossingCount === 1 ? '' : 's') + (crossingCount === 7 ? ' — optimal!' : '');
+        winOverlay.classList.add('show');
+      }
+    }
+
+    // A press on the boat can mean two different things: a quick tap on a
+    // boarded passenger (disembark them) or a drag of the hull (attempt a
+    // crossing). Because pointer capture redirects the compatibility click
+    // event to the boat itself, we can't rely on a separate 'click' handler
+    // to catch taps on passengers — instead both cases are resolved here,
+    // distinguished by how far the pointer actually travels.
+    const TAP_THRESHOLD = 6;
+
+    boat.addEventListener('pointerdown', function(e){
+      if(isCrossing) return;
+      boat.setPointerCapture && boat.setPointerCapture(e.pointerId);
+      const leftDock = dockPositionPx('left');
+      const rightDock = dockPositionPx('right');
+      const startLeft = parseFloat(boat.style.left) || dockPositionPx(currentSide);
+      const pressedPiece = e.target.closest('.piece');
+      dragState = {
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startLeft, leftDock, rightDock,
+        moved: false,
+        boardedPiece: (pressedPiece && pressedPiece.parentElement.classList.contains('boat-slot')) ? pressedPiece : null
+      };
+      boat.style.transition = 'none';
+      boat.classList.add('dragging');
+    });
+
+    boat.addEventListener('pointermove', function(e){
+      if(!dragState || e.pointerId !== dragState.pointerId) return;
+      const delta = e.clientX - dragState.startClientX;
+      const dy = e.clientY - dragState.startClientY;
+      if(!dragState.moved && Math.hypot(delta, dy) > TAP_THRESHOLD){
+        dragState.moved = true;
+      }
+      let newLeft = dragState.startLeft + delta;
+      newLeft = Math.max(dragState.leftDock, Math.min(dragState.rightDock, newLeft));
+      boat.style.left = newLeft + 'px';
+    });
+
+    function endDrag(e){
+      if(!dragState || e.pointerId !== dragState.pointerId) return;
+      const state = dragState;
+      boat.classList.remove('dragging');
+      dragState = null;
+
+      if(!state.moved){
+        // A tap, not a drag: snap back exactly onto the dock and, if a
+        // boarded passenger was pressed, send them back to the bank.
+        setBoatPos(dockPositionPx(currentSide), false);
+        if(state.boardedPiece && !isCrossing){
+          bankEl(currentSide).appendChild(state.boardedPiece);
+          clearMessage();
+        }
+        return;
+      }
+
+      const { leftDock, rightDock } = state;
+      const span = rightDock - leftDock;
+      const curLeft = parseFloat(boat.style.left);
+      const frac = span > 0 ? (curLeft - leftDock) / span : (currentSide === 'left' ? 0 : 1);
+
+      let attemptCross = false;
+      if(currentSide === 'right' && frac < 0.5) attemptCross = true;
+      if(currentSide === 'left' && frac > 0.5) attemptCross = true;
+
+      if(!attemptCross){
+        setBoatPos(dockPositionPx(currentSide), true);
+        return;
+      }
+      tryDepart();
+    }
+
+    boat.addEventListener('pointerup', endDrag);
+    boat.addEventListener('pointercancel', endDrag);
+
+    window.addEventListener('resize', function(){
+      if(isCrossing || dragState) return;
+      setBoatPos(dockPositionPx(currentSide), false);
+    });
+
+    resetBtn.addEventListener('click', initGame);
+
+    initGame();
+  })();
+  </script>
+</body>
+</html>

@@ -336,6 +336,47 @@ var NODE_TYPES = {
       return (c.sources || []).length + " source(s), " + (c.pieces || []).length + " piece(s), " + (c.targets || []).length + " target(s)";
     }
   },
+  categoryGrid: {
+    family: "puzzle", label: "Category Grid (3×3 Image Puzzle)", icon: "🖼️",
+    defaultTitle: "New Category Grid",
+    // A 3x3 grid of 9 creator-supplied images. Each image declares two
+    // "first category" partners and two "second category" partners — the
+    // other two images it's meant to share a hidden category with (see the
+    // caGrid* helpers further down, shared with the player runtime below
+    // and Studio's inspector — buildTypeSpecificFields/wireNodeInspector's
+    // "categoryGrid" case in app.js). A correct arrangement is *any* 3x3
+    // layout where every row of three and every column of three shares one
+    // of the 6 categories — there's deliberately no single correct order
+    // or orientation (rows/columns aren't pinned to "first"/"second"
+    // category, and the whole grid can be reflected or rotated), and the
+    // 6 category names are never shown to the player until they solve it.
+    // See caGridCheckSolution for the exact centre-out check order the
+    // design spec calls for, and wireCategoryGridInteractions for the
+    // drag/drop + tap-to-swap board.
+    defaultContent: function () {
+      var imgs = [];
+      for (var i = 0; i < 9; i++) imgs.push({ id: uid("cgimg"), title: "Image " + (i + 1), imageAsset: "", firstPartners: [], secondPartners: [] });
+      // Default example: a ready-to-play, already-valid 3x3 grouping (first
+      // category = rows of 3 by index, second category = columns of 3 by
+      // index) so a freshly-added node isn't an unsolvable blank slate.
+      imgs.forEach(function (im, i) {
+        var rowGroup = Math.floor(i / 3), colGroup = i % 3;
+        im.firstPartners = imgs.filter(function (x, xi) { return Math.floor(xi / 3) === rowGroup && xi !== i; }).map(function (x) { return x.id; });
+        im.secondPartners = imgs.filter(function (x, xi) { return xi % 3 === colGroup && xi !== i; }).map(function (x) { return x.id; });
+      });
+      return {
+        body: "Arrange the 9 images into the grid so that every row of three and every column of three shares a hidden category.",
+        bodyFontSize: 15,
+        images: imgs,
+        categoryNames: { first: ["Category 1", "Category 2", "Category 3"], second: ["Category 4", "Category 5", "Category 6"] },
+        showBackButton: false
+      };
+    },
+    summary: function (c) {
+      var v = caGridValidate(c);
+      return (c.images || []).length + " images — " + (v.valid ? "grouping OK" : "⚠ " + v.issues[0]);
+    }
+  },
   awardItem: {
     family: "state", label: "Award Item", icon: "🎒",
     defaultTitle: "Award Item",
@@ -1080,6 +1121,160 @@ function checkTextAnswer(content, text) {
   return (content.acceptedAnswers || []).some(function (a) { return normalizeAnswer(a, caseSensitive) === normalizeAnswer(text, caseSensitive); });
 }
 
+/* ---------------------------------------------------------------------
+   Category Grid (3x3 image puzzle) helpers — shared by the player runtime
+   further down and by Studio's inspector-embedded category builder
+   (buildTypeSpecificFields/wireNodeInspector's "categoryGrid" case in
+   app.js), same "one shared implementation" approach as the Lumen Puzzle
+   geometry above.
+
+   Each of the 9 images declares up to two "first category" partners and
+   two "second category" partners — the other images it's meant to end up
+   sharing a hidden category with. caGridGroups unions those partner links
+   per axis with a small Union-Find, so a creator only has to set the link
+   from *one* member of a trio (listing the other two) for the whole trio
+   to come out grouped together — the other two members don't also have to
+   list it back. A well-formed puzzle ends up with exactly 3 groups of 3
+   images on each axis, and the two axes have to be "orthogonal" (every
+   first-group/second-group pair contains exactly one image) for a valid
+   3x3 arrangement to exist at all — caGridValidate checks both and is
+   used by both the Studio inspector (live validation) and NODE_TYPES.
+   categoryGrid.summary above.
+--------------------------------------------------------------------- */
+function caGridUnionFind(images, partnerKey) {
+  var parent = {};
+  images.forEach(function (im) { parent[im.id] = im.id; });
+  function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function union(a, b) { if (!(a in parent) || !(b in parent)) return; var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+  images.forEach(function (im) { (im[partnerKey] || []).forEach(function (pid) { union(im.id, pid); }); });
+  var indexOf = {}; images.forEach(function (im, i) { indexOf[im.id] = i; });
+  var groupsMap = {};
+  images.forEach(function (im) { var r = find(im.id); (groupsMap[r] = groupsMap[r] || []).push(im.id); });
+  var groups = Object.keys(groupsMap).map(function (r) {
+    return groupsMap[r].slice().sort(function (a, b) { return indexOf[a] - indexOf[b]; });
+  });
+  // Canonical order (both across groups, and of members within each group)
+  // so the same content always yields the same group order — categoryNames
+  // is indexed positionally against this order (see buildTypeSpecificFields'
+  // "categoryGrid" case in app.js), and caGridLineCategoryName below relies
+  // on it staying stable between edits that don't change the groups.
+  groups.sort(function (a, b) { return indexOf[a[0]] - indexOf[b[0]]; });
+  return groups;
+}
+function caGridGroups(content) {
+  var images = content.images || [];
+  return { first: caGridUnionFind(images, "firstPartners"), second: caGridUnionFind(images, "secondPartners") };
+}
+function caGridGroupIndexMap(groups) {
+  var map = {};
+  groups.forEach(function (g, idx) { g.forEach(function (id) { map[id] = idx; }); });
+  return map;
+}
+// Well-formed = exactly 3 groups of 3 images on each axis, and no two
+// images share both the same first-group AND the same second-group (the
+// two partitions have to be "orthogonal" — every first-group/second-group
+// pair maps to exactly one image — or no 3x3 layout can satisfy every row
+// and column simultaneously).
+function caGridValidate(content) {
+  var images = content.images || [];
+  var issues = [];
+  if (images.length !== 9) issues.push("Needs exactly 9 images.");
+  var groups = caGridGroups(content);
+  ["first", "second"].forEach(function (axis) {
+    var g = groups[axis];
+    if (g.length !== 3 || g.some(function (x) { return x.length !== 3; })) {
+      issues.push((axis === "first" ? "First" : "Second") + " category partners don't yet form 3 groups of 3 images each.");
+    }
+  });
+  if (!issues.length) {
+    var fMap = caGridGroupIndexMap(groups.first), sMap = caGridGroupIndexMap(groups.second);
+    var seen = {}, ok = true;
+    images.forEach(function (im) {
+      var key = fMap[im.id] + ":" + sMap[im.id];
+      if (seen[key]) ok = false;
+      seen[key] = true;
+    });
+    if (!ok) issues.push("Two images share the same pair of categories — no valid grid arrangement exists yet. Adjust the partner selections so every image has a unique first/second category combination.");
+  }
+  return { valid: issues.length === 0, issues: issues, groups: groups };
+}
+// True when the three given image ids (a grid line's contents) all share a
+// first-group, or all share a second-group. Any missing (null/undefined)
+// cell fails immediately — an incomplete line never "shares a category".
+function caGridShareCategory(groups, ids) {
+  if (ids.indexOf(null) !== -1 || ids.indexOf(undefined) !== -1) return false;
+  var fMap = caGridGroupIndexMap(groups.first);
+  var f0 = fMap[ids[0]];
+  if (f0 !== undefined && f0 === fMap[ids[1]] && f0 === fMap[ids[2]]) return true;
+  var sMap = caGridGroupIndexMap(groups.second);
+  var s0 = sMap[ids[0]];
+  if (s0 !== undefined && s0 === sMap[ids[1]] && s0 === sMap[ids[2]]) return true;
+  return false;
+}
+// Grid cell indices, row-major:
+//   0 1 2
+//   3 4 5
+//   6 7 8
+var CA_GRID_LINES = {
+  midRow: [3, 4, 5], midCol: [1, 4, 7],
+  topRow: [0, 1, 2], bottomRow: [6, 7, 8],
+  leftCol: [0, 3, 6], rightCol: [2, 5, 8]
+};
+// Solution-checker mechanics, straight off the design spec: start at the
+// centre cell and work outward — middle row, then middle column, then top
+// row, bottom row, left column, right column — short-circuiting on the
+// first line that doesn't share a category. Any full, valid arrangement
+// (there are many — different orders/orientations all work) passes.
+var CA_GRID_CHECK_ORDER = ["midRow", "midCol", "topRow", "bottomRow", "leftCol", "rightCol"];
+function caGridCheckSolution(content, cellIds) {
+  if (!cellIds || cellIds.length !== 9 || cellIds.some(function (id) { return !id; })) return false;
+  var groups = caGridGroups(content);
+  for (var i = 0; i < CA_GRID_CHECK_ORDER.length; i++) {
+    var idxs = CA_GRID_LINES[CA_GRID_CHECK_ORDER[i]];
+    if (!caGridShareCategory(groups, idxs.map(function (ix) { return cellIds[ix]; }))) return false;
+  }
+  return true;
+}
+// Once solved, works out which named category each row/column actually
+// matched on (first-axis or second-axis, whichever the three images in
+// that line share) — drives the row-then-column completion graphic in
+// wireCategoryGridInteractions below.
+function caGridLineCategoryName(content, groups, ids) {
+  var fMap = caGridGroupIndexMap(groups.first);
+  var f0 = fMap[ids[0]];
+  if (f0 !== undefined && f0 === fMap[ids[1]] && f0 === fMap[ids[2]]) {
+    return (content.categoryNames && content.categoryNames.first && content.categoryNames.first[f0]) || ("Category " + (f0 + 1));
+  }
+  var sMap = caGridGroupIndexMap(groups.second);
+  var s0 = sMap[ids[0]];
+  if (s0 !== undefined && s0 === sMap[ids[1]] && s0 === sMap[ids[2]]) {
+    return (content.categoryNames && content.categoryNames.second && content.categoryNames.second[s0]) || ("Category " + (s0 + 4));
+  }
+  return "";
+}
+function caGridSolvedCategoryNames(content, cellIds) {
+  var groups = caGridGroups(content);
+  var rowIdxs = [[0, 1, 2], [3, 4, 5], [6, 7, 8]];
+  var colIdxs = [[0, 3, 6], [1, 4, 7], [2, 5, 8]];
+  return {
+    rows: rowIdxs.map(function (idxs) { return caGridLineCategoryName(content, groups, idxs.map(function (ix) { return cellIds[ix]; })); }),
+    cols: colIdxs.map(function (idxs) { return caGridLineCategoryName(content, groups, idxs.map(function (ix) { return cellIds[ix]; })); })
+  };
+}
+// Builds one grid piece's markup (a grid cell's contents, or a gallery
+// item) — an image thumbnail when the creator has uploaded one, otherwise
+// a text tile showing the image's title so an in-progress puzzle is still
+// usable before every image is attached. `from` is "cell" or "gallery" and
+// `draggable` is false while the completion graphic is playing (see
+// renderPreviewNode's "categoryGrid" branch) so the solved board can't be
+// disturbed mid-reveal.
+function caGridPieceHtml(im, from, draggable) {
+  var inner = im.imageAsset
+    ? '<img src="' + esc(im.imageAsset) + '" alt="' + esc(im.title || "") + '" draggable="false" />'
+    : '<span class="pv-cgrid-noimg">' + esc(im.title || "?") + '</span>';
+  return '<div class="pv-cgrid-piece" draggable="' + (draggable ? "true" : "false") + '" tabindex="0" data-cgimg="' + esc(im.id) + '" data-cgfrom="' + from + '" title="' + esc(im.title || "") + '">' + inner + '</div>';
+}
+
 // Sliding Tile helpers — a classic numbered slide puzzle (no image asset
 // support yet, see the Node Type Expansion draft's open question on asset
 // storage) used as the simple functioning demo for this node type. Tiles
@@ -1277,6 +1472,22 @@ function pv_action_submitLumenPuzzle(session, nodeId, allTargetsSolved) {
   return ok;
 }
 
+// Category Grid — auto-validates once every one of the 9 cells is filled
+// (same "auto-validate, no submit button" family as Fuse Panel/Lumen
+// Puzzle) — see wireCategoryGridInteractions below, which is the only
+// caller: it withholds the call entirely while any cell is still empty, so
+// feedback never flips to "incorrect" just because the player hasn't
+// finished arranging the board yet. cellIds is the live 9-cell grid
+// (row-major, see the CA_GRID_LINES comment above caGridCheckSolution).
+function pv_action_submitCategoryGrid(session, nodeId, cellIds) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var mechanicOk = caGridCheckSolution(n.content, cellIds);
+  var ok = nodeCompletionOk(n, session, mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+
 function pv_action_revealHint(session, hintNodeId) {
   var cur = session.state.hintProgress[hintNodeId] || 0;
   var n = session.hunt.nodes.find(function (x) { return x.id === hintNodeId; });
@@ -1310,7 +1521,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // Studio inspector field.
 var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
-  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle"];
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "categoryGrid"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -1914,6 +2125,44 @@ function renderPreviewNode(session, n, ctl) {
       '<div class="pv-lumen-summary" data-node="' + esc(n.id) + '"></div>';
     var fbLu = session.state.feedback[n.id];
     if (fbLu === "correct") html += '<div class="pv-feedback correct">✓ Beam routed.</div>';
+  } else if (n.type === "categoryGrid") {
+    if (!ctl.categoryGridDraft[n.id]) {
+      ctl.categoryGridDraft[n.id] = { cells: [null, null, null, null, null, null, null, null, null], gallery: (c.images || []).map(function (im) { return im.id; }), selected: null };
+    }
+    var cgDraft = ctl.categoryGridDraft[n.id];
+    var cgReveal = ctl.categoryGridReveal && ctl.categoryGridReveal[n.id];
+    var cgImgById = {}; (c.images || []).forEach(function (im) { cgImgById[im.id] = im; });
+    var cgCells = cgReveal ? cgReveal.cellIds : cgDraft.cells;
+    if (c.body) html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
+    html += '<div class="pv-cgrid-wrap" data-node="' + esc(n.id) + '">';
+    html += '<div class="pv-cgrid-board' + (cgReveal ? ' pv-cgrid-locked' : '') + '">';
+    for (var cgi = 0; cgi < 9; cgi++) {
+      var cgImg = cgCells[cgi] ? cgImgById[cgCells[cgi]] : null;
+      html += '<div class="pv-cgrid-cell' + (cgDraft.selected === cgi ? ' selected' : '') + '" data-cgcell="' + cgi + '">' +
+        (cgImg ? caGridPieceHtml(cgImg, "cell", !cgReveal) : '') +
+        '</div>';
+    }
+    html += '</div>';
+    if (cgReveal) {
+      var cgLabels = cgReveal.phase === "rows" ? cgReveal.names.rows : cgReveal.names.cols;
+      html += '<div class="pv-cgrid-reveal pv-cgrid-reveal-' + cgReveal.phase + '">' +
+        cgLabels.map(function (label, i) {
+          var pos = cgReveal.phase === "rows" ? "grid-row:" + (i + 1) : "grid-column:" + (i + 1);
+          return '<div class="pv-cgrid-reveal-label" style="' + pos + ';animation-delay:' + (i * 0.35) + 's">' + esc(label) + '</div>';
+        }).join("") +
+        '</div>';
+    }
+    html += '</div>'; // .pv-cgrid-wrap
+    if (!cgReveal) {
+      html += '<div class="pv-cgrid-gallery" data-node="' + esc(n.id) + '">' +
+        cgDraft.gallery.map(function (imgId) {
+          var im = cgImgById[imgId];
+          return im ? caGridPieceHtml(im, "gallery", true) : "";
+        }).join("") +
+        '</div>';
+      var fbCg = session.state.feedback[n.id];
+      if (fbCg === "incorrect") html += '<div class="pv-feedback incorrect">✗ Not quite — some rows or columns don’t share a category yet.</div>';
+    }
   } else if (n.type === "clickableImage") {
     if (c.body) html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
     html += renderClickableImageBlock(c);
@@ -2586,6 +2835,119 @@ function wireRopeTyingInteractions(root, ctl, session, n) {
       }, 650);
     }
   };
+}
+
+// Category Grid — drag-and-drop (gallery <-> grid, grid <-> grid) plus
+// tap-a-filled-cell-then-another-to-swap, same "select then act" shape as
+// wireRopeTyingInteractions' tie interaction above. Auto-validates the
+// instant every cell is filled (see maybeCheck below) — there's no submit
+// button, same family as Fuse Panel/Lumen Puzzle. On a correct arrangement
+// it plays the completion graphic the design spec calls for: the 3 row
+// categories fade in in succession, hold for a beat, then the 3 column
+// categories (rotated 90 degrees, via the .pv-cgrid-reveal-cols CSS —
+// see styles.css) fade in the same way, hold, then the node actually
+// completes and the view advances — mirroring the 2s/600ms "hold before
+// advancing" trick wireRopeTyingInteractions/wireLumenPuzzleInteractions
+// already use, just with the two longer named phases this puzzle needs.
+var CA_GRID_REVEAL_PHASE_MS = 4200;
+function wireCategoryGridInteractions(root, ctl, session, n) {
+  var wrap = root.querySelector('.pv-cgrid-wrap[data-node="' + n.id + '"]');
+  if (!wrap) return;
+  if (!ctl.categoryGridDraft[n.id]) {
+    ctl.categoryGridDraft[n.id] = { cells: [null, null, null, null, null, null, null, null, null], gallery: (n.content.images || []).map(function (im) { return im.id; }), selected: null };
+  }
+  var draft = ctl.categoryGridDraft[n.id];
+  ctl.categoryGridReveal = ctl.categoryGridReveal || {};
+  if (ctl.categoryGridReveal[n.id]) return; // frozen while the completion graphic plays
+
+  function placeAt(cellIdx, imgId, fromCellIdx, fromGallery) {
+    if (fromGallery) {
+      var gi = draft.gallery.indexOf(imgId);
+      if (gi !== -1) draft.gallery.splice(gi, 1);
+    }
+    var displaced = draft.cells[cellIdx];
+    if (typeof fromCellIdx === "number") {
+      draft.cells[fromCellIdx] = displaced; // swap (or clear, if the target cell was empty)
+    } else if (displaced) {
+      draft.gallery.push(displaced); // bump the previous occupant back to the gallery
+    }
+    draft.cells[cellIdx] = imgId;
+  }
+
+  function maybeCheck() {
+    if (draft.cells.indexOf(null) !== -1) { ctl.render(); return; }
+    var ok = pv_action_submitCategoryGrid(session, n.id, draft.cells);
+    if (!ok) { ctl.render(); return; }
+    var names = caGridSolvedCategoryNames(n.content, draft.cells);
+    ctl.categoryGridReveal[n.id] = { phase: "rows", cellIds: draft.cells.slice(), names: names };
+    ctl.render();
+    setTimeout(function () {
+      if (!ctl.categoryGridReveal[n.id]) return; // node/session was reset mid-reveal
+      ctl.categoryGridReveal[n.id].phase = "cols";
+      ctl.render();
+      setTimeout(function () {
+        if (!ctl.categoryGridReveal[n.id]) return;
+        delete ctl.categoryGridReveal[n.id];
+        ctl.expandedNodeId = null; ctl.pinnedNodeId = null;
+        ctl.render();
+      }, CA_GRID_REVEAL_PHASE_MS);
+    }, CA_GRID_REVEAL_PHASE_MS);
+  }
+
+  Array.prototype.forEach.call(wrap.querySelectorAll('.pv-cgrid-piece[draggable="true"]'), function (piece) {
+    piece.addEventListener("dragstart", function (e) {
+      var cellEl = piece.closest("[data-cgcell]");
+      e.dataTransfer.setData("text/plain", piece.dataset.cgimg + "|" + piece.dataset.cgfrom + "|" + (cellEl ? cellEl.dataset.cgcell : ""));
+      e.dataTransfer.effectAllowed = "move";
+    });
+  });
+
+  Array.prototype.forEach.call(wrap.querySelectorAll(".pv-cgrid-cell"), function (cellEl) {
+    cellEl.addEventListener("dragover", function (e) { e.preventDefault(); cellEl.classList.add("dragover"); });
+    cellEl.addEventListener("dragleave", function () { cellEl.classList.remove("dragover"); });
+    cellEl.addEventListener("drop", function (e) {
+      e.preventDefault();
+      cellEl.classList.remove("dragover");
+      var data = (e.dataTransfer.getData("text/plain") || "").split("|");
+      var imgId = data[0], from = data[1], fromCellIdx = data[2] !== "" ? Number(data[2]) : null;
+      if (!imgId) return;
+      var toIdx = Number(cellEl.dataset.cgcell);
+      if (from === "cell" && fromCellIdx === toIdx) return;
+      placeAt(toIdx, imgId, from === "cell" ? fromCellIdx : null, from === "gallery");
+      draft.selected = null;
+      maybeCheck();
+    });
+    cellEl.onclick = function () {
+      var idx = Number(cellEl.dataset.cgcell);
+      if (!draft.cells[idx]) { draft.selected = null; ctl.render(); return; }
+      if (draft.selected === null) { draft.selected = idx; ctl.render(); }
+      else if (draft.selected === idx) { draft.selected = null; ctl.render(); }
+      else {
+        var a = draft.selected, b = idx;
+        var tmp = draft.cells[a]; draft.cells[a] = draft.cells[b]; draft.cells[b] = tmp;
+        draft.selected = null;
+        maybeCheck();
+      }
+    };
+    cellEl.onkeydown = function (e) { if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); cellEl.onclick(); } };
+  });
+
+  var galleryEl = root.querySelector('.pv-cgrid-gallery[data-node="' + n.id + '"]');
+  if (galleryEl) {
+    galleryEl.addEventListener("dragover", function (e) { e.preventDefault(); galleryEl.classList.add("dragover"); });
+    galleryEl.addEventListener("dragleave", function () { galleryEl.classList.remove("dragover"); });
+    galleryEl.addEventListener("drop", function (e) {
+      e.preventDefault();
+      galleryEl.classList.remove("dragover");
+      var data = (e.dataTransfer.getData("text/plain") || "").split("|");
+      var imgId = data[0], from = data[1], fromCellIdx = data[2] !== "" ? Number(data[2]) : null;
+      if (!imgId || from !== "cell" || fromCellIdx === null) return;
+      draft.cells[fromCellIdx] = null;
+      if (draft.gallery.indexOf(imgId) === -1) draft.gallery.push(imgId);
+      draft.selected = null;
+      ctl.render();
+    });
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -3489,6 +3851,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wirePdfReveal(root, ctl, session, n);
   wireRopeTyingInteractions(root, ctl, session, n);
   wireLumenPuzzleInteractions(root, ctl, session, n);
+  wireCategoryGridInteractions(root, ctl, session, n);
 
   // Sequence / Pattern — tap swatches in order; auto-validates once the
   // attempt is as long as the target sequence, resetting on a miss.
@@ -3611,6 +3974,7 @@ function createPreviewController(mainEl, sideEl) {
     orderingDraft: {}, matchingDraft: {},
     sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {}, fuseDraft: {}, ropeDraft: {},
     lumenDraft: {}, lumenGeom: {}, // lumenDraft: node id -> live {sources,pieces,targets,walls,cards} the player rotates; lumenGeom: node id -> memoized hex geometry (see wireLumenPuzzleInteractions)
+    categoryGridDraft: {}, categoryGridReveal: {}, // categoryGridDraft: node id -> live {cells[9], gallery[], selected}; categoryGridReveal: node id -> {phase:"rows"|"cols", cellIds, names} while the completion graphic plays (see wireCategoryGridInteractions)
     pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
@@ -3635,6 +3999,8 @@ function createPreviewController(mainEl, sideEl) {
     ctl.ropeDraft = {};
     ctl.lumenDraft = {};
     ctl.lumenGeom = {};
+    ctl.categoryGridDraft = {};
+    ctl.categoryGridReveal = {};
     ctl.pinnedNodeId = null;
     ctl.peekStack = [];
     ctl.laneListId = null;
@@ -3819,7 +4185,19 @@ return {
   pv_action_submitFusePanel: pv_action_submitFusePanel,
   pv_action_submitRopeTying: pv_action_submitRopeTying,
   pv_action_submitLumenPuzzle: pv_action_submitLumenPuzzle,
+  pv_action_submitCategoryGrid: pv_action_submitCategoryGrid,
   pv_action_revealHint: pv_action_revealHint,
+
+  // Category Grid (3x3 image puzzle) — grouping/validation/solution-check
+  // math, shared between the player runtime (above) and Studio's
+  // inspector-embedded category builder (buildTypeSpecificFields/
+  // wireNodeInspector's "categoryGrid" case in app.js).
+  caGridGroups: caGridGroups,
+  caGridGroupIndexMap: caGridGroupIndexMap,
+  caGridValidate: caGridValidate,
+  caGridCheckSolution: caGridCheckSolution,
+  caGridSolvedCategoryNames: caGridSolvedCategoryNames,
+  caGridPieceHtml: caGridPieceHtml,
 
   // Lumen Puzzle — hex geometry/beam-tracing math and canvas drawing,
   // shared between the player runtime (above) and Studio's inspector-

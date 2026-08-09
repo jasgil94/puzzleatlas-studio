@@ -711,3 +711,51 @@ button{font-family:inherit;cursor:pointer;}
 .lb-summary{font-size:12px;color:var(--text-dim);text-align:center;}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}
+
+/* Category Grid (3x3 image puzzle) — Studio inspector: 9 image sections
+   (title, upload, partner dropdowns) plus a live-computed categories list
+   (see buildCategoryGridFields/wireCategoryGridFields in app.js). */
+.cgrid-image-block{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:var(--bg2);}
+.cgrid-image-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.cgrid-image-body{display:flex;gap:10px;}
+.cgrid-image-upload{flex-shrink:0;width:76px;}
+.cgrid-image-thumb{width:76px;height:76px;object-fit:cover;border-radius:6px;border:1px solid var(--line);display:block;}
+.cgrid-image-thumb-empty{display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;color:var(--text-dim);background:var(--bg3);}
+.cgrid-image-partners{flex:1;min-width:0;}
+.cgrid-image-partners select{width:calc(50% - 4px);margin-right:8px;}
+.cgrid-category-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);}
+.cgrid-category-row:last-child{border-bottom:none;}
+.cgrid-category-members{flex:1;font-size:11.5px;color:var(--text-dim);}
+.cgCategoryNameInput{width:150px;flex-shrink:0;}
+
+/* Category Grid — player board: an empty 3x3 grid (lines in the active
+   style pack's accent colour, per the design spec) with a gallery of the
+   9 images below it. Drag-and-drop (gallery <-> grid, grid <-> grid) and
+   tap-a-filled-cell-then-another-to-swap both drive the same
+   ctl.categoryGridDraft state — see wireCategoryGridInteractions in
+   engine.js. */
+.pv-cgrid-wrap{position:relative;max-width:320px;margin:10px auto 0;}
+.pv-cgrid-board{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:2px;aspect-ratio:1/1;background:var(--pv-accent);border:2px solid var(--pv-accent);border-radius:4px;overflow:hidden;}
+.pv-cgrid-board.pv-cgrid-locked{pointer-events:none;}
+.pv-cgrid-cell{position:relative;aspect-ratio:1/1;background:var(--pv-surface);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.pv-cgrid-cell.dragover{outline:2px dashed var(--pv-accent);outline-offset:-2px;background:rgba(255,255,255,.06);}
+.pv-cgrid-cell.selected{outline:3px solid var(--pv-accent);outline-offset:-3px;}
+.pv-cgrid-piece{width:100%;height:100%;display:flex;align-items:center;justify-content:center;cursor:grab;user-select:none;}
+.pv-cgrid-piece img{width:100%;height:100%;object-fit:cover;display:block;}
+.pv-cgrid-noimg{font-size:10px;line-height:1.2;text-align:center;color:var(--pv-text-dim);padding:4px;}
+.pv-cgrid-gallery{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px;padding:8px;border-radius:var(--pv-radius);min-height:44px;}
+.pv-cgrid-gallery.dragover{outline:2px dashed var(--pv-accent);outline-offset:-2px;}
+.pv-cgrid-gallery .pv-cgrid-piece{width:56px;height:56px;border-radius:6px;overflow:hidden;border:var(--pv-border-width) var(--pv-border-style) var(--line);background:var(--pv-surface);}
+
+/* Completion graphic — row category names appear in succession over the
+   solved grid, hold, then column names (rotated 90 degrees) appear the
+   same way and hold, before the node actually completes. Timing driven by
+   wireCategoryGridInteractions/CA_GRID_REVEAL_PHASE_MS in engine.js; the
+   per-label stagger is set inline via animation-delay. */
+.pv-cgrid-reveal{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);background:rgba(10,10,14,.72);border-radius:4px;pointer-events:none;}
+.pv-cgrid-reveal-label{display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;font-weight:700;font-size:13px;line-height:1.2;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);opacity:0;animation:cgridRevealIn .5s ease forwards;}
+.pv-cgrid-reveal-rows .pv-cgrid-reveal-label{grid-column:1 / 4;}
+/* Column names read top-to-bottom, characters turned on their side — the
+   "text rotated by 90 degrees" the design spec calls for. */
+.pv-cgrid-reveal-cols .pv-cgrid-reveal-label{grid-row:1 / 4;writing-mode:vertical-rl;text-orientation:mixed;}
+@keyframes cgridRevealIn{from{opacity:0;}to{opacity:1;}}
