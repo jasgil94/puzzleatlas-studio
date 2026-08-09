@@ -2263,7 +2263,7 @@ function buildCategoryGridFields(c) {
   html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Image titles below are always used as the reference names in the partner dropdowns and categories list — this only controls whether the player also sees them as captions on the board and gallery.</p>';
 
   html += '<div class="section-title">Images (9)</div>';
-  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">For each image, pick the two other images it shares a hidden "first category" with, and the two it shares a hidden "second category" with. Each category needs exactly 3 images in the end — see the validation under Categories below.</p>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">For each image, pick the two other images it shares a hidden row category with, and the two it shares a hidden column category with. Each category needs exactly 3 images in the end — see the validation under Categories below.</p>';
   html += '<div id="cgImageList">' + images.map(function (im, idx) {
     var others = images.filter(function (x) { return x.id !== im.id; });
     var mkPartnerSelect = function (selId, partnerKey, slot) {
@@ -2286,8 +2286,8 @@ function buildCategoryGridFields(c) {
           '</div>' +
         '</div>' +
         '<div class="cgrid-image-partners">' +
-          fieldWrap("First category partners", mkPartnerSelect("cgFirst1_" + im.id, "firstPartners", 0) + mkPartnerSelect("cgFirst2_" + im.id, "firstPartners", 1)) +
-          fieldWrap("Second category partners", mkPartnerSelect("cgSecond1_" + im.id, "secondPartners", 0) + mkPartnerSelect("cgSecond2_" + im.id, "secondPartners", 1)) +
+          fieldWrap("Row partners", mkPartnerSelect("cgFirst1_" + im.id, "firstPartners", 0) + mkPartnerSelect("cgFirst2_" + im.id, "firstPartners", 1)) +
+          fieldWrap("Column partners", mkPartnerSelect("cgSecond1_" + im.id, "secondPartners", 0) + mkPartnerSelect("cgSecond2_" + im.id, "secondPartners", 1)) +
         '</div>' +
       '</div>' +
     '</div>';
@@ -2311,7 +2311,7 @@ function buildCategoryGridFields(c) {
       });
       var nameVal = (c.categoryNames[axis] && c.categoryNames[axis][gi]) || "";
       html += '<div class="cgrid-category-row">' +
-        '<div class="cgrid-category-members">' + (axis === "first" ? "First" : "Second") + ' category ' + (gi + 1) + (memberTitles.length ? ': ' + esc(memberTitles.join(", ")) : ' — not yet formed') + '</div>' +
+        '<div class="cgrid-category-members">' + (axis === "first" ? "Row" : "Column") + ' category ' + (gi + 1) + (memberTitles.length ? ': ' + esc(memberTitles.join(", ")) : ' — not yet formed') + '</div>' +
         '<input type="text" class="cgCategoryNameInput" data-axis="' + axis + '" data-idx="' + gi + '" value="' + esc(nameVal) + '" placeholder="Name this category" />' +
       '</div>';
     }
