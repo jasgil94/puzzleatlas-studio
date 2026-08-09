@@ -2861,7 +2861,9 @@ function wireRopeTyingInteractions(root, ctl, session, n) {
 // completes and the view advances — mirroring the 2s/600ms "hold before
 // advancing" trick wireRopeTyingInteractions/wireLumenPuzzleInteractions
 // already use, just with the two longer named phases this puzzle needs.
-var CA_GRID_REVEAL_PHASE_MS = 4200;
+// ~1200ms for the 3 labels to stagger in (2 * 350ms delay + 500ms fade),
+// plus a 6000ms pause once they're all up, per phase.
+var CA_GRID_REVEAL_PHASE_MS = 7200;
 function wireCategoryGridInteractions(root, ctl, session, n) {
   var wrap = root.querySelector('.pv-cgrid-wrap[data-node="' + n.id + '"]');
   if (!wrap) return;
