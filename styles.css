@@ -733,23 +733,35 @@ button{font-family:inherit;cursor:pointer;}
    9 images below it. Drag-and-drop (gallery <-> grid, grid <-> grid) and
    tap-a-filled-cell-then-another-to-swap both drive the same
    ctl.categoryGridDraft state — see wireCategoryGridInteractions in
-   engine.js. */
-.pv-cgrid-wrap{position:relative;max-width:320px;margin:10px auto 0;}
+   engine.js.
+
+   Sized to fit the docked Studio mock's phone screen (.phone-screen, 236px
+   wide / ~208px usable — see the Fuse Panel comment above) alongside its
+   body text and the full 2-row gallery, all on screen at once with no
+   scrolling: a 150px-ish board plus a ~152px gallery comfortably clears
+   that budget with room to spare for the Preview overlay's larger view.
+   The gallery is a fixed 5-column grid (not flex-wrap) so 9 images always
+   lay out as 5 then 4, regardless of container width — see
+   caGridPieceHtml in engine.js for the shared cell/gallery markup. */
+.pv-cgrid-wrap{position:relative;max-width:150px;margin:10px auto 0;}
 .pv-cgrid-board{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:2px;aspect-ratio:1/1;background:var(--pv-accent);border:2px solid var(--pv-accent);border-radius:4px;overflow:hidden;}
 .pv-cgrid-board.pv-cgrid-locked{pointer-events:none;}
 .pv-cgrid-cell{position:relative;aspect-ratio:1/1;background:var(--pv-surface);display:flex;align-items:center;justify-content:center;overflow:hidden;}
 .pv-cgrid-cell.dragover{outline:2px dashed var(--pv-accent);outline-offset:-2px;background:rgba(255,255,255,.06);}
 .pv-cgrid-cell.selected{outline:3px solid var(--pv-accent);outline-offset:-3px;}
 .pv-cgrid-piece{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;cursor:grab;user-select:none;}
-.pv-cgrid-piece img{width:100%;height:100%;object-fit:cover;display:block;}
-.pv-cgrid-noimg{font-size:10px;line-height:1.2;text-align:center;color:var(--pv-text-dim);padding:4px;}
+/* contain (not cover): scales by the image's *largest* dimension so the
+   whole image is always visible, letterboxed on the shorter axis against
+   the cell's own background, rather than cropping to fill the cell. */
+.pv-cgrid-piece img{width:100%;height:100%;object-fit:contain;display:block;}
+.pv-cgrid-noimg{font-size:9px;line-height:1.2;text-align:center;color:var(--pv-text-dim);padding:2px;}
 /* Optional per-puzzle caption (content.showImageTitles, off by default) —
    shown over the bottom of an image thumbnail in both the grid and the
    gallery. See caGridPieceHtml in engine.js. */
-.pv-cgrid-caption{position:absolute;left:0;right:0;bottom:0;padding:2px 4px;font-size:9.5px;line-height:1.2;text-align:center;color:#fff;background:rgba(0,0,0,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
-.pv-cgrid-gallery{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px;padding:8px;border-radius:var(--pv-radius);min-height:44px;}
+.pv-cgrid-caption{position:absolute;left:0;right:0;bottom:0;padding:1px 2px;font-size:8px;line-height:1.15;text-align:center;color:#fff;background:rgba(0,0,0,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
+.pv-cgrid-gallery{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;max-width:152px;margin:10px auto 0;padding:5px;border-radius:var(--pv-radius);}
 .pv-cgrid-gallery.dragover{outline:2px dashed var(--pv-accent);outline-offset:-2px;}
-.pv-cgrid-gallery .pv-cgrid-piece{width:56px;height:56px;border-radius:6px;overflow:hidden;border:var(--pv-border-width) var(--pv-border-style) var(--line);background:var(--pv-surface);}
+.pv-cgrid-gallery .pv-cgrid-piece{width:100%;aspect-ratio:1/1;border-radius:4px;overflow:hidden;border:var(--pv-border-width) var(--pv-border-style) var(--line);background:var(--pv-surface);}
 
 /* Completion graphic — row category names appear in succession over the
    solved grid, hold, then column names (rotated 90 degrees) appear the
