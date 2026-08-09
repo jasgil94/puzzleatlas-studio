@@ -2259,6 +2259,9 @@ function buildCategoryGridFields(c) {
   var images = c.images || [];
   var html = playerTextField("Body text (player-visible, shown above the grid)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
 
+  html += fieldWrap("Show image titles to player", '<select id="fCgShowTitles"><option value="0"' + (!c.showImageTitles ? " selected" : "") + '>No — images only</option><option value="1"' + (c.showImageTitles ? " selected" : "") + '>Yes — show each image’s title as a caption</option></select>');
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Image titles below are always used as the reference names in the partner dropdowns and categories list — this only controls whether the player also sees them as captions on the board and gallery.</p>';
+
   html += '<div class="section-title">Images (9)</div>';
   html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">For each image, pick the two other images it shares a hidden "first category" with, and the two it shares a hidden "second category" with. Each category needs exactly 3 images in the end — see the validation under Categories below.</p>';
   html += '<div id="cgImageList">' + images.map(function (im, idx) {
@@ -2318,6 +2321,8 @@ function buildCategoryGridFields(c) {
 
 function wireCategoryGridFields(c) {
   var byId = function (id) { return document.getElementById(id); };
+
+  if (byId("fCgShowTitles")) byId("fCgShowTitles").onchange = function (e) { c.showImageTitles = e.target.value === "1"; afterEdit(); };
 
   Array.prototype.forEach.call(document.querySelectorAll(".cgTitleInput"), function (inp) {
     inp.oninput = function (e) {

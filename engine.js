@@ -369,6 +369,12 @@ var NODE_TYPES = {
         bodyFontSize: 15,
         images: imgs,
         categoryNames: { first: ["Category 1", "Category 2", "Category 3"], second: ["Category 4", "Category 5", "Category 6"] },
+        // Off by default — an image's title is a creator-facing reference
+        // name (used in the partner dropdowns/categories list) rather than
+        // something meant for the player, unless the creator opts in. See
+        // caGridPieceHtml below and the "Show image titles to player"
+        // toggle in buildCategoryGridFields/wireCategoryGridFields (app.js).
+        showImageTitles: false,
         showBackButton: false
       };
     },
@@ -1264,13 +1270,18 @@ function caGridSolvedCategoryNames(content, cellIds) {
 // Builds one grid piece's markup (a grid cell's contents, or a gallery
 // item) — an image thumbnail when the creator has uploaded one, otherwise
 // a text tile showing the image's title so an in-progress puzzle is still
-// usable before every image is attached. `from` is "cell" or "gallery" and
-// `draggable` is false while the completion graphic is playing (see
-// renderPreviewNode's "categoryGrid" branch) so the solved board can't be
-// disturbed mid-reveal.
-function caGridPieceHtml(im, from, draggable) {
+// usable before every image is attached (title is always shown as a
+// fallback here regardless of showTitle, since there's nothing else to
+// show). `from` is "cell" or "gallery"; `draggable` is false while the
+// completion graphic is playing (see renderPreviewNode's "categoryGrid"
+// branch) so the solved board can't be disturbed mid-reveal. `showTitle`
+// is content.showImageTitles — when true and an image is attached, the
+// title is also shown as a caption over the thumbnail (off by default,
+// since a title is normally just the creator's own reference name for the
+// partner dropdowns, not something meant for the player to read).
+function caGridPieceHtml(im, from, draggable, showTitle) {
   var inner = im.imageAsset
-    ? '<img src="' + esc(im.imageAsset) + '" alt="' + esc(im.title || "") + '" draggable="false" />'
+    ? '<img src="' + esc(im.imageAsset) + '" alt="' + esc(im.title || "") + '" draggable="false" />' + (showTitle ? '<span class="pv-cgrid-caption">' + esc(im.title || "") + '</span>' : "")
     : '<span class="pv-cgrid-noimg">' + esc(im.title || "?") + '</span>';
   return '<div class="pv-cgrid-piece" draggable="' + (draggable ? "true" : "false") + '" tabindex="0" data-cgimg="' + esc(im.id) + '" data-cgfrom="' + from + '" title="' + esc(im.title || "") + '">' + inner + '</div>';
 }
@@ -1505,7 +1516,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle"];
+  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "categoryGrid"];
 
 // Node types offering a generic, opt-in "← Back" button — every
 // PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
@@ -2133,13 +2144,14 @@ function renderPreviewNode(session, n, ctl) {
     var cgReveal = ctl.categoryGridReveal && ctl.categoryGridReveal[n.id];
     var cgImgById = {}; (c.images || []).forEach(function (im) { cgImgById[im.id] = im; });
     var cgCells = cgReveal ? cgReveal.cellIds : cgDraft.cells;
+    var cgShowTitles = !!c.showImageTitles;
     if (c.body) html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
     html += '<div class="pv-cgrid-wrap" data-node="' + esc(n.id) + '">';
     html += '<div class="pv-cgrid-board' + (cgReveal ? ' pv-cgrid-locked' : '') + '">';
     for (var cgi = 0; cgi < 9; cgi++) {
       var cgImg = cgCells[cgi] ? cgImgById[cgCells[cgi]] : null;
       html += '<div class="pv-cgrid-cell' + (cgDraft.selected === cgi ? ' selected' : '') + '" data-cgcell="' + cgi + '">' +
-        (cgImg ? caGridPieceHtml(cgImg, "cell", !cgReveal) : '') +
+        (cgImg ? caGridPieceHtml(cgImg, "cell", !cgReveal, cgShowTitles) : '') +
         '</div>';
     }
     html += '</div>';
@@ -2157,7 +2169,7 @@ function renderPreviewNode(session, n, ctl) {
       html += '<div class="pv-cgrid-gallery" data-node="' + esc(n.id) + '">' +
         cgDraft.gallery.map(function (imgId) {
           var im = cgImgById[imgId];
-          return im ? caGridPieceHtml(im, "gallery", true) : "";
+          return im ? caGridPieceHtml(im, "gallery", true, cgShowTitles) : "";
         }).join("") +
         '</div>';
       var fbCg = session.state.feedback[n.id];
