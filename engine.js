@@ -2906,7 +2906,16 @@ function wireCategoryGridInteractions(root, ctl, session, n) {
     }, CA_GRID_REVEAL_PHASE_MS);
   }
 
-  Array.prototype.forEach.call(wrap.querySelectorAll('.pv-cgrid-piece[draggable="true"]'), function (piece) {
+  var galleryEl = root.querySelector('.pv-cgrid-gallery[data-node="' + n.id + '"]');
+
+  // Draggable pieces live in two separate DOM subtrees — the board's cells
+  // (inside wrap) and the gallery below it (a sibling of wrap, not a
+  // descendant, so a wrap-scoped query alone would silently miss every
+  // gallery image — including all 9 of them on a fresh board, which is
+  // exactly the set a player needs to be able to drag *from* first).
+  var pieceEls = Array.prototype.slice.call(wrap.querySelectorAll('.pv-cgrid-piece[draggable="true"]'));
+  if (galleryEl) pieceEls = pieceEls.concat(Array.prototype.slice.call(galleryEl.querySelectorAll('.pv-cgrid-piece[draggable="true"]')));
+  pieceEls.forEach(function (piece) {
     piece.addEventListener("dragstart", function (e) {
       var cellEl = piece.closest("[data-cgcell]");
       e.dataTransfer.setData("text/plain", piece.dataset.cgimg + "|" + piece.dataset.cgfrom + "|" + (cellEl ? cellEl.dataset.cgcell : ""));
@@ -2944,7 +2953,6 @@ function wireCategoryGridInteractions(root, ctl, session, n) {
     cellEl.onkeydown = function (e) { if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); cellEl.onclick(); } };
   });
 
-  var galleryEl = root.querySelector('.pv-cgrid-gallery[data-node="' + n.id + '"]');
   if (galleryEl) {
     galleryEl.addEventListener("dragover", function (e) { e.preventDefault(); galleryEl.classList.add("dragover"); });
     galleryEl.addEventListener("dragleave", function () { galleryEl.classList.remove("dragover"); });
