@@ -825,20 +825,28 @@ button{font-family:inherit;cursor:pointer;}
        all shrinking together rather than any single element being left to
        overflow on its own.
 
-   Layout: .phone-main/.preview-main (the screen content pane every node
-   type renders into) is itself a column flexbox with
-   justify-content:flex-end, so a short block of content normally sits
-   pinned to the *bottom* of the screen (right for a narrative caption,
-   wrong here). .pv-csp-wrap opts out of that by taking flex:1 itself —
-   consuming the free space so there's none left for the parent to push it
-   down with — and becomes a top-aligned column flexbox in its own right
-   (title/toggle/requirements text all start at the top, per the design
-   spec). In answer mode, .pv-csp-answer chains that same flex:1 down one
-   more level and adds justify-content:space-between, so
-   .pv-csp-answer-top (title + recipient boxes) sits at the top and
-   .pv-csp-answer-bottom (the remaining-items menu) is pinned to the very
-   bottom of the screen, with whatever space is left between them. */
-.pv-csp-wrap{position:relative;padding-top:2px;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;}
+   Layout: .preview-main (the Preview overlay's screen content pane) is
+   itself a column flexbox with justify-content:flex-end, so a short block
+   of content normally sits pinned to the *bottom* of the screen (right for
+   a narrative caption, wrong here). The docked Studio mock's equivalent,
+   #mockMain/.phone-main, is a *plain* block sitting inside the actual flex
+   container (.phone-scroll) — so unlike .preview-main, giving .pv-csp-wrap
+   flex:1 has no effect there on its own; it needs its immediate parent to
+   be a flex container too. The :has() rule just below makes both
+   #mockMain/.phone-main and .preview-main become (or stay) a top-aligned,
+   flex:1 column flexbox specifically when they directly contain
+   .pv-csp-wrap, leaving every other node type's normal bottom-pinned
+   layout untouched. .pv-csp-wrap then also takes flex:1 itself —
+   consuming the free space so there's none left for a parent with
+   justify-content:flex-end to push it down with — so title/toggle/
+   requirements text all start at the top, per the design spec. In answer
+   mode, .pv-csp-answer chains that same flex:1 down one more level and
+   adds justify-content:space-between, so .pv-csp-answer-top (title +
+   recipient boxes) sits at the top and .pv-csp-answer-bottom (the
+   remaining-items menu) is pinned to the very bottom of the screen, with
+   whatever space is left between them. */
+.phone-main:has(> .pv-csp-wrap), .preview-main:has(> .pv-csp-wrap){display:flex;flex-direction:column;flex:1;min-height:0;justify-content:flex-start;}
+.pv-csp-wrap{position:relative;padding-top:2px;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;width:100%;}
 .pv-csp-toggle{position:absolute;top:-4px;right:0;width:26px;height:26px;border-radius:50%;background:var(--pv-surface);border:1.5px solid var(--pv-accent);color:var(--pv-accent);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2;padding:0;flex-shrink:0;}
 .pv-csp-toggle:hover{background:var(--pv-accent);color:var(--pv-bg);}
 .pv-csp-toggle svg{width:60%;height:60%;}
@@ -863,11 +871,18 @@ button{font-family:inherit;cursor:pointer;}
    next to it always keeps its own full width instead of being squeezed. */
 .pv-csp-item-img{width:var(--csp-img,32px);height:var(--csp-img,32px);object-fit:contain;display:block;flex-shrink:0;}
 .pv-csp-item-noimg{display:flex;align-items:center;justify-content:center;text-align:center;font-size:7.5px;line-height:1.05;color:var(--pv-text-dim);background:var(--pv-bg);border-radius:4px;padding:1px;overflow:hidden;flex-shrink:0;}
-.pv-csp-stepper{display:flex;align-items:center;justify-content:center;gap:3px;min-width:0;flex:1;}
-.pv-csp-step-btn{width:var(--csp-step,18px);height:var(--csp-step,18px);line-height:calc(var(--csp-step, 18px) - 2px);padding:0;text-align:center;border-radius:4px;background:var(--pv-bg);border:1px solid var(--pv-accent);color:var(--pv-accent);cursor:pointer;font-size:calc(var(--csp-step, 18px) * 0.6);font-weight:700;font-family:inherit;flex-shrink:0;}
-.pv-csp-step-btn:hover:not(:disabled){background:var(--pv-accent);color:var(--pv-bg);}
-.pv-csp-step-btn:disabled{opacity:.3;cursor:default;}
-.pv-csp-count{min-width:1.2em;text-align:center;font-family:var(--pv-font-mono);font-size:var(--csp-font-count,12px);color:var(--pv-text);}
+/* No +/- buttons — the count is changed by scrolling (mouse wheel /
+   trackpad) or dragging up-down on the widget itself, wired in
+   wireConstraintSatisfactionInteractions (engine.js), the same drag-a-reel
+   idea as the Physical Lock Code node's combination wheels. The small
+   ▲/▼ marks are non-interactive hints, not buttons — dimmed at the count's
+   current min/max via .pv-csp-wheel-min/.pv-csp-wheel-max. */
+.pv-csp-wheel{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;flex:1;min-width:0;min-height:var(--csp-step,18px);cursor:ns-resize;user-select:none;touch-action:none;border-radius:4px;padding:1px 2px;}
+.pv-csp-wheel:hover, .pv-csp-wheel:focus-visible{background:var(--pv-bg);outline:1px solid var(--pv-accent);outline-offset:-1px;}
+.pv-csp-wheel-arrow{font-size:calc(var(--csp-font-count, 12px) * 0.75);line-height:1;color:var(--pv-accent);opacity:.7;}
+.pv-csp-wheel.pv-csp-wheel-min .pv-csp-wheel-arrow-down{opacity:.15;}
+.pv-csp-wheel.pv-csp-wheel-max .pv-csp-wheel-arrow-up{opacity:.15;}
+.pv-csp-count{min-width:1.2em;text-align:center;font-family:var(--pv-font-mono);font-size:var(--csp-font-count,12px);color:var(--pv-text);line-height:1.1;}
 .pv-csp-itemmenu{display:grid;gap:var(--csp-gap,8px);padding-top:var(--csp-gap,8px);border-top:1.5px solid var(--pv-accent);}
 .pv-csp-itemmenu-entry{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;}
 .pv-csp-itemmenu-img{width:100%;height:var(--csp-menu-img,24px);object-fit:contain;display:block;}

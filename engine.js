@@ -1371,7 +1371,7 @@ function cspItemRemaining(content, itemId, alloc) {
 //     such row when there's clearly enough spare width for it (i.e. few
 //     enough recipient columns), never at the cost of squeezing a
 //     stepper's "− N +" into too little width to tap.
-//   - every size that affects height (item image box, stepper buttons,
+//   - every size that affects height (item image box, scroll-wheel widget,
 //     fonts, padding, gaps) shrinks together, continuously, as a single
 //     "complexity" score — recipRows (1 recipient row of up to 3 boxes, or
 //     2 once there are 4-6 recipients) times itemRows (how many rows of
@@ -2387,14 +2387,19 @@ function renderPreviewNode(session, n, ctl) {
         cspItems.forEach(function (it) {
           var cspCount = cspState.alloc[r.id][it.id] || 0;
           var cspRemain = cspItemRemaining(c, it.id, cspState.alloc);
+          var cspWheelCls = "pv-csp-wheel" + (cspCount <= 0 ? " pv-csp-wheel-min" : "") + (cspRemain <= 0 ? " pv-csp-wheel-max" : "");
           html += '<div class="pv-csp-recip-item">' +
             (it.imageAsset
               ? '<img class="pv-csp-item-img" src="' + esc(it.imageAsset) + '" alt="' + esc(it.name || "") + '" title="' + esc(it.name || "") + '" />'
               : '<div class="pv-csp-item-img pv-csp-item-noimg" title="' + esc(it.name || "") + '">' + esc(it.name || "?") + '</div>') +
-            '<div class="pv-csp-stepper">' +
-              '<button type="button" class="pv-csp-step-btn" data-cspdec data-rid="' + esc(r.id) + '" data-iid="' + esc(it.id) + '" aria-label="Decrease"' + (cspCount <= 0 ? " disabled" : "") + '>−</button>' +
+            // No +/- buttons — scroll or drag up/down on this widget to
+            // change the count (see wireConstraintSatisfactionInteractions).
+            '<div class="' + cspWheelCls + '" data-cspwheel data-rid="' + esc(r.id) + '" data-iid="' + esc(it.id) + '" tabindex="0" role="spinbutton" ' +
+              'aria-valuenow="' + cspCount + '" aria-valuemin="0" aria-valuemax="' + (cspCount + cspRemain) + '" aria-label="' + esc(it.name || "Item") + ' for ' + esc(r.name || "recipient") + '" ' +
+              'title="Scroll or drag up/down to change">' +
+              '<span class="pv-csp-wheel-arrow pv-csp-wheel-arrow-up" aria-hidden="true">▲</span>' +
               '<span class="pv-csp-count">' + cspCount + '</span>' +
-              '<button type="button" class="pv-csp-step-btn" data-cspinc data-rid="' + esc(r.id) + '" data-iid="' + esc(it.id) + '" aria-label="Increase"' + (cspRemain <= 0 ? " disabled" : "") + '>+</button>' +
+              '<span class="pv-csp-wheel-arrow pv-csp-wheel-arrow-down" aria-hidden="true">▼</span>' +
             '</div>' +
           '</div>';
         });
@@ -3202,10 +3207,13 @@ function wireCategoryGridInteractions(root, ctl, session, n) {
 // Constraint Satisfaction Puzzle — the top-right toggle swaps the whole
 // screen between the requirements text and the answer entry grid (purely a
 // ctl.cspDraft[n.id].mode flip, re-rendered by renderPreviewNode's
-// "constraintSatisfaction" branch above); the +/- steppers adjust the live
-// allocation draft, clamped so a recipient's count for an item can never go
-// below 0 or take more of that item than the pool has left unallocated.
-// Auto-validates the instant every item's pool is fully allocated (mirrors
+// "constraintSatisfaction" branch above). There are no +/- buttons on each
+// item's count — it's a scroll/drag "wheel" instead (mouse wheel, or a
+// vertical drag/swipe, same reel-drag idea as the Physical Lock Code
+// node's combination wheels — see wireLockDials above), always clamped so
+// a recipient's count for an item can never go below 0 or take more of
+// that item than the pool has left unallocated. Auto-validates the
+// instant every item's pool is fully allocated (mirrors
 // wireCategoryGridInteractions' "withhold the check while incomplete"
 // pattern above) — see pv_action_submitConstraintSatisfaction.
 function wireConstraintSatisfactionInteractions(root, ctl, session, n) {
@@ -3226,22 +3234,96 @@ function wireConstraintSatisfactionInteractions(root, ctl, session, n) {
     ctl.render();
   }
 
-  Array.prototype.forEach.call(wrap.querySelectorAll("[data-cspinc]"), function (btn) {
-    btn.onclick = function () {
-      var rid = btn.dataset.rid, iid = btn.dataset.iid;
-      if (cspItemRemaining(n.content, iid, draft.alloc) <= 0) return;
-      draft.alloc[rid] = draft.alloc[rid] || {};
-      draft.alloc[rid][iid] = (draft.alloc[rid][iid] || 0) + 1;
-      maybeCheck();
-    };
-  });
-  Array.prototype.forEach.call(wrap.querySelectorAll("[data-cspdec]"), function (btn) {
-    btn.onclick = function () {
-      var rid = btn.dataset.rid, iid = btn.dataset.iid;
-      draft.alloc[rid] = draft.alloc[rid] || {};
-      if ((draft.alloc[rid][iid] || 0) <= 0) return;
-      draft.alloc[rid][iid] -= 1;
-      maybeCheck();
+  // Nudges a recipient/item's live count by `delta` steps, clamped to
+  // [0, current + remaining pool]. Returns true if the count actually
+  // changed. Used by the wheel and keyboard handlers below, both of which
+  // only ever move one step at a time.
+  function adjustBy(rid, iid, delta) {
+    if (!delta) return false;
+    draft.alloc[rid] = draft.alloc[rid] || {};
+    var cur = draft.alloc[rid][iid] || 0;
+    var max = cur + cspItemRemaining(n.content, iid, draft.alloc);
+    var next = Math.max(0, Math.min(max, cur + delta));
+    if (next === cur) return false;
+    draft.alloc[rid][iid] = next;
+    return true;
+  }
+  // Sets a recipient/item's live count to an absolute target, same
+  // clamping as adjustBy. Used by the drag handler below, which tracks a
+  // drag distance relative to the count at drag-start rather than an
+  // incremental step, so the value always converges correctly even after
+  // a drag runs past a bound and back again.
+  function setCount(rid, iid, desired) {
+    draft.alloc[rid] = draft.alloc[rid] || {};
+    var cur = draft.alloc[rid][iid] || 0;
+    var max = cur + cspItemRemaining(n.content, iid, draft.alloc);
+    var next = Math.max(0, Math.min(max, desired));
+    if (next === cur) return false;
+    draft.alloc[rid][iid] = next;
+    return true;
+  }
+
+  var WHEEL_STEP_PX = 22; // scroll/drag distance per +/-1 step
+  Array.prototype.forEach.call(wrap.querySelectorAll("[data-cspwheel]"), function (el) {
+    var rid = el.dataset.rid, iid = el.dataset.iid;
+    var countEl = el.querySelector(".pv-csp-count");
+
+    // Patches just this widget's own number/state in place — used while a
+    // drag is in progress so pointer capture survives the whole gesture
+    // (a full ctl.render() mid-drag would replace `el` with a fresh
+    // element and silently break the drag). The normal full
+    // re-render + validation still runs once via maybeCheck() at the end
+    // of every gesture (wheel tick, drag release, or key press).
+    function syncDisplay() {
+      var cur = (draft.alloc[rid] && draft.alloc[rid][iid]) || 0;
+      var remain = cspItemRemaining(n.content, iid, draft.alloc);
+      if (countEl) countEl.textContent = cur;
+      el.setAttribute("aria-valuenow", cur);
+      el.classList.toggle("pv-csp-wheel-min", cur <= 0);
+      el.classList.toggle("pv-csp-wheel-max", remain <= 0);
+    }
+
+    // Mouse wheel / trackpad — each gesture accumulates deltaY until it
+    // crosses one step's worth, so a light trackpad flick doesn't jump
+    // several steps at once.
+    var wheelAccum = 0;
+    el.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      wheelAccum += e.deltaY;
+      var steps = 0;
+      while (wheelAccum <= -WHEEL_STEP_PX) { steps--; wheelAccum += WHEEL_STEP_PX; }
+      while (wheelAccum >= WHEEL_STEP_PX) { steps++; wheelAccum -= WHEEL_STEP_PX; }
+      if (steps && adjustBy(rid, iid, -steps)) maybeCheck();
+    }, { passive: false });
+
+    // Drag up/down (mouse or touch) — dragging up increases the count
+    // (like pulling a slot-machine reel toward you), dragging down
+    // decreases it.
+    var dragging = false, startY = 0, startCount = 0, changedDuringDrag = false;
+    el.addEventListener("pointerdown", function (e) {
+      dragging = true; changedDuringDrag = false;
+      startY = e.clientY;
+      startCount = (draft.alloc[rid] && draft.alloc[rid][iid]) || 0;
+      try { el.setPointerCapture(e.pointerId); } catch (err) { /* older browsers: drag still tracks via direct listeners */ }
+    });
+    el.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      var steps = Math.round((startY - e.clientY) / WHEEL_STEP_PX);
+      if (setCount(rid, iid, startCount + steps)) { changedDuringDrag = true; syncDisplay(); }
+    });
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      if (changedDuringDrag) maybeCheck();
+    }
+    el.addEventListener("pointerup", endDrag);
+    el.addEventListener("pointercancel", endDrag);
+
+    // Keyboard — Up/Down arrows, same as a native role="spinbutton" is
+    // expected to support.
+    el.onkeydown = function (e) {
+      if (e.key === "ArrowUp") { e.preventDefault(); if (adjustBy(rid, iid, 1)) maybeCheck(); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); if (adjustBy(rid, iid, -1)) maybeCheck(); }
     };
   });
 }
