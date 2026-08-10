@@ -229,12 +229,6 @@
     text-shadow:none;
   }
 
-  /* ---- SVG spin keyframes ---- */
-  @keyframes spinCW{ to{ transform:rotate(360deg); } }
-  @keyframes spinCCW{ to{ transform:rotate(-360deg); } }
-  .spin-cw{ animation-name:spinCW; animation-timing-function:linear; animation-iteration-count:infinite; }
-  .spin-ccw{ animation-name:spinCCW; animation-timing-function:linear; animation-iteration-count:infinite; }
-
   .axle-hit{ cursor:pointer; }
   .axle-hit:focus-visible{ outline:2px solid var(--glow-soft); }
 
@@ -501,11 +495,23 @@
     return g;
   }
 
+  // Rotates around an explicit (0,0) pivot in the element's own local space —
+  // using SMIL <animateTransform> instead of a CSS transform animation avoids
+  // any ambiguity over transform-origin/transform-box on SVG groups (which
+  // browsers resolve inconsistently, especially for asymmetric shapes like
+  // the handle's crank arm — a CSS rotate() there could wobble off-centre
+  // instead of spinning cleanly in place).
   function spinWrapper(index, teeth, driven){
-    var g = el('g', { class: (index % 2 === 0 ? 'spin-cw' : 'spin-ccw') });
-    var dur = Math.max(1.4, teeth * 0.32);
-    g.style.animationDuration = dur.toFixed(2) + 's';
-    g.style.animationPlayState = driven ? 'running' : 'paused';
+    var g = el('g', {});
+    if (driven){
+      var dur = Math.max(1.4, teeth * 0.32);
+      var toAngle = (index % 2 === 0) ? '360' : '-360';
+      g.appendChild(el('animateTransform', {
+        attributeName: 'transform', type: 'rotate',
+        from: '0 0 0', to: toAngle + ' 0 0',
+        dur: dur.toFixed(2) + 's', repeatCount: 'indefinite'
+      }));
+    }
     return g;
   }
 

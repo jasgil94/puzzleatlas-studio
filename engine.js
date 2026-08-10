@@ -383,6 +383,50 @@ var NODE_TYPES = {
       return (c.images || []).length + " images — " + (v.valid ? "grouping OK" : "⚠ " + v.issues[0]);
     }
   },
+  constraintSatisfaction: {
+    family: "puzzle", label: "Constraint Satisfaction Puzzle", icon: "⚖️",
+    defaultTitle: "New Constraint Satisfaction Puzzle",
+    // The player is handed a fixed pool of up to 6 item types (content.items)
+    // and must split every last one of them across up to 6 recipients
+    // (content.recipients) so each recipient ends up holding exactly the
+    // count of each item set on recipient.requirements[itemId] (0 when
+    // absent). There's no separate "pool size" field to keep in sync — the
+    // total of a given item the player is handed is simply the sum of every
+    // recipient's requirement for it (see cspItemTotal below, shared with
+    // the player runtime and Studio's inspector/builder pane), so the puzzle
+    // is always exactly solvable by construction and a creator only ever
+    // edits one set of numbers. content.body is the requirements/clue text
+    // the player reads to work out those per-recipient counts for
+    // themselves; content.answerTitle is a short heading shown above the
+    // answer entry grid. See renderPreviewNode's "constraintSatisfaction"
+    // branch and wireConstraintSatisfactionInteractions further down for the
+    // player-facing half (a top-right toggle swaps the whole screen between
+    // the requirements text and the answer entry grid — see content mode in
+    // ctl.cspDraft), and buildConstraintSatisfactionFields/
+    // wireConstraintSatisfactionFields in app.js for the Studio inspector.
+    defaultContent: function () {
+      var items = [], recipients = [];
+      for (var i = 0; i < 3; i++) items.push({ id: uid("cspit"), name: "Item " + (i + 1), imageAsset: "" });
+      for (var r = 0; r < 3; r++) {
+        var req = {};
+        req[items[r].id] = 2;
+        recipients.push({ id: uid("csprec"), name: "Recipient " + (r + 1), requirements: req });
+      }
+      return {
+        body: "Write the requirements text that tells the player how the items should be distributed.",
+        bodyFontSize: 15,
+        answerTitle: "Distribute the items",
+        answerTitleFontSize: 16,
+        items: items,
+        recipients: recipients,
+        showBackButton: false
+      };
+    },
+    summary: function (c) {
+      var items = c.items || [], recipients = c.recipients || [];
+      return items.length + " item(s) — " + recipients.length + " recipient(s)";
+    }
+  },
   awardItem: {
     family: "state", label: "Award Item", icon: "🎒",
     defaultTitle: "Award Item",
@@ -1286,6 +1330,29 @@ function caGridPieceHtml(im, from, draggable, showTitle) {
   return '<div class="pv-cgrid-piece" draggable="' + (draggable ? "true" : "false") + '" tabindex="0" data-cgimg="' + esc(im.id) + '" data-cgfrom="' + from + '" title="' + esc(im.title || "") + '">' + inner + '</div>';
 }
 
+// Constraint Satisfaction Puzzle helper — the total pool of a given item
+// the player is handed is never stored on its own; it's always just the
+// sum of every recipient's required count for that item (see the comment
+// above NODE_TYPES.constraintSatisfaction). Shared between the player
+// runtime (renderPreviewNode/wireConstraintSatisfactionInteractions below)
+// and Studio's inspector (buildConstraintSatisfactionFields in app.js),
+// so both always agree on the pool size without it ever going stale.
+function cspItemTotal(content, itemId) {
+  return (content.recipients || []).reduce(function (sum, r) {
+    return sum + ((r.requirements && r.requirements[itemId]) || 0);
+  }, 0);
+}
+// How many of a given item are still unallocated against a live player
+// draft (ctl.cspDraft[nodeId].alloc — see renderPreviewNode's
+// "constraintSatisfaction" branch): the pool total minus whatever's
+// currently assigned to any recipient in `alloc`.
+function cspItemRemaining(content, itemId, alloc) {
+  var used = (content.recipients || []).reduce(function (sum, r) {
+    return sum + (((alloc[r.id] || {})[itemId]) || 0);
+  }, 0);
+  return cspItemTotal(content, itemId) - used;
+}
+
 // Sliding Tile helpers — a classic numbered slide puzzle (no image asset
 // support yet, see the Node Type Expansion draft's open question on asset
 // storage) used as the simple functioning demo for this node type. Tiles
@@ -1499,6 +1566,32 @@ function pv_action_submitCategoryGrid(session, nodeId, cellIds) {
   return ok;
 }
 
+// Constraint Satisfaction Puzzle — auto-validates once every item in the
+// pool is fully allocated to some recipient (same "auto-validate, no
+// submit button" family as Fuse Panel/Lumen Puzzle/Category Grid) — see
+// wireConstraintSatisfactionInteractions below, the only caller, which
+// withholds the call entirely while any item still has an unallocated
+// count left, so feedback never flips to "incorrect" just because the
+// player hasn't finished distributing yet. `alloc` is the live draft map
+// recipientId -> itemId -> count (ctl.cspDraft[nodeId].alloc). Correct only
+// when every recipient's live count for every item exactly matches that
+// recipient's own requirements (0 where unset).
+function pv_action_submitConstraintSatisfaction(session, nodeId, alloc) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var items = n.content.items || [], recipients = n.content.recipients || [];
+  var mechanicOk = items.length > 0 && recipients.length > 0 && recipients.every(function (r) {
+    return items.every(function (it) {
+      var want = (r.requirements && r.requirements[it.id]) || 0;
+      var got = ((alloc[r.id] || {})[it.id]) || 0;
+      return want === got;
+    });
+  });
+  var ok = nodeCompletionOk(n, session, mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+
 function pv_action_revealHint(session, hintNodeId) {
   var cur = session.state.hintProgress[hintNodeId] || 0;
   var n = session.hunt.nodes.find(function (x) { return x.id === hintNodeId; });
@@ -1516,7 +1609,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "categoryGrid"];
+  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "categoryGrid", "constraintSatisfaction"];
 
 // Node types offering a generic, opt-in "← Back" button — every
 // PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
@@ -1532,7 +1625,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // Studio inspector field.
 var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
-  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "categoryGrid"];
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "categoryGrid", "constraintSatisfaction"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -2196,6 +2289,69 @@ function renderPreviewNode(session, n, ctl) {
     if (ciBtnsHtml) html += ciHorizontal ? '<div class="pv-btn-row">' + ciBtnsHtml + '</div>' : ciBtnsHtml;
     var fbCk = session.state.feedback[n.id];
     if (fbCk === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
+  } else if (n.type === "constraintSatisfaction") {
+    var cspItems = c.items || [], cspRecipients = c.recipients || [];
+    if (!ctl.cspDraft[n.id]) ctl.cspDraft[n.id] = { mode: "info", alloc: {} };
+    var cspState = ctl.cspDraft[n.id];
+    cspState.alloc = cspState.alloc || {};
+    // Defensively fill in any recipient/item combination the live draft
+    // doesn't have an entry for yet — covers both first render and a
+    // creator adding items/recipients while a Studio preview session with
+    // an in-progress draft is still open.
+    cspRecipients.forEach(function (r) {
+      cspState.alloc[r.id] = cspState.alloc[r.id] || {};
+      cspItems.forEach(function (it) { if (cspState.alloc[r.id][it.id] === undefined) cspState.alloc[r.id][it.id] = 0; });
+    });
+    var cspInfoIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9.5"/><line x1="12" y1="11" x2="12" y2="16.5" stroke-linecap="round"/><circle cx="12" cy="7.4" r="1.15" fill="currentColor" stroke="none"/></svg>';
+    var cspGridIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>';
+    var cspToggleTarget = cspState.mode === "info" ? "answer" : "info";
+    html += '<div class="pv-csp-wrap" data-node="' + esc(n.id) + '">';
+    html += '<button type="button" class="pv-csp-toggle" data-csptoggle="' + cspToggleTarget + '" title="' +
+      (cspToggleTarget === "answer" ? "Show answer entry" : "Show instructions") + '" aria-label="' +
+      (cspToggleTarget === "answer" ? "Show answer entry" : "Show instructions") + '">' +
+      (cspToggleTarget === "answer" ? cspGridIcon : cspInfoIcon) + '</button>';
+    if (cspState.mode === "info") {
+      html += '<div class="pv-csp-info"><div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div></div>';
+    } else {
+      var cspCols = Math.max(1, Math.min(3, cspRecipients.length));
+      html += '<div class="pv-csp-answer">';
+      html += '<div class="pv-csp-title"' + pvFontStyle(c.answerTitleFontSize, 16) + '>' + esc(c.answerTitle || "") + '</div>';
+      html += '<div class="pv-csp-recipients" style="grid-template-columns:repeat(' + cspCols + ',1fr)">';
+      cspRecipients.forEach(function (r) {
+        html += '<div class="pv-csp-recip-box"><div class="pv-csp-recip-name">' + esc(r.name || "") + '</div><div class="pv-csp-recip-items">';
+        cspItems.forEach(function (it) {
+          var cspCount = cspState.alloc[r.id][it.id] || 0;
+          var cspRemain = cspItemRemaining(c, it.id, cspState.alloc);
+          html += '<div class="pv-csp-recip-item">' +
+            (it.imageAsset
+              ? '<img class="pv-csp-item-img" src="' + esc(it.imageAsset) + '" alt="' + esc(it.name || "") + '" title="' + esc(it.name || "") + '" />'
+              : '<div class="pv-csp-item-img pv-csp-item-noimg" title="' + esc(it.name || "") + '">' + esc(it.name || "?") + '</div>') +
+            '<div class="pv-csp-stepper">' +
+              '<button type="button" class="pv-csp-step-btn" data-cspdec data-rid="' + esc(r.id) + '" data-iid="' + esc(it.id) + '" aria-label="Decrease"' + (cspCount <= 0 ? " disabled" : "") + '>−</button>' +
+              '<span class="pv-csp-count">' + cspCount + '</span>' +
+              '<button type="button" class="pv-csp-step-btn" data-cspinc data-rid="' + esc(r.id) + '" data-iid="' + esc(it.id) + '" aria-label="Increase"' + (cspRemain <= 0 ? " disabled" : "") + '>+</button>' +
+            '</div>' +
+          '</div>';
+        });
+        html += '</div></div>';
+      });
+      html += '</div>';
+      html += '<div class="pv-csp-itemmenu">';
+      cspItems.forEach(function (it) {
+        var cspRemainMenu = cspItemRemaining(c, it.id, cspState.alloc);
+        html += '<div class="pv-csp-itemmenu-entry" title="' + esc(it.name || "") + '">' +
+          (it.imageAsset
+            ? '<img class="pv-csp-itemmenu-img" src="' + esc(it.imageAsset) + '" alt="' + esc(it.name || "") + '" />'
+            : '<div class="pv-csp-itemmenu-img pv-csp-item-noimg">' + esc(it.name || "?") + '</div>') +
+          '<span class="pv-csp-itemmenu-count">' + cspRemainMenu + '</span>' +
+        '</div>';
+      });
+      html += '</div>';
+      var fbCsp = session.state.feedback[n.id];
+      if (fbCsp === "incorrect") html += '<div class="pv-feedback incorrect">✗ Not quite — check the requirements and try again.</div>';
+      html += '</div>'; // .pv-csp-answer
+    }
+    html += '</div>'; // .pv-csp-wrap
   }
   // Generic optional Back button — every BACK_BUTTON_TYPES node type gets
   // this same "← Back" affordance as Simple Text's showBackButton, off by
@@ -2970,6 +3126,53 @@ function wireCategoryGridInteractions(root, ctl, session, n) {
       ctl.render();
     });
   }
+}
+
+// Constraint Satisfaction Puzzle — the top-right toggle swaps the whole
+// screen between the requirements text and the answer entry grid (purely a
+// ctl.cspDraft[n.id].mode flip, re-rendered by renderPreviewNode's
+// "constraintSatisfaction" branch above); the +/- steppers adjust the live
+// allocation draft, clamped so a recipient's count for an item can never go
+// below 0 or take more of that item than the pool has left unallocated.
+// Auto-validates the instant every item's pool is fully allocated (mirrors
+// wireCategoryGridInteractions' "withhold the check while incomplete"
+// pattern above) — see pv_action_submitConstraintSatisfaction.
+function wireConstraintSatisfactionInteractions(root, ctl, session, n) {
+  var wrap = root.querySelector('.pv-csp-wrap[data-node="' + n.id + '"]');
+  if (!wrap) return;
+  var draft = ctl.cspDraft[n.id];
+  if (!draft) return;
+
+  var toggleBtn = wrap.querySelector("[data-csptoggle]");
+  if (toggleBtn) toggleBtn.onclick = function () { draft.mode = toggleBtn.dataset.csptoggle; ctl.render(); };
+
+  function maybeCheck() {
+    var items = n.content.items || [];
+    var allAllocated = items.length > 0 && items.every(function (it) { return cspItemRemaining(n.content, it.id, draft.alloc) === 0; });
+    if (!allAllocated) { session.state.feedback[n.id] = null; ctl.render(); return; }
+    var ok = pv_action_submitConstraintSatisfaction(session, n.id, draft.alloc);
+    if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+    ctl.render();
+  }
+
+  Array.prototype.forEach.call(wrap.querySelectorAll("[data-cspinc]"), function (btn) {
+    btn.onclick = function () {
+      var rid = btn.dataset.rid, iid = btn.dataset.iid;
+      if (cspItemRemaining(n.content, iid, draft.alloc) <= 0) return;
+      draft.alloc[rid] = draft.alloc[rid] || {};
+      draft.alloc[rid][iid] = (draft.alloc[rid][iid] || 0) + 1;
+      maybeCheck();
+    };
+  });
+  Array.prototype.forEach.call(wrap.querySelectorAll("[data-cspdec]"), function (btn) {
+    btn.onclick = function () {
+      var rid = btn.dataset.rid, iid = btn.dataset.iid;
+      draft.alloc[rid] = draft.alloc[rid] || {};
+      if ((draft.alloc[rid][iid] || 0) <= 0) return;
+      draft.alloc[rid][iid] -= 1;
+      maybeCheck();
+    };
+  });
 }
 
 /* ---------------------------------------------------------------------
@@ -3874,6 +4077,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireRopeTyingInteractions(root, ctl, session, n);
   wireLumenPuzzleInteractions(root, ctl, session, n);
   wireCategoryGridInteractions(root, ctl, session, n);
+  wireConstraintSatisfactionInteractions(root, ctl, session, n);
 
   // Sequence / Pattern — tap swatches in order; auto-validates once the
   // attempt is as long as the target sequence, resetting on a miss.
@@ -3997,6 +4201,7 @@ function createPreviewController(mainEl, sideEl) {
     sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {}, fuseDraft: {}, ropeDraft: {},
     lumenDraft: {}, lumenGeom: {}, // lumenDraft: node id -> live {sources,pieces,targets,walls,cards} the player rotates; lumenGeom: node id -> memoized hex geometry (see wireLumenPuzzleInteractions)
     categoryGridDraft: {}, categoryGridReveal: {}, // categoryGridDraft: node id -> live {cells[9], gallery[], selected}; categoryGridReveal: node id -> {phase:"rows"|"cols", cellIds, names} while the completion graphic plays (see wireCategoryGridInteractions)
+    cspDraft: {}, // node id -> live {mode:"info"|"answer", alloc: recipientId -> itemId -> count} (see renderPreviewNode's "constraintSatisfaction" branch / wireConstraintSatisfactionInteractions)
     pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
@@ -4023,6 +4228,7 @@ function createPreviewController(mainEl, sideEl) {
     ctl.lumenGeom = {};
     ctl.categoryGridDraft = {};
     ctl.categoryGridReveal = {};
+    ctl.cspDraft = {};
     ctl.pinnedNodeId = null;
     ctl.peekStack = [];
     ctl.laneListId = null;
@@ -4208,6 +4414,7 @@ return {
   pv_action_submitRopeTying: pv_action_submitRopeTying,
   pv_action_submitLumenPuzzle: pv_action_submitLumenPuzzle,
   pv_action_submitCategoryGrid: pv_action_submitCategoryGrid,
+  pv_action_submitConstraintSatisfaction: pv_action_submitConstraintSatisfaction,
   pv_action_revealHint: pv_action_revealHint,
 
   // Category Grid (3x3 image puzzle) — grouping/validation/solution-check
@@ -4220,6 +4427,13 @@ return {
   caGridCheckSolution: caGridCheckSolution,
   caGridSolvedCategoryNames: caGridSolvedCategoryNames,
   caGridPieceHtml: caGridPieceHtml,
+
+  // Constraint Satisfaction Puzzle — pool-size math shared between the
+  // player runtime (above) and Studio's inspector-embedded builder pane
+  // (buildConstraintSatisfactionFields/wireConstraintSatisfactionFields in
+  // app.js).
+  cspItemTotal: cspItemTotal,
+  cspItemRemaining: cspItemRemaining,
 
   // Lumen Puzzle — hex geometry/beam-tracing math and canvas drawing,
   // shared between the player runtime (above) and Studio's inspector-

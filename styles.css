@@ -728,6 +728,30 @@ button{font-family:inherit;cursor:pointer;}
 .cgrid-category-members{flex:1;font-size:11.5px;color:var(--text-dim);}
 .cgCategoryNameInput{width:150px;flex-shrink:0;}
 
+/* Constraint Satisfaction Puzzle — Studio inspector: an item-count/
+   recipient-count setup row, one block per item (name + image upload,
+   styled like Category Grid's image blocks above) and one block per
+   recipient (name + a +/- stepper for the required count of every item —
+   see buildConstraintSatisfactionFields/wireConstraintSatisfactionFields in
+   app.js). */
+.csp-setup-row{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 10px;}
+.csp-item-block{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:var(--bg2);}
+.csp-item-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.csp-item-body{display:flex;gap:10px;}
+.csp-item-upload{flex-shrink:0;width:76px;}
+.csp-item-thumb{width:76px;height:76px;object-fit:contain;border-radius:6px;border:1px solid var(--line);display:block;background:var(--bg3);}
+.csp-item-thumb-empty{display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;color:var(--text-dim);background:var(--bg3);}
+.csp-recipient-block{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:var(--bg2);}
+.csp-recipient-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.csp-recipient-reqs{display:flex;flex-direction:column;gap:4px;}
+.csp-req-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--line);}
+.csp-req-row:last-child{border-bottom:none;}
+.csp-req-itemname{font-size:12px;color:var(--text-dim);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.csp-req-stepper{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.csp-req-count{min-width:16px;text-align:center;font-family:monospace;font-size:12.5px;color:var(--text);}
+.csp-totals-row{display:flex;flex-wrap:wrap;gap:6px;}
+.csp-total-chip{font-size:11px;color:var(--text-dim);background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:3px 9px;}
+
 /* Category Grid — player board: an empty 3x3 grid (lines in the active
    style pack's accent colour, per the design spec) with a gallery of the
    9 images below it. Drag-and-drop (gallery <-> grid, grid <-> grid) and
@@ -775,3 +799,34 @@ button{font-family:inherit;cursor:pointer;}
    "text rotated by 90 degrees" the design spec calls for. */
 .pv-cgrid-reveal-cols .pv-cgrid-reveal-label{grid-row:1 / 4;writing-mode:vertical-rl;text-orientation:mixed;}
 @keyframes cgridRevealIn{from{opacity:0;}to{opacity:1;}}
+
+/* Constraint Satisfaction Puzzle — a top-right toggle (see
+   wireConstraintSatisfactionInteractions in engine.js) swaps the whole
+   block between the requirements text (.pv-csp-info) and the answer entry
+   grid (.pv-csp-answer). Recipient boxes and the divider above the item
+   menu use the style pack's accent colour for their edges, per the design
+   spec ("any lines match style accent colour"). */
+.pv-csp-wrap{position:relative;padding-top:2px;}
+.pv-csp-toggle{position:absolute;top:-4px;right:0;width:30px;height:30px;border-radius:50%;background:var(--pv-surface);border:1.5px solid var(--pv-accent);color:var(--pv-accent);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2;padding:0;}
+.pv-csp-toggle:hover{background:var(--pv-accent);color:var(--pv-bg);}
+.pv-csp-info{padding-right:38px;}
+.pv-csp-title{padding-right:38px;font-weight:700;color:var(--pv-text);line-height:1.25;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.pv-csp-recipients{display:grid;gap:10px;margin:0 auto 14px;width:fit-content;max-width:100%;}
+.pv-csp-recip-box{border:1.5px solid var(--pv-accent);border-radius:var(--pv-radius);background:var(--pv-surface);padding:8px 7px;width:112px;box-sizing:border-box;}
+.pv-csp-recip-name{font-size:11.5px;font-weight:700;color:var(--pv-text);text-align:center;margin-bottom:6px;line-height:1.2;word-break:break-word;}
+.pv-csp-recip-items{display:flex;flex-direction:column;gap:8px;}
+.pv-csp-recip-item{display:flex;flex-direction:column;align-items:center;gap:4px;}
+/* contain (not cover): every item image scales by its own largest
+   dimension so it's always fully visible within its box, rather than
+   being cropped to fill it. */
+.pv-csp-item-img{width:100%;height:38px;object-fit:contain;display:block;}
+.pv-csp-item-noimg{display:flex;align-items:center;justify-content:center;text-align:center;font-size:9px;line-height:1.15;color:var(--pv-text-dim);background:var(--pv-bg);border-radius:4px;padding:2px;}
+.pv-csp-stepper{display:flex;align-items:center;justify-content:center;gap:6px;}
+.pv-csp-step-btn{width:20px;height:20px;line-height:18px;padding:0;text-align:center;border-radius:4px;background:var(--pv-bg);border:1px solid var(--pv-accent);color:var(--pv-accent);cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;}
+.pv-csp-step-btn:hover:not(:disabled){background:var(--pv-accent);color:var(--pv-bg);}
+.pv-csp-step-btn:disabled{opacity:.3;cursor:default;}
+.pv-csp-count{min-width:16px;text-align:center;font-family:var(--pv-font-mono);font-size:13px;color:var(--pv-text);}
+.pv-csp-itemmenu{display:flex;flex-wrap:wrap;justify-content:center;gap:14px;padding-top:10px;border-top:1.5px solid var(--pv-accent);}
+.pv-csp-itemmenu-entry{display:flex;flex-direction:column;align-items:center;gap:4px;width:52px;}
+.pv-csp-itemmenu-img{width:100%;height:32px;object-fit:contain;display:block;}
+.pv-csp-itemmenu-count{font-family:var(--pv-font-mono);font-size:12px;color:var(--pv-text-dim);}

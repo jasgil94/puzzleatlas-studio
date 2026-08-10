@@ -77,6 +77,12 @@ var caGridGroups = PAEngine.caGridGroups;
 var caGridGroupIndexMap = PAEngine.caGridGroupIndexMap;
 var caGridValidate = PAEngine.caGridValidate;
 
+// Constraint Satisfaction Puzzle — pool-size math shared with engine.js's
+// player runtime (see the comment above NODE_TYPES.constraintSatisfaction
+// in engine.js), reused here to drive the builder pane's remaining-count
+// display (buildConstraintSatisfactionFields, below).
+var cspItemTotal = PAEngine.cspItemTotal;
+
 // Lumen Puzzle — hex geometry/beam-tracing math and canvas drawing shared
 // with engine.js's player runtime (see the comment above NODE_TYPES.lumenPuzzle
 // in engine.js), reused here to drive the inspector-embedded level designer
@@ -511,7 +517,7 @@ var SUGGESTED_LANE = {
   // puzzles in Leads; state-family goes to Inventory; the new Support
   // type goes to Hints, same as the existing Hint node.
   cipher: "leads", mathLogic: "leads", anagram: "leads", sequencePattern: "leads", slidingTile: "leads",
-  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads", lumenPuzzle: "leads", categoryGrid: "leads",
+  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads", lumenPuzzle: "leads", categoryGrid: "leads", constraintSatisfaction: "leads",
   gate: "leads", randomizer: "leads", teamSplitMerge: "leads", metaPuzzleCombine: "leads",
   timer: "leads", attemptLimiter: "leads",
   combineCraftItem: "inventory", trade: "inventory",
@@ -2064,6 +2070,9 @@ function buildTypeSpecificFields(n) {
     case "categoryGrid":
       html += buildCategoryGridFields(c);
       break;
+    case "constraintSatisfaction":
+      html += buildConstraintSatisfactionFields(c);
+      break;
     case "awardItem":
       html += fieldWrap("Item to award", '<select id="fItemId">' + selectOptions(hunt.items, "id", "name", c.itemId, "— choose item —") + '</select>');
       break;
@@ -2380,6 +2389,170 @@ function wireCategoryGridFields(c) {
       c.categoryNames[inp.dataset.axis][Number(inp.dataset.idx)] = e.target.value;
     };
     inp.onblur = function () { afterEdit(false); };
+  });
+}
+
+/* Constraint Satisfaction Puzzle — bespoke inspector: an initial "how many
+   items / how many recipients" setup (each 1-6, resized in place — see
+   resizeCspItems/resizeCspRecipients below, same "trim stale refs on
+   shrink" idea as resizeRopeSide above), then one section per item (name +
+   image upload) and one per recipient (name + a +/- stepper for the
+   required count of every item). There's no separate "pool size" field:
+   the total of a given item the player is handed is always just the sum of
+   every recipient's required count for it (cspItemTotal, shared with
+   engine.js's player runtime — see the comment above
+   NODE_TYPES.constraintSatisfaction in engine.js), shown read-only at the
+   bottom so a creator can see at a glance what the player will be handed. */
+function resizeCspItems(c, count) {
+  c.items = c.items || [];
+  c.recipients = c.recipients || [];
+  count = Math.max(1, Math.min(6, Number(count) || 1));
+  while (c.items.length < count) {
+    c.items.push({ id: uid("cspit"), name: "Item " + (c.items.length + 1), imageAsset: "" });
+  }
+  while (c.items.length > count) {
+    var removed = c.items.pop();
+    c.recipients.forEach(function (r) { if (r.requirements) delete r.requirements[removed.id]; });
+  }
+}
+function resizeCspRecipients(c, count) {
+  c.recipients = c.recipients || [];
+  count = Math.max(1, Math.min(6, Number(count) || 1));
+  while (c.recipients.length < count) {
+    c.recipients.push({ id: uid("csprec"), name: "Recipient " + (c.recipients.length + 1), requirements: {} });
+  }
+  while (c.recipients.length > count) c.recipients.pop();
+}
+
+function buildConstraintSatisfactionFields(c) {
+  c.items = c.items || [];
+  c.recipients = c.recipients || [];
+  var items = c.items, recipients = c.recipients;
+
+  var html = playerTextField("Requirements text (player-visible instructions)", "fCspBody", "bodyFontSize", c.body, c.bodyFontSize);
+  html += playerButtonField("Answer entry title (player-visible, shown above the answer grid)", "fCspAnswerTitle", "answerTitleFontSize", c.answerTitle || "", c.answerTitleFontSize, "Distribute the items");
+
+  html += '<div class="section-title">Setup</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">How many different items and recipients this puzzle has (up to 6 each). Changing these resizes the lists below — existing names, images and counts are kept where possible.</p>';
+  html += '<div class="csp-setup-row">' +
+    fieldWrap("Number of items", '<select id="fCspItemCount">' + [1, 2, 3, 4, 5, 6].map(function (v) {
+      return '<option value="' + v + '"' + (items.length === v ? " selected" : "") + '>' + v + '</option>';
+    }).join("") + '</select>') +
+    fieldWrap("Number of recipients", '<select id="fCspRecipientCount">' + [1, 2, 3, 4, 5, 6].map(function (v) {
+      return '<option value="' + v + '"' + (recipients.length === v ? " selected" : "") + '>' + v + '</option>';
+    }).join("") + '</select>') +
+    '</div>';
+
+  html += '<div class="section-title">Items (' + items.length + ')</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Name each item and optionally upload an image. The player sees the image (falling back to the name if none is uploaded) in each recipient box and in the item menu below the grid.</p>';
+  html += '<div id="cspItemList">' + items.map(function (it, idx) {
+    return '<div class="csp-item-block" data-itemid="' + it.id + '">' +
+      '<div class="csp-item-header"><span class="chip">' + (idx + 1) + '</span>' +
+      '<input type="text" class="cspItemNameInput" data-itemid="' + it.id + '" value="' + esc(it.name || "") + '" placeholder="Item name" style="flex:1" /></div>' +
+      '<div class="csp-item-body">' +
+        '<div class="csp-item-upload">' +
+          '<input type="file" id="cspItemFile_' + it.id + '" accept="image/*" style="display:none" />' +
+          (it.imageAsset ? '<img class="csp-item-thumb" src="' + esc(it.imageAsset) + '" alt="" />' : '<div class="csp-item-thumb csp-item-thumb-empty">No image</div>') +
+          '<div style="display:flex;gap:6px;margin-top:4px">' +
+            '<button type="button" class="small-btn cspItemUploadBtn" data-itemid="' + it.id + '">⬆ Upload</button>' +
+            (it.imageAsset ? '<button type="button" class="small-btn cspItemClearBtn" data-itemid="' + it.id + '" style="color:var(--danger)">✕</button>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+  }).join("") + '</div>';
+
+  html += '<div class="section-title">Recipients (' + recipients.length + ') — required counts</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Name each recipient, then set exactly how many of each item they need to end up with for a correct solution. The pool of each item the player starts with is simply the sum of these counts down the column — there\'s nothing else to configure.</p>';
+  html += '<div id="cspRecipientList">' + recipients.map(function (r, ridx) {
+    r.requirements = r.requirements || {};
+    return '<div class="csp-recipient-block" data-recipientid="' + r.id + '">' +
+      '<div class="csp-recipient-header"><span class="chip">' + (ridx + 1) + '</span>' +
+      '<input type="text" class="cspRecipientNameInput" data-recipientid="' + r.id + '" value="' + esc(r.name || "") + '" placeholder="Recipient name" style="flex:1" /></div>' +
+      '<div class="csp-recipient-reqs">' + items.map(function (it) {
+        var count = r.requirements[it.id] || 0;
+        return '<div class="csp-req-row"><span class="csp-req-itemname">' + esc(it.name || "(unnamed item)") + '</span>' +
+          '<div class="csp-req-stepper">' +
+            '<button type="button" class="small-btn cspReqDec" data-recipientid="' + r.id + '" data-itemid="' + it.id + '"' + (count <= 0 ? " disabled" : "") + '>−</button>' +
+            '<span class="csp-req-count">' + count + '</span>' +
+            '<button type="button" class="small-btn cspReqInc" data-recipientid="' + r.id + '" data-itemid="' + it.id + '">+</button>' +
+          '</div></div>';
+      }).join("") + '</div>' +
+      '</div>';
+  }).join("") + '</div>';
+
+  html += '<div class="section-title">Item pool totals</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Read-only — the pool of each item the player is handed, computed from the required counts above.</p>';
+  html += '<div class="csp-totals-row">' + items.map(function (it) {
+    return '<div class="csp-total-chip">' + esc(it.name || "(unnamed item)") + ': <b>' + cspItemTotal(c, it.id) + '</b></div>';
+  }).join("") + '</div>';
+
+  return html;
+}
+
+function wireConstraintSatisfactionFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+
+  if (byId("fCspItemCount")) byId("fCspItemCount").onchange = function (e) {
+    resizeCspItems(c, e.target.value); afterEdit(false); renderInspector();
+  };
+  if (byId("fCspRecipientCount")) byId("fCspRecipientCount").onchange = function (e) {
+    resizeCspRecipients(c, e.target.value); afterEdit(false); renderInspector();
+  };
+
+  Array.prototype.forEach.call(document.querySelectorAll(".cspItemNameInput"), function (inp) {
+    inp.oninput = function (e) { var it = c.items.find(function (x) { return x.id === inp.dataset.itemid; }); if (it) it.name = e.target.value; };
+    inp.onblur = function () { afterEdit(false); renderInspector(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cspItemUploadBtn"), function (btn) {
+    btn.onclick = function () { byId("cspItemFile_" + btn.dataset.itemid).click(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#cspItemList input[type="file"]'), function (fileInp) {
+    fileInp.onchange = function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var itemid = fileInp.id.replace("cspItemFile_", "");
+      readImageFileCompressed(file, function (dataUrl) {
+        if (!dataUrl) { toast("Couldn't read that image file."); return; }
+        var it = c.items.find(function (x) { return x.id === itemid; });
+        if (it) it.imageAsset = dataUrl;
+        afterEdit(); renderInspector();
+        toast("Image attached.");
+      });
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cspItemClearBtn"), function (btn) {
+    btn.onclick = function () {
+      var it = c.items.find(function (x) { return x.id === btn.dataset.itemid; });
+      if (it) it.imageAsset = "";
+      afterEdit(); renderInspector();
+    };
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".cspRecipientNameInput"), function (inp) {
+    inp.oninput = function (e) { var r = c.recipients.find(function (x) { return x.id === inp.dataset.recipientid; }); if (r) r.name = e.target.value; };
+    inp.onblur = function () { afterEdit(false); renderInspector(); };
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".cspReqInc"), function (btn) {
+    btn.onclick = function () {
+      var r = c.recipients.find(function (x) { return x.id === btn.dataset.recipientid; });
+      if (!r) return;
+      r.requirements = r.requirements || {};
+      r.requirements[btn.dataset.itemid] = (r.requirements[btn.dataset.itemid] || 0) + 1;
+      afterEdit(false); renderInspector();
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cspReqDec"), function (btn) {
+    btn.onclick = function () {
+      var r = c.recipients.find(function (x) { return x.id === btn.dataset.recipientid; });
+      if (!r) return;
+      r.requirements = r.requirements || {};
+      var cur = r.requirements[btn.dataset.itemid] || 0;
+      if (cur <= 0) return;
+      r.requirements[btn.dataset.itemid] = cur - 1;
+      afterEdit(false); renderInspector();
+    };
   });
 }
 
@@ -3196,6 +3369,11 @@ function wireNodeInspector(n) {
     case "categoryGrid":
       bindText("fBody", "body");
       wireCategoryGridFields(c);
+      break;
+    case "constraintSatisfaction":
+      bindText("fCspBody", "body");
+      bindText("fCspAnswerTitle", "answerTitle");
+      wireConstraintSatisfactionFields(c);
       break;
     case "awardItem":
       bindChange("fItemId", function (v) { c.itemId = v; });

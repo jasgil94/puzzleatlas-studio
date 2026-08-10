@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gear &amp; Pulley — Puzzle Builder</title>
+<style>
+  :root{
+    --bg-a:#0a0e1a; --bg-b:#131c33; --panel:#141b2e; --panel-b:#1c2740;
+    --border:#2a3556; --accent:#7fd8ff; --accent2:#e9c47b; --good:#6bffb0; --bad:#ff6b6b;
+    --text:#e7edf7; --dim:#8a94ad;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh; font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:radial-gradient(1200px 700px at 50% -10%, #1a2544 0%, var(--bg-a) 55%, #060811 100%);
+    color:var(--text); display:flex; justify-content:center; padding:24px 14px 50px;
+  }
+  .wrap{ width:100%; max-width:1340px; }
+  header{ text-align:center; margin-bottom:14px; }
+  h1{
+    margin:0 0 4px; font-size:24px; letter-spacing:1px; font-weight:700;
+    background:linear-gradient(90deg,#bfe9ff,#ffe6b0);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  header p{ margin:0; color:var(--dim); font-size:12.5px; }
+  .badge{
+    display:inline-block; margin-top:6px; font-size:11px; letter-spacing:1.5px;
+    color:#0a0e1a; background:linear-gradient(90deg,var(--accent),var(--accent2));
+    padding:2px 10px; border-radius:20px; font-weight:700; text-transform:uppercase;
+  }
+
+  .layout{ display:grid; grid-template-columns:250px 1fr 300px; gap:14px; align-items:start; margin-top:16px; }
+  @media (max-width:1080px){ .layout{ grid-template-columns:1fr; } }
+
+  .panel{
+    background:linear-gradient(160deg,var(--panel),#0e1526);
+    border:1px solid var(--border); border-radius:14px; padding:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.35);
+  }
+  .panelTitle{ font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:var(--dim); margin:0 0 8px; font-weight:700; }
+  .rowBtns{ display:flex; gap:6px; flex-wrap:wrap; }
+
+  label{ display:block; font-size:11px; color:var(--dim); margin-bottom:10px; letter-spacing:.3px; }
+  label input[type="text"], label input[type="number"]{
+    display:block; width:100%; margin-top:4px; background:#0a0e1a; border:1px solid var(--border);
+    color:var(--text); border-radius:7px; padding:7px 8px; font-size:13px; font-family:inherit;
+  }
+  label input:focus{ outline:none; border-color:var(--accent); }
+  input[type="range"]{ width:100%; margin-top:6px; accent-color:var(--accent2); }
+
+  button.ctrl{
+    background:var(--panel-b); border:1px solid var(--border); color:var(--text);
+    padding:7px 12px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600;
+    transition:all .15s ease;
+  }
+  button.ctrl:hover{ border-color:var(--accent2); color:var(--accent2); }
+  button.ctrl.primary{ background:linear-gradient(90deg,var(--accent),#9fe4ff); color:#08101f; border-color:var(--accent); }
+  button.ctrl.primary:hover{ color:#08101f; filter:brightness(1.08); }
+  button.ctrl.danger{ border-color:rgba(255,107,107,0.5); color:#ff9d9d; }
+  button.ctrl.danger:hover{ border-color:var(--bad); color:var(--bad); }
+  button.ctrl.small{ padding:5px 9px; font-size:11.5px; }
+  button.ctrl:disabled{ opacity:.4; cursor:not-allowed; }
+
+  .paletteGrid{ display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:4px; }
+  .toolBtn{
+    background:var(--panel-b); border:1px solid var(--border); color:var(--dim);
+    border-radius:9px; padding:9px 6px; cursor:pointer; font-size:11px; font-weight:600;
+    display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center;
+  }
+  .toolBtn:hover{ color:var(--text); border-color:var(--accent); }
+  .toolBtn.active{ color:#08101f; background:linear-gradient(160deg,var(--accent),#9fe4ff); border-color:var(--accent); box-shadow:0 0 14px rgba(127,216,255,0.4); }
+  .toolBtn:disabled{ opacity:.35; cursor:not-allowed; }
+  .toolIcon{ width:22px; height:22px; display:flex; align-items:center; justify-content:center; }
+  .toolIcon .cursor{ width:0; height:0; border-left:8px solid var(--dim); border-bottom:12px solid transparent; transform:rotate(-15deg); }
+  .toolBtn.active .toolIcon .cursor{ border-left-color:#08101f; }
+  .toolIcon .wheel{ width:18px; height:18px; border-radius:50%; border:3px solid #cfd8e8; position:relative; }
+  .toolIcon .wheel::after{ content:""; position:absolute; top:-5px; left:50%; width:2px; height:5px; background:#cfd8e8; }
+  .toolIcon .pulley{ width:16px; height:16px; border-radius:50%; background:radial-gradient(circle,#bfeaff,#4a90c2); }
+  .toolIcon .cog{ width:18px; height:18px; border-radius:50%; background:conic-gradient(#cfd8e8 0deg 30deg, transparent 30deg 60deg, #cfd8e8 60deg 90deg, transparent 90deg 120deg, #cfd8e8 120deg 150deg, transparent 150deg 180deg, #cfd8e8 180deg 210deg, transparent 210deg 240deg, #cfd8e8 240deg 270deg, transparent 270deg 300deg, #cfd8e8 300deg 330deg, transparent 330deg 360deg); }
+
+  .stage{
+    position:relative; background:linear-gradient(160deg,var(--panel),#0e1526);
+    border:1px solid var(--border); border-radius:16px; padding:12px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.5); display:flex; justify-content:center;
+    overflow:hidden;
+  }
+  #board{ width:100%; height:auto; border-radius:10px; display:block; background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 28px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 28px),
+      linear-gradient(160deg,#0f1526,#0a0e1a);
+    cursor:crosshair; touch-action:none; }
+  #board.tool-select{ cursor:default; }
+  .toast{
+    position:absolute; top:22px; left:50%; transform:translate(-50%,-14px);
+    background:linear-gradient(90deg,#1c3d2c,#12261c); border:1px solid var(--good);
+    color:var(--good); padding:7px 16px; border-radius:30px; font-weight:700; font-size:12.5px;
+    opacity:0; pointer-events:none; transition:all .35s ease; letter-spacing:.5px; z-index:5;
+  }
+  .toast.show{ opacity:1; transform:translate(-50%,4px); }
+  .toast.bad{ background:linear-gradient(90deg,#3d1c1c,#261212); border-color:var(--bad); color:#ff9d9d; }
+
+  .propsHint{ font-size:12px; color:var(--dim); line-height:1.5; }
+  .propsTitle{ font-size:13px; font-weight:700; color:var(--accent2); margin-bottom:8px; }
+  .radiusReadout{ font-size:11px; color:var(--dim); margin:-6px 0 10px; }
+  .posRow{ display:flex; gap:8px; }
+  .posRow label{ flex:1; }
+
+  .meterState{ font-size:12.5px; font-weight:700; letter-spacing:.3px; }
+  .meterState.solved{ color:var(--good); }
+  .meterState.unlit{ color:var(--dim); }
+  .meterState.partial{ color:#ffb26b; }
+  .meterTrack{ height:8px; border-radius:6px; background:#0a0e1a; border:1px solid var(--border); overflow:hidden; margin:8px 0 10px; }
+  .meterFill{ height:100%; width:0%; border-radius:6px; background:linear-gradient(90deg,#4a6fff,#7fd8ff); transition:width .25s ease, background .3s ease; }
+  .meterFill.solved{ background:linear-gradient(90deg,#2fe38a,#8bffce); box-shadow:0 0 12px rgba(107,255,176,0.6); }
+
+  .meshRow{ background:#0a0e1a; border:1px solid var(--border); border-radius:8px; padding:6px 9px; font-size:11.5px; display:flex; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  .meshRow .tag{ font-weight:700; }
+  .meshRow.mesh .tag{ color:var(--good); }
+  .meshRow.clash .tag{ color:var(--bad); }
+  .meshEmpty{ font-size:11.5px; color:var(--dim); }
+
+  .legend{ margin-top:10px; font-size:11px; color:var(--dim); line-height:1.6; }
+  .legend b{ color:var(--text); }
+
+  /* ---- SVG node styling ---- */
+  .nodeGroup{ cursor:grab; }
+  .nodeGroup.dragging{ cursor:grabbing; }
+  .nodeGroup .ring{ fill:none; stroke:var(--accent); stroke-width:2.4; opacity:0; }
+  .nodeGroup.selected .ring{ opacity:0.95; }
+  .nodeLabel{ font:600 10px 'Segoe UI', sans-serif; fill:#c9d3e8; text-anchor:middle; pointer-events:none; }
+  .nodeTeeth{ font:700 10.5px 'Segoe UI', sans-serif; fill:#0a0e1a; text-anchor:middle; pointer-events:none; }
+  .meshLine{ stroke-width:3; }
+  .meshLine.mesh{ stroke:var(--good); }
+  .meshLine.clash{ stroke:var(--bad); stroke-dasharray:4 3; }
+  .snapHint{ fill:none; stroke:#ffe6a0; stroke-width:2; stroke-dasharray:3 4; opacity:0.9; pointer-events:none; }
+
+  /* ---- modal ---- */
+  .modalOverlay{
+    position:fixed; inset:0; background:rgba(4,6,12,0.72); display:none;
+    align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .modalOverlay.show{ display:flex; }
+  .modalBox{
+    background:linear-gradient(160deg,var(--panel),#0e1526); border:1px solid var(--border);
+    border-radius:14px; padding:18px; width:100%; max-width:640px; max-height:86vh; overflow:auto;
+    box-shadow:0 30px 80px rgba(0,0,0,0.6);
+  }
+  .modalBox h2{ margin:0 0 4px; font-size:16px; color:var(--accent2); }
+  .modalBox p.sub{ margin:0 0 12px; font-size:12px; color:var(--dim); }
+  .modalBox textarea{
+    width:100%; height:280px; background:#0a0e1a; border:1px solid var(--border); color:var(--text);
+    border-radius:8px; padding:10px; font-family:'SF Mono',Consolas,monospace; font-size:11.5px;
+    line-height:1.5; resize:vertical;
+  }
+  .modalBtnRow{ display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .modalMsg{ font-size:12px; margin-top:6px; min-height:16px; }
+  .modalMsg.err{ color:var(--bad); }
+  .modalMsg.ok{ color:var(--good); }
+
+  footer{ text-align:center; margin-top:18px; color:var(--dim); font-size:11.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Gear &amp; Pulley — Puzzle Builder</h1>
+    <p>Place the handle, hoist and axles, size each cog by hand, and test whether the drive actually connects.</p>
+    <span class="badge">Builder</span>
+  </header>
+
+  <div class="layout">
+
+    <!-- LEFT: palette + project -->
+    <div class="left-col" style="display:flex; flex-direction:column; gap:14px;">
+      <div class="panel">
+        <div class="panelTitle">Palette</div>
+        <div class="paletteGrid">
+          <button class="toolBtn active" data-tool="select"><span class="toolIcon"><span class="cursor"></span></span>Select / Move</button>
+          <button class="toolBtn" data-tool="handle" id="toolHandle"><span class="toolIcon"><span class="wheel"></span></span>Place Handle</button>
+          <button class="toolBtn" data-tool="hoist" id="toolHoist"><span class="toolIcon"><span class="pulley"></span></span>Place Hoist</button>
+          <button class="toolBtn" data-tool="axle" id="toolAxle"><span class="toolIcon"><span class="cog"></span></span>Place Axle</button>
+        </div>
+        <p style="font-size:11px;color:var(--dim);margin:8px 0 0;">Pick a tool, then click the board to place it. Drag any piece with Select to reposition — it snaps when a nearby mesh distance is close.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">Project</div>
+        <div class="rowBtns" style="margin-bottom:8px;">
+          <button class="ctrl small danger" id="btnClear">🗑 Clear Board</button>
+        </div>
+        <div class="rowBtns">
+          <button class="ctrl primary small" id="btnExport">⬇ Export / Import JSON</button>
+        </div>
+        <div class="legend">
+          <div><b>Handle</b> and <b>Hoist</b> are one-of-a-kind — place a second and the first moves with you.</div>
+          <div><b>Axles</b> are unlimited (up to 12). Give each a tooth count; bigger teeth = bigger gear.</div>
+          <div>Two gears <b>mesh</b> when they sit exactly touching (green). Too close and they <b>clash</b> (red, dashed).</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: canvas -->
+    <div class="panel">
+      <div class="panelTitle" style="text-align:center;" id="hintLine">Choose a tool, then click the board to place a piece.</div>
+      <div class="stage">
+        <svg id="board" viewBox="0 0 900 620" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="toast" id="toast">✅ Solved — drive connects handle to hoist</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: properties + playtest -->
+    <div class="right-col" style="display:flex; flex-direction:column; gap:14px;">
+      <div class="panel">
+        <div class="panelTitle">Properties</div>
+        <div id="propsEmpty" class="propsHint">Select a piece to edit its tooth count and position, or choose a tool above to place a new one.</div>
+        <div id="propsBody" style="display:none">
+          <div class="propsTitle" id="propsTitleText">Axle</div>
+          <label>Teeth (gear size): <span id="teethVal">14</span>
+            <input type="range" id="teethSlider" min="6" max="30" step="1">
+          </label>
+          <div class="radiusReadout" id="radiusReadout">Radius: 52.4px</div>
+          <div class="posRow">
+            <label>X<input type="number" id="posX" step="1"></label>
+            <label>Y<input type="number" id="posY" step="1"></label>
+          </div>
+          <button class="ctrl danger small" id="btnDeleteNode">Remove this piece</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">Playtest</div>
+        <div class="meterState unlit" id="solveStatus">Place a handle and a hoist to begin.</div>
+        <div class="meterTrack"><div class="meterFill" id="meterFill"></div></div>
+        <div id="meshList"></div>
+        <div class="rowBtns" style="margin-top:4px;">
+          <button class="ctrl primary small" id="btnTest">▶ Test Solution</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>Project autosaves to this browser. Use Export / Import to save a .json file or move a design between browsers.</footer>
+</div>
+
+<!-- Export / Import modal -->
+<div class="modalOverlay" id="modalOverlay">
+  <div class="modalBox">
+    <h2>Export / Import Design</h2>
+    <p class="sub">Download this JSON to save your layout, or paste/upload JSON here to load one into the builder.</p>
+    <textarea id="modalTextarea" spellcheck="false"></textarea>
+    <div class="modalMsg" id="modalMsg"></div>
+    <div class="modalBtnRow">
+      <button class="ctrl small" id="btnRefreshExport">↻ Refresh from builder</button>
+      <button class="ctrl primary small" id="btnDownloadJson">⬇ Download .json</button>
+      <button class="ctrl small" id="btnCopyJson">⧉ Copy</button>
+      <label class="ctrl small" style="cursor:pointer;">⬆ Load file<input type="file" id="fileImport" accept="application/json" style="display:none"></label>
+      <button class="ctrl danger small" id="btnApplyImport">Apply text to builder</button>
+      <span style="flex:1"></span>
+      <button class="ctrl small" id="btnCloseModal">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var SVG_NS = "http://www.w3.org/2000/svg";
+
+  // ---------------------------------------------------------------
+  // Geometry constants — same radius formula as the player-facing puzzle,
+  // so a validated layout here stays mechanically consistent with it.
+  // ---------------------------------------------------------------
+  var BASE = 16, PITCH = 2.6;
+  var TEETH_MIN = 6, TEETH_MAX = 30, TEETH_DEFAULT = 14;
+  var MAX_AXLES = 12;
+  var MESH_TOL = 1.5;     // distance tolerance (px) to count as a true mesh
+  var SNAP_RANGE = 28;    // while dragging, snap to this close a candidate mesh
+  var VB_W = 900, VB_H = 620;
+  var STORAGE_KEY = 'gearPulleyBuilderDesign.v1';
+
+  function radiusOf(teeth){ return BASE + teeth * PITCH; }
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  function el(tag, attrs){
+    var e = document.createElementNS(SVG_NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // ---------------------------------------------------------------
+  // Gear tooth-path drawing (same silhouette generator as the player puzzle)
+  // ---------------------------------------------------------------
+  function gearPathD(r, teethCount){
+    teethCount = Math.max(6, Math.round(teethCount));
+    var step = (Math.PI * 2) / teethCount;
+    var toothH = Math.max(4, r * 0.16);
+    var rOut = r + toothH * 0.5, rIn = r - toothH * 0.5;
+    var d = '';
+    function pt(ang, rad){ return [Math.cos(ang) * rad, Math.sin(ang) * rad]; }
+    for (var i = 0; i < teethCount; i++){
+      var a0 = i * step, a1 = a0 + step * 0.28, a2 = a0 + step * 0.5, a3 = a0 + step * 0.78, a4 = a0 + step;
+      var p0 = pt(a0, rIn), p1 = pt(a1, rIn), p2 = pt(a1, rOut), p3 = pt(a2, rOut),
+          p4 = pt(a3, rOut), p5 = pt(a3, rIn), p6 = pt(a4, rIn);
+      if (i === 0) d += 'M ' + p0[0].toFixed(2) + ' ' + p0[1].toFixed(2) + ' ';
+      d += 'L ' + p1[0].toFixed(2) + ' ' + p1[1].toFixed(2) +
+           ' L ' + p2[0].toFixed(2) + ' ' + p2[1].toFixed(2) +
+           ' L ' + p3[0].toFixed(2) + ' ' + p3[1].toFixed(2) +
+           ' L ' + p4[0].toFixed(2) + ' ' + p4[1].toFixed(2) +
+           ' L ' + p5[0].toFixed(2) + ' ' + p5[1].toFixed(2) +
+           ' L ' + p6[0].toFixed(2) + ' ' + p6[1].toFixed(2) + ' ';
+    }
+    return d + 'Z';
+  }
+
+  // ---------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------
+  var design = { handle: null, hoist: null, axles: [] };
+  var nextAxleId = 1;
+  var activeTool = 'select';
+  var selected = null;   // {kind:'handle'|'hoist'|'axle', id?}
+  var dragState = null;  // {kind,id, snapHint:null}
+
+  var board = document.getElementById('board');
+  var hintLine = document.getElementById('hintLine');
+  var toast = document.getElementById('toast');
+
+  function allNodes(){
+    var out = [];
+    if (design.handle) out.push({ kind:'handle', id:null, x:design.handle.x, y:design.handle.y, teeth:design.handle.teeth });
+    if (design.hoist) out.push({ kind:'hoist', id:null, x:design.hoist.x, y:design.hoist.y, teeth:design.hoist.teeth });
+    design.axles.forEach(function(a){ out.push({ kind:'axle', id:a.id, x:a.x, y:a.y, teeth:a.teeth }); });
+    return out;
+  }
+
+  function nodeRef(kind, id){
+    if (kind === 'handle') return design.handle;
+    if (kind === 'hoist') return design.hoist;
+    return design.axles.find(function(a){ return a.id === id; }) || null;
+  }
+
+  function nodeKey(kind, id){ return kind + (id != null ? ':' + id : ''); }
+
+  // ---------------------------------------------------------------
+  // Mesh graph + solve check
+  // ---------------------------------------------------------------
+  function computeMesh(){
+    var nodes = allNodes();
+    var pairs = [];
+    for (var i = 0; i < nodes.length; i++){
+      for (var j = i + 1; j < nodes.length; j++){
+        var A = nodes[i], B = nodes[j];
+        var dx = A.x - B.x, dy = A.y - B.y;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        var sum = radiusOf(A.teeth) + radiusOf(B.teeth);
+        var state = Math.abs(dist - sum) <= MESH_TOL ? 'mesh' : (dist < sum ? 'clash' : 'none');
+        pairs.push({ a: A, b: B, state: state, dist: dist, sum: sum });
+      }
+    }
+    return { nodes: nodes, pairs: pairs };
+  }
+
+  function solveState(){
+    var graph = computeMesh();
+    var nodes = graph.nodes;
+    var handleNode = nodes.find(function(n){ return n.kind === 'handle'; });
+    var hoistNode = nodes.find(function(n){ return n.kind === 'hoist'; });
+    if (!handleNode || !hoistNode){
+      return { ready:false, solved:false, reachableCount:0, total: nodes.length, graph: graph, depth:{} };
+    }
+    var adj = {};
+    nodes.forEach(function(n){ adj[nodeKey(n.kind, n.id)] = []; });
+    graph.pairs.forEach(function(p){
+      if (p.state === 'mesh'){
+        var ka = nodeKey(p.a.kind, p.a.id), kb = nodeKey(p.b.kind, p.b.id);
+        adj[ka].push(kb); adj[kb].push(ka);
+      }
+    });
+    var startKey = nodeKey('handle', null);
+    var depth = {}; depth[startKey] = 0;
+    var queue = [startKey], qi = 0;
+    while (qi < queue.length){
+      var cur = queue[qi++];
+      (adj[cur] || []).forEach(function(next){
+        if (!(next in depth)){ depth[next] = depth[cur] + 1; queue.push(next); }
+      });
+    }
+    var hoistKey = nodeKey('hoist', null);
+    var solved = hoistKey in depth;
+    return { ready:true, solved: solved, reachableCount: queue.length, total: nodes.length, graph: graph, depth: depth };
+  }
+
+  // ---------------------------------------------------------------
+  // Node placement / editing
+  // ---------------------------------------------------------------
+  function addHandle(x, y){
+    design.handle = { x:x, y:y, teeth: (design.handle ? design.handle.teeth : TEETH_DEFAULT) };
+    selectNode('handle', null);
+  }
+  function addHoist(x, y){
+    design.hoist = { x:x, y:y, teeth: (design.hoist ? design.hoist.teeth : TEETH_DEFAULT) };
+    selectNode('hoist', null);
+  }
+  function addAxle(x, y){
+    if (design.axles.length >= MAX_AXLES) return null;
+    var a = { id: nextAxleId++, x:x, y:y, teeth: TEETH_DEFAULT };
+    design.axles.push(a);
+    selectNode('axle', a.id);
+    return a;
+  }
+  function deleteNode(kind, id){
+    if (kind === 'handle') design.handle = null;
+    else if (kind === 'hoist') design.hoist = null;
+    else design.axles = design.axles.filter(function(a){ return a.id !== id; });
+    if (selected && selected.kind === kind && selected.id === id) selected = null;
+  }
+  function selectNode(kind, id){ selected = { kind: kind, id: id }; }
+
+  // ---------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------
+  function renderAll(){
+    renderBoard();
+    renderProperties();
+    renderPlaytest();
+    saveLocal();
+  }
+
+  function drawGearNode(node, isDriven, spinDepth){
+    var r = radiusOf(node.teeth);
+    var g = el('g', {
+      class: 'nodeGroup' + (selected && selected.kind === node.kind && selected.id === node.id ? ' selected' : ''),
+      transform: 'translate(' + node.x.toFixed(1) + ',' + node.y.toFixed(1) + ')'
+    });
+    g.dataset.kind = node.kind;
+    if (node.id != null) g.dataset.id = node.id;
+
+    // Rotates around an explicit (0,0) pivot via SMIL <animateTransform>
+    // rather than a CSS transform animation — CSS transform-origin on SVG
+    // groups resolves inconsistently across browsers, especially for
+    // asymmetric shapes like the handle's crank arm, which could wobble
+    // off-centre instead of spinning cleanly in place.
+    var spin = el('g', {});
+    if (isDriven){
+      var dur = Math.max(1.4, node.teeth * 0.32);
+      var toAngle = (spinDepth % 2 === 0) ? '360' : '-360';
+      spin.appendChild(el('animateTransform', {
+        attributeName: 'transform', type: 'rotate',
+        from: '0 0 0', to: toAngle + ' 0 0',
+        dur: dur.toFixed(2) + 's', repeatCount: 'indefinite'
+      }));
+    }
+
+    if (node.kind === 'handle'){
+      spin.appendChild(el('circle', { cx:0, cy:0, r:r, fill:'url(#steelGrad)', stroke:'#0a0e1a', 'stroke-width':1.6 }));
+      for (var s = 0; s < 5; s++){
+        var ang = s * (Math.PI * 2 / 5);
+        spin.appendChild(el('line', { x1:0, y1:0, x2:Math.cos(ang)*r*0.72, y2:Math.sin(ang)*r*0.72, stroke:'#4b4f54', 'stroke-width':Math.max(3, r*0.09), 'stroke-linecap':'round' }));
+      }
+      spin.appendChild(el('line', { x1:0, y1:0, x2:r+16, y2:0, stroke:'#3a3530', 'stroke-width':6, 'stroke-linecap':'round' }));
+      spin.appendChild(el('circle', { cx:r+16, cy:0, r:8, fill:'url(#brassGrad)', stroke:'#4a3510', 'stroke-width':1.2 }));
+      spin.appendChild(el('circle', { cx:0, cy:0, r:r*0.22, fill:'url(#hubGrad)', stroke:'#0a0e1a', 'stroke-width':1 }));
+    } else if (node.kind === 'hoist'){
+      spin.appendChild(el('circle', { cx:0, cy:0, r:r, fill:'url(#steelGrad)', stroke:'#0a0e1a', 'stroke-width':1.6 }));
+      spin.appendChild(el('circle', { cx:0, cy:0, r:r*0.82, fill:'none', stroke:'#4b4f54', 'stroke-width':r*0.14 }));
+      spin.appendChild(el('circle', { cx:0, cy:0, r:r*0.22, fill:'url(#hubGrad)', stroke:'#0a0e1a', 'stroke-width':1 }));
+    } else {
+      spin.appendChild(el('path', { d: gearPathD(r, node.teeth), fill:'url(#steelGrad)', stroke:'#0a0e1a', 'stroke-width':1.4, 'stroke-linejoin':'round' }));
+      spin.appendChild(el('circle', { cx:0, cy:0, r:r*0.24, fill:'url(#hubGrad)', stroke:'#0a0e1a', 'stroke-width':1 }));
+    }
+    g.appendChild(spin);
+
+    g.appendChild(el('circle', { class:'ring', cx:0, cy:0, r:r+7 }));
+    // generous invisible hit target for easy grabbing
+    g.appendChild(el('circle', { cx:0, cy:0, r:r+10, fill:'transparent', 'pointer-events':'all' }));
+
+    var tag = node.kind === 'handle' ? 'HANDLE' : node.kind === 'hoist' ? 'HOIST' : ('AXLE');
+    var lbl = el('text', { class:'nodeLabel', x:0, y: r + 16 });
+    lbl.textContent = tag;
+    g.appendChild(lbl);
+
+    var teethLbl = el('text', { class:'nodeTeeth', x:0, y:4 });
+    teethLbl.textContent = node.teeth;
+    var haloBg = el('circle', { cx:0, cy:0, r:11, fill:'#ffe6a0', opacity:0.92, 'pointer-events':'none' });
+    g.appendChild(haloBg);
+    g.appendChild(teethLbl);
+
+    return g;
+  }
+
+  function renderBoard(){
+    board.setAttribute('class', activeTool === 'select' ? 'tool-select' : '');
+    board.innerHTML = '';
+    var defs = el('defs', {});
+    board.appendChild(defs);
+    var steelGrad = el('linearGradient', { id:'steelGrad', x1:'0%', y1:'0%', x2:'100%', y2:'100%' });
+    steelGrad.appendChild(el('stop', { offset:'0%', 'stop-color':'#e2e5e8' }));
+    steelGrad.appendChild(el('stop', { offset:'45%', 'stop-color':'#9aa0a6' }));
+    steelGrad.appendChild(el('stop', { offset:'100%', 'stop-color':'#54585d' }));
+    defs.appendChild(steelGrad);
+    var hubGrad = el('radialGradient', { id:'hubGrad', cx:'35%', cy:'30%', r:'75%' });
+    hubGrad.appendChild(el('stop', { offset:'0%', 'stop-color':'#f0d9a0' }));
+    hubGrad.appendChild(el('stop', { offset:'100%', 'stop-color':'#8a6a2c' }));
+    defs.appendChild(hubGrad);
+    var brassGrad = el('linearGradient', { id:'brassGrad', x1:'0%', y1:'0%', x2:'100%', y2:'100%' });
+    brassGrad.appendChild(el('stop', { offset:'0%', 'stop-color':'#f6dfa0' }));
+    brassGrad.appendChild(el('stop', { offset:'100%', 'stop-color':'#8a6a2c' }));
+    defs.appendChild(brassGrad);
+
+    var sv = solveState();
+
+    // mesh / clash connector lines, drawn under the gears
+    sv.graph.pairs.forEach(function(p){
+      if (p.state === 'none') return;
+      board.appendChild(el('line', {
+        class: 'meshLine ' + p.state,
+        x1: p.a.x, y1: p.a.y, x2: p.b.x, y2: p.b.y
+      }));
+    });
+
+    // snap guide while dragging
+    if (dragState && dragState.snapHint){
+      var h = dragState.snapHint;
+      board.appendChild(el('circle', { class:'snapHint', cx: h.anchor.x, cy: h.anchor.y, r: h.idealDist }));
+    }
+
+    sv.graph.nodes.forEach(function(n){
+      var key = nodeKey(n.kind, n.id);
+      var driven = sv.ready && (key in sv.depth);
+      var depth = sv.ready ? (sv.depth[key] || 0) : 0;
+      board.appendChild(drawGearNode(n, driven, depth));
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Properties panel
+  // ---------------------------------------------------------------
+  var propsEmpty = document.getElementById('propsEmpty');
+  var propsBody = document.getElementById('propsBody');
+  var propsTitleText = document.getElementById('propsTitleText');
+  var teethSlider = document.getElementById('teethSlider');
+  var teethVal = document.getElementById('teethVal');
+  var radiusReadout = document.getElementById('radiusReadout');
+  var posX = document.getElementById('posX');
+  var posY = document.getElementById('posY');
+
+  function renderProperties(){
+    var ref = selected ? nodeRef(selected.kind, selected.id) : null;
+    if (!ref){
+      propsEmpty.style.display = '';
+      propsBody.style.display = 'none';
+      return;
+    }
+    propsEmpty.style.display = 'none';
+    propsBody.style.display = '';
+    var title = selected.kind === 'handle' ? 'Handle' : selected.kind === 'hoist' ? 'Hoist' : 'Axle #' + (design.axles.findIndex(function(a){return a.id===selected.id;}) + 1);
+    propsTitleText.textContent = title;
+    teethSlider.value = ref.teeth;
+    teethVal.textContent = ref.teeth;
+    radiusReadout.textContent = 'Radius: ' + radiusOf(ref.teeth).toFixed(1) + 'px';
+    posX.value = Math.round(ref.x);
+    posY.value = Math.round(ref.y);
+  }
+
+  teethSlider.addEventListener('input', function(){
+    var ref = selected ? nodeRef(selected.kind, selected.id) : null;
+    if (!ref) return;
+    ref.teeth = clamp(parseInt(teethSlider.value, 10) || TEETH_DEFAULT, TEETH_MIN, TEETH_MAX);
+    renderAll();
+  });
+  posX.addEventListener('input', function(){
+    var ref = selected ? nodeRef(selected.kind, selected.id) : null;
+    if (!ref) return;
+    var v = parseFloat(posX.value);
+    if (isFinite(v)) ref.x = clamp(v, 0, VB_W);
+    renderAll();
+  });
+  posY.addEventListener('input', function(){
+    var ref = selected ? nodeRef(selected.kind, selected.id) : null;
+    if (!ref) return;
+    var v = parseFloat(posY.value);
+    if (isFinite(v)) ref.y = clamp(v, 0, VB_H);
+    renderAll();
+  });
+  document.getElementById('btnDeleteNode').addEventListener('click', function(){
+    if (!selected) return;
+    deleteNode(selected.kind, selected.id);
+    renderAll();
+  });
+
+  // ---------------------------------------------------------------
+  // Playtest panel
+  // ---------------------------------------------------------------
+  var solveStatusEl = document.getElementById('solveStatus');
+  var meterFill = document.getElementById('meterFill');
+  var meshListEl = document.getElementById('meshList');
+
+  function labelFor(n){
+    if (n.kind === 'handle') return 'Handle';
+    if (n.kind === 'hoist') return 'Hoist';
+    var idx = design.axles.findIndex(function(a){ return a.id === n.id; });
+    return 'Axle #' + (idx + 1);
+  }
+
+  function renderPlaytest(){
+    var sv = solveState();
+    solveStatusEl.classList.remove('solved', 'unlit', 'partial');
+    if (!sv.ready){
+      solveStatusEl.textContent = 'Place a handle and a hoist to begin.';
+      solveStatusEl.classList.add('unlit');
+      meterFill.style.width = '0%';
+      meterFill.classList.remove('solved');
+    } else if (sv.solved){
+      solveStatusEl.textContent = '✅ Solved — the drive reaches the hoist in ' + (sv.depth[nodeKey('hoist', null)]) + ' mesh' + (sv.depth[nodeKey('hoist', null)] === 1 ? '' : 'es') + '.';
+      solveStatusEl.classList.add('solved');
+      meterFill.style.width = '100%';
+      meterFill.classList.add('solved');
+    } else {
+      solveStatusEl.textContent = sv.reachableCount + ' of ' + sv.total + ' pieces reachable from the handle — hoist not yet connected.';
+      solveStatusEl.classList.add('partial');
+      meterFill.style.width = Math.round(sv.reachableCount / Math.max(1, sv.total) * 100) + '%';
+      meterFill.classList.remove('solved');
+    }
+
+    meshListEl.innerHTML = '';
+    var interesting = sv.graph.pairs.filter(function(p){ return p.state !== 'none'; });
+    if (interesting.length === 0){
+      var empty = document.createElement('div');
+      empty.className = 'meshEmpty';
+      empty.textContent = 'No two pieces are close enough to mesh or clash yet.';
+      meshListEl.appendChild(empty);
+    } else {
+      interesting.forEach(function(p){
+        var row = document.createElement('div');
+        row.className = 'meshRow ' + p.state;
+        var label = document.createElement('span');
+        label.textContent = labelFor(p.a) + ' ↔ ' + labelFor(p.b);
+        var tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = p.state === 'mesh' ? 'MESH' : 'CLASH';
+        row.appendChild(label); row.appendChild(tag);
+        meshListEl.appendChild(row);
+      });
+    }
+    return sv;
+  }
+
+  // ---------------------------------------------------------------
+  // Toolbar / tool selection
+  // ---------------------------------------------------------------
+  var toolButtons = Array.prototype.slice.call(document.querySelectorAll('.toolBtn'));
+  function setTool(tool){
+    activeTool = tool;
+    toolButtons.forEach(function(b){ b.classList.toggle('active', b.dataset.tool === tool); });
+    if (tool === 'select') hintLine.textContent = 'Select and drag a piece, or use Properties to edit it.';
+    else if (tool === 'handle') hintLine.textContent = 'Click the board to place the handle.';
+    else if (tool === 'hoist') hintLine.textContent = 'Click the board to place the hoist.';
+    else if (tool === 'axle') hintLine.textContent = 'Click the board to drop an axle. Keep clicking to add more.';
+  }
+  toolButtons.forEach(function(b){
+    b.addEventListener('click', function(){ if (!b.disabled) setTool(b.dataset.tool); });
+  });
+  function refreshToolAvailability(){
+    document.getElementById('toolHandle').disabled = false; // placing again just relocates it
+    document.getElementById('toolHoist').disabled = false;
+    document.getElementById('toolAxle').disabled = design.axles.length >= MAX_AXLES;
+  }
+
+  // ---------------------------------------------------------------
+  // Board pointer interaction (place / select / drag with snap)
+  // ---------------------------------------------------------------
+  function svgPoint(evt){
+    var rect = board.getBoundingClientRect();
+    var x = (evt.clientX - rect.left) / rect.width * VB_W;
+    var y = (evt.clientY - rect.top) / rect.height * VB_H;
+    return { x: clamp(x, 0, VB_W), y: clamp(y, 0, VB_H) };
+  }
+
+  function findSnap(kind, id, x, y, teeth){
+    var best = null;
+    allNodes().forEach(function(n){
+      if (n.kind === kind && n.id === id) return; // skip self
+      var idealDist = radiusOf(teeth) + radiusOf(n.teeth);
+      var dx = x - n.x, dy = y - n.y;
+      var d = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+      var diff = Math.abs(d - idealDist);
+      if (diff < SNAP_RANGE && (!best || diff < best.diff)){
+        best = { anchor: n, idealDist: idealDist, d: d, ux: dx / d, uy: dy / d, diff: diff };
+      }
+    });
+    if (!best) return null;
+    return {
+      x: best.anchor.x + best.ux * best.idealDist,
+      y: best.anchor.y + best.uy * best.idealDist,
+      anchor: best.anchor, idealDist: best.idealDist
+    };
+  }
+
+  board.addEventListener('pointerdown', function(evt){
+    var target = evt.target.closest && evt.target.closest('.nodeGroup');
+    var pt = svgPoint(evt);
+
+    if (activeTool === 'handle'){ addHandle(pt.x, pt.y); refreshToolAvailability(); renderAll(); setTool('select'); return; }
+    if (activeTool === 'hoist'){ addHoist(pt.x, pt.y); refreshToolAvailability(); renderAll(); setTool('select'); return; }
+    if (activeTool === 'axle'){ addAxle(pt.x, pt.y); refreshToolAvailability(); renderAll(); return; }
+
+    // select tool
+    if (target){
+      var kind = target.dataset.kind;
+      var id = target.dataset.id ? Number(target.dataset.id) : null;
+      selectNode(kind, id);
+      dragState = { kind: kind, id: id, snapHint: null };
+      board.setPointerCapture(evt.pointerId);
+      renderAll();
+    } else {
+      selected = null;
+      renderAll();
+    }
+  });
+
+  board.addEventListener('pointermove', function(evt){
+    if (!dragState) return;
+    var pt = svgPoint(evt);
+    var ref = nodeRef(dragState.kind, dragState.id);
+    if (!ref) return;
+    var snap = findSnap(dragState.kind, dragState.id, pt.x, pt.y, ref.teeth);
+    if (snap){
+      ref.x = clamp(snap.x, 0, VB_W); ref.y = clamp(snap.y, 0, VB_H);
+      dragState.snapHint = { anchor: snap.anchor, idealDist: snap.idealDist };
+    } else {
+      ref.x = pt.x; ref.y = pt.y;
+      dragState.snapHint = null;
+    }
+    renderAll();
+  });
+
+  function endDrag(evt){
+    if (!dragState) return;
+    try { board.releasePointerCapture(evt.pointerId); } catch(e){}
+    dragState = null;
+    renderAll();
+  }
+  board.addEventListener('pointerup', endDrag);
+  board.addEventListener('pointercancel', endDrag);
+
+  // keyboard: arrow-nudge selected piece, Delete/Backspace removes it
+  document.addEventListener('keydown', function(evt){
+    var tag = (evt.target && evt.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (!selected) return;
+    var ref = nodeRef(selected.kind, selected.id);
+    if (!ref) return;
+    var step = evt.shiftKey ? 10 : 2;
+    var moved = true;
+    if (evt.key === 'ArrowLeft') ref.x = clamp(ref.x - step, 0, VB_W);
+    else if (evt.key === 'ArrowRight') ref.x = clamp(ref.x + step, 0, VB_W);
+    else if (evt.key === 'ArrowUp') ref.y = clamp(ref.y - step, 0, VB_H);
+    else if (evt.key === 'ArrowDown') ref.y = clamp(ref.y + step, 0, VB_H);
+    else if (evt.key === 'Delete' || evt.key === 'Backspace'){ deleteNode(selected.kind, selected.id); moved = true; }
+    else moved = false;
+    if (moved){ evt.preventDefault(); renderAll(); }
+  });
+
+  // ---------------------------------------------------------------
+  // Test button + toast
+  // ---------------------------------------------------------------
+  var toastTimer = null;
+  document.getElementById('btnTest').addEventListener('click', function(){
+    var sv = solveState();
+    toast.classList.remove('bad');
+    if (!sv.ready){
+      toast.textContent = '⚠ Place a handle and a hoist first.';
+      toast.classList.add('bad');
+    } else if (sv.solved){
+      toast.textContent = '✅ Solved — drive connects handle to hoist';
+    } else {
+      toast.textContent = '❌ Not connected — ' + sv.reachableCount + ' / ' + sv.total + ' pieces reachable';
+      toast.classList.add('bad');
+    }
+    toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 2600);
+  });
+
+  document.getElementById('btnClear').addEventListener('click', function(){
+    if (!confirm('Clear the whole board?')) return;
+    design = { handle:null, hoist:null, axles:[] };
+    nextAxleId = 1;
+    selected = null;
+    refreshToolAvailability();
+    renderAll();
+  });
+
+  // ---------------------------------------------------------------
+  // Persistence — localStorage autosave + JSON export/import modal
+  // ---------------------------------------------------------------
+  function saveLocal(){
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(design)); } catch(e){}
+  }
+  function loadLocal(){
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      var parsed = JSON.parse(raw);
+      applyDesign(parsed);
+      return true;
+    } catch(e){ return false; }
+  }
+
+  function sanitizeNode(n, isAxle, idFallback){
+    if (!n || typeof n !== 'object') return null;
+    var teeth = clamp(Math.round(n.teeth), TEETH_MIN, TEETH_MAX);
+    if (!isFinite(teeth)) teeth = TEETH_DEFAULT;
+    var x = clamp(parseFloat(n.x), 0, VB_W); if (!isFinite(x)) x = VB_W / 2;
+    var y = clamp(parseFloat(n.y), 0, VB_H); if (!isFinite(y)) y = VB_H / 2;
+    if (isAxle){
+      var id = (typeof n.id === 'number') ? n.id : idFallback;
+      return { id:id, x:x, y:y, teeth:teeth };
+    }
+    return { x:x, y:y, teeth:teeth };
+  }
+
+  function applyDesign(parsed){
+    var next = { handle:null, hoist:null, axles:[] };
+    if (parsed.handle) next.handle = sanitizeNode(parsed.handle, false);
+    if (parsed.hoist) next.hoist = sanitizeNode(parsed.hoist, false);
+    var maxId = 0;
+    (parsed.axles || []).slice(0, MAX_AXLES).forEach(function(a, i){
+      var s = sanitizeNode(a, true, i + 1);
+      if (s){ next.axles.push(s); if (s.id > maxId) maxId = s.id; }
+    });
+    design = next;
+    nextAxleId = maxId + 1;
+    selected = null;
+    refreshToolAvailability();
+  }
+
+  var modalOverlay = document.getElementById('modalOverlay');
+  var modalTextarea = document.getElementById('modalTextarea');
+  var modalMsg = document.getElementById('modalMsg');
+  function openModal(){
+    modalTextarea.value = JSON.stringify(design, null, 2);
+    modalMsg.textContent = '';
+    modalMsg.className = 'modalMsg';
+    modalOverlay.classList.add('show');
+  }
+  document.getElementById('btnExport').addEventListener('click', openModal);
+  document.getElementById('btnCloseModal').addEventListener('click', function(){ modalOverlay.classList.remove('show'); });
+  document.getElementById('btnRefreshExport').addEventListener('click', function(){ modalTextarea.value = JSON.stringify(design, null, 2); });
+  document.getElementById('btnCopyJson').addEventListener('click', function(){
+    modalTextarea.select();
+    try { document.execCommand('copy'); modalMsg.textContent = 'Copied to clipboard.'; modalMsg.className = 'modalMsg ok'; }
+    catch(e){ modalMsg.textContent = 'Could not copy automatically — select and copy manually.'; modalMsg.className = 'modalMsg err'; }
+  });
+  document.getElementById('btnDownloadJson').addEventListener('click', function(){
+    var blob = new Blob([JSON.stringify(design, null, 2)], { type:'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'gear-pulley-design.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+  document.getElementById('btnApplyImport').addEventListener('click', function(){
+    try {
+      var parsed = JSON.parse(modalTextarea.value);
+      applyDesign(parsed);
+      renderAll();
+      modalMsg.textContent = 'Design loaded.';
+      modalMsg.className = 'modalMsg ok';
+    } catch(e){
+      modalMsg.textContent = 'Could not parse that JSON: ' + e.message;
+      modalMsg.className = 'modalMsg err';
+    }
+  });
+  document.getElementById('fileImport').addEventListener('change', function(evt){
+    var file = evt.target.files && evt.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      modalTextarea.value = String(reader.result);
+      modalMsg.textContent = 'File loaded into the text box — click "Apply text to builder" to use it.';
+      modalMsg.className = 'modalMsg ok';
+    };
+    reader.readAsText(file);
+    evt.target.value = '';
+  });
+
+  // ---------------------------------------------------------------
+  // Debug / automation API
+  // ---------------------------------------------------------------
+  window.gearPulleyBuilder = {
+    getDesign: function(){ return JSON.parse(JSON.stringify(design)); },
+    setDesign: function(d){ applyDesign(d); renderAll(); },
+    addHandle: function(x,y){ addHandle(x,y); renderAll(); return design.handle; },
+    addHoist: function(x,y){ addHoist(x,y); renderAll(); return design.hoist; },
+    addAxle: function(x,y,teeth){ var a = addAxle(x,y); if (a && teeth != null) a.teeth = clamp(teeth, TEETH_MIN, TEETH_MAX); renderAll(); return a; },
+    setTeeth: function(kind,id,teeth){ var ref = nodeRef(kind,id); if (ref) ref.teeth = clamp(teeth, TEETH_MIN, TEETH_MAX); renderAll(); },
+    moveNode: function(kind,id,x,y){ var ref = nodeRef(kind,id); if (ref){ ref.x=x; ref.y=y; } renderAll(); },
+    deleteNode: function(kind,id){ deleteNode(kind,id); renderAll(); },
+    radiusOf: radiusOf,
+    solveState: solveState,
+    clear: function(){ design = { handle:null, hoist:null, axles:[] }; nextAxleId=1; selected=null; renderAll(); }
+  };
+
+  // ---------------------------------------------------------------
+  // Init
+  // ---------------------------------------------------------------
+  if (!loadLocal()){
+    // seed a starter layout so the board isn't empty on first open
+    addHandle(150, 310);
+    addHoist(700, 310);
+    addAxle(340, 310);
+    addAxle(500, 310);
+  }
+  refreshToolAvailability();
+  setTool('select');
+  renderAll();
+})();
+</script>
+</body>
+</html>
