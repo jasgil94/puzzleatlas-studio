@@ -1353,6 +1353,57 @@ function cspItemRemaining(content, itemId, alloc) {
   return cspItemTotal(content, itemId) - used;
 }
 
+// The whole answer entry grid has to fit on one player screen with no
+// scrolling regardless of how many items/recipients a creator configured
+// (1-6 each) — see the design spec's "all options should be able to scale
+// to fit a single player view screen". Three things make that work
+// together:
+//   - width never uses a fixed pixel size anywhere in styles.css's
+//     .pv-csp-* rules — the recipient grid and each box's own item grid
+//     are both fr-based (column counts set inline per node, from this
+//     function), so they always fill exactly however much width the
+//     actual screen has, whether that's the 236px docked Studio mock, the
+//     larger Preview overlay, or a real phone.
+//   - each item within a box is a compact single-line row (image beside
+//     its stepper, not stacked above it — see .pv-csp-recip-item in
+//     styles.css), which is what actually keeps a box with several items
+//     short; itemCols (below) only spreads items across more than one
+//     such row when there's clearly enough spare width for it (i.e. few
+//     enough recipient columns), never at the cost of squeezing a
+//     stepper's "− N +" into too little width to tap.
+//   - every size that affects height (item image box, stepper buttons,
+//     fonts, padding, gaps) shrinks together, continuously, as a single
+//     "complexity" score — recipRows (1 recipient row of up to 3 boxes, or
+//     2 once there are 4-6 recipients) times itemRows (how many rows of
+//     items a box needs once spread across itemCols) — grows, from 1 (a
+//     single item, single recipient) up to 12 (6 recipients x 6 items,
+//     the tightest configuration possible).
+// Returned sizes are applied as CSS custom properties on .pv-csp-wrap (see
+// the "constraintSatisfaction" branch in renderPreviewNode below), so
+// styles.css stays the single source of truth for how each size is
+// actually used — this just picks the numbers.
+function cspLayoutScale(itemCount, recipCount) {
+  itemCount = Math.max(1, itemCount || 1);
+  recipCount = Math.max(1, recipCount || 1);
+  var recipCols = Math.min(3, recipCount);
+  var recipRows = Math.ceil(recipCount / recipCols);
+  // With 3 recipient columns there's only ever room for a single column of
+  // item-rows per box (they stack instead); with 2 recipient columns
+  // there's room for 2 items side by side; with just 1 recipient the
+  // whole screen width is free, so up to 3 can sit side by side.
+  var maxItemCols = recipCols === 1 ? 3 : recipCols === 2 ? 2 : 1;
+  var itemCols = Math.max(1, Math.min(itemCount, maxItemCols));
+  var itemRows = Math.ceil(itemCount / itemCols);
+  var complexity = recipRows * itemRows; // 1 (roomiest) .. 12 (tightest)
+  var density = Math.max(0, Math.min(1, (complexity - 1) / 11));
+  function lerp(a, b) { return Math.round((a + (b - a) * density) * 2) / 2; } // half-pixel precision is plenty
+  return {
+    recipCols: recipCols, itemCols: itemCols,
+    imgSize: lerp(34, 14), menuImgSize: lerp(26, 14), stepSize: lerp(20, 13),
+    fontCount: lerp(12, 8.5), fontName: lerp(11, 8), boxPad: lerp(7, 2), gap: lerp(7, 2)
+  };
+}
+
 // Sliding Tile helpers — a classic numbered slide puzzle (no image asset
 // support yet, see the Node Type Expansion draft's open question on asset
 // storage) used as the simple functioning demo for this node type. Tiles
@@ -2305,7 +2356,11 @@ function renderPreviewNode(session, n, ctl) {
     var cspInfoIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9.5"/><line x1="12" y1="11" x2="12" y2="16.5" stroke-linecap="round"/><circle cx="12" cy="7.4" r="1.15" fill="currentColor" stroke="none"/></svg>';
     var cspGridIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>';
     var cspToggleTarget = cspState.mode === "info" ? "answer" : "info";
-    html += '<div class="pv-csp-wrap" data-node="' + esc(n.id) + '">';
+    var cspScale = cspLayoutScale(cspItems.length, cspRecipients.length);
+    var cspWrapStyle = 'style="--csp-img:' + cspScale.imgSize + 'px;--csp-menu-img:' + cspScale.menuImgSize + 'px;' +
+      '--csp-step:' + cspScale.stepSize + 'px;--csp-font-count:' + cspScale.fontCount + 'px;--csp-font-name:' + cspScale.fontName + 'px;' +
+      '--csp-pad:' + cspScale.boxPad + 'px;--csp-gap:' + cspScale.gap + 'px;"';
+    html += '<div class="pv-csp-wrap" data-node="' + esc(n.id) + '" ' + cspWrapStyle + '>';
     html += '<button type="button" class="pv-csp-toggle" data-csptoggle="' + cspToggleTarget + '" title="' +
       (cspToggleTarget === "answer" ? "Show answer entry" : "Show instructions") + '" aria-label="' +
       (cspToggleTarget === "answer" ? "Show answer entry" : "Show instructions") + '">' +
@@ -2313,12 +2368,12 @@ function renderPreviewNode(session, n, ctl) {
     if (cspState.mode === "info") {
       html += '<div class="pv-csp-info"><div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div></div>';
     } else {
-      var cspCols = Math.max(1, Math.min(3, cspRecipients.length));
       html += '<div class="pv-csp-answer">';
       html += '<div class="pv-csp-title"' + pvFontStyle(c.answerTitleFontSize, 16) + '>' + esc(c.answerTitle || "") + '</div>';
-      html += '<div class="pv-csp-recipients" style="grid-template-columns:repeat(' + cspCols + ',1fr)">';
+      html += '<div class="pv-csp-recipients" style="grid-template-columns:repeat(' + cspScale.recipCols + ',1fr)">';
       cspRecipients.forEach(function (r) {
-        html += '<div class="pv-csp-recip-box"><div class="pv-csp-recip-name">' + esc(r.name || "") + '</div><div class="pv-csp-recip-items">';
+        html += '<div class="pv-csp-recip-box"><div class="pv-csp-recip-name">' + esc(r.name || "") + '</div>' +
+          '<div class="pv-csp-recip-items" style="grid-template-columns:repeat(' + cspScale.itemCols + ',1fr)">';
         cspItems.forEach(function (it) {
           var cspCount = cspState.alloc[r.id][it.id] || 0;
           var cspRemain = cspItemRemaining(c, it.id, cspState.alloc);
@@ -2336,7 +2391,7 @@ function renderPreviewNode(session, n, ctl) {
         html += '</div></div>';
       });
       html += '</div>';
-      html += '<div class="pv-csp-itemmenu">';
+      html += '<div class="pv-csp-itemmenu" style="grid-template-columns:repeat(' + cspItems.length + ',1fr)">';
       cspItems.forEach(function (it) {
         var cspRemainMenu = cspItemRemaining(c, it.id, cspState.alloc);
         html += '<div class="pv-csp-itemmenu-entry" title="' + esc(it.name || "") + '">' +
@@ -4434,6 +4489,7 @@ return {
   // app.js).
   cspItemTotal: cspItemTotal,
   cspItemRemaining: cspItemRemaining,
+  cspLayoutScale: cspLayoutScale,
 
   // Lumen Puzzle — hex geometry/beam-tracing math and canvas drawing,
   // shared between the player runtime (above) and Studio's inspector-
