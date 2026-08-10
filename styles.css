@@ -817,20 +817,37 @@ button{font-family:inherit;cursor:pointer;}
        always fill exactly however much width the actual screen has,
        whether that's the 236px docked Studio mock, the larger Preview
        overlay, or a real phone.
-     - Height is controlled by cspLayoutScale (engine.js) picking one of
-       three size tiers — roomy/medium/tight — based on how many rows of
-       recipient boxes and rows of items-within-a-box actually have to
-       stack, and writing every size that affects height (item image box,
-       stepper buttons, fonts, padding, gaps) out as the --csp-* custom
-       properties consumed below, all shrinking together in one step
-       rather than any single element being left to overflow on its own. */
-.pv-csp-wrap{position:relative;padding-top:2px;}
+     - Height is controlled by cspLayoutScale (engine.js) picking sizes
+       based on how many rows of recipient boxes and rows of
+       items-within-a-box actually have to stack, and writing every size
+       that affects height (item image box, stepper buttons, fonts,
+       padding, gaps) out as the --csp-* custom properties consumed below,
+       all shrinking together rather than any single element being left to
+       overflow on its own.
+
+   Layout: .phone-main/.preview-main (the screen content pane every node
+   type renders into) is itself a column flexbox with
+   justify-content:flex-end, so a short block of content normally sits
+   pinned to the *bottom* of the screen (right for a narrative caption,
+   wrong here). .pv-csp-wrap opts out of that by taking flex:1 itself —
+   consuming the free space so there's none left for the parent to push it
+   down with — and becomes a top-aligned column flexbox in its own right
+   (title/toggle/requirements text all start at the top, per the design
+   spec). In answer mode, .pv-csp-answer chains that same flex:1 down one
+   more level and adds justify-content:space-between, so
+   .pv-csp-answer-top (title + recipient boxes) sits at the top and
+   .pv-csp-answer-bottom (the remaining-items menu) is pinned to the very
+   bottom of the screen, with whatever space is left between them. */
+.pv-csp-wrap{position:relative;padding-top:2px;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;}
 .pv-csp-toggle{position:absolute;top:-4px;right:0;width:26px;height:26px;border-radius:50%;background:var(--pv-surface);border:1.5px solid var(--pv-accent);color:var(--pv-accent);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2;padding:0;flex-shrink:0;}
 .pv-csp-toggle:hover{background:var(--pv-accent);color:var(--pv-bg);}
 .pv-csp-toggle svg{width:60%;height:60%;}
 .pv-csp-info{padding-right:34px;}
+.pv-csp-answer{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-content:space-between;gap:var(--csp-gap,8px);}
+.pv-csp-answer-top{flex-shrink:0;}
+.pv-csp-answer-bottom{flex-shrink:0;}
 .pv-csp-title{padding-right:34px;font-weight:700;color:var(--pv-text);line-height:1.25;margin-bottom:var(--csp-gap,8px);font-size:var(--csp-font-name,11.5px);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-.pv-csp-recipients{display:grid;gap:var(--csp-gap,8px);margin:0 0 var(--csp-gap,8px);width:100%;box-sizing:border-box;}
+.pv-csp-recipients{display:grid;gap:var(--csp-gap,8px);width:100%;box-sizing:border-box;}
 .pv-csp-recip-box{border:1.5px solid var(--pv-accent);border-radius:var(--pv-radius);background:var(--pv-surface);padding:var(--csp-pad,8px);box-sizing:border-box;min-width:0;}
 .pv-csp-recip-name{font-size:var(--csp-font-name,11.5px);font-weight:700;color:var(--pv-text);text-align:center;margin-bottom:var(--csp-gap,8px);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pv-csp-recip-items{display:grid;gap:var(--csp-gap,8px);}

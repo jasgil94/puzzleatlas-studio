@@ -1385,7 +1385,10 @@ function cspItemRemaining(content, itemId, alloc) {
 function cspLayoutScale(itemCount, recipCount) {
   itemCount = Math.max(1, itemCount || 1);
   recipCount = Math.max(1, recipCount || 1);
-  var recipCols = Math.min(3, recipCount);
+  // 4 recipients is a special case: a true 2x2 grid reads better and is no
+  // less compact than the 3-then-1 layout the general "up to 3 columns"
+  // rule would otherwise produce.
+  var recipCols = recipCount === 4 ? 2 : Math.min(3, recipCount);
   var recipRows = Math.ceil(recipCount / recipCols);
   // With 3 recipient columns there's only ever room for a single column of
   // item-rows per box (they stack instead); with 2 recipient columns
@@ -2366,9 +2369,16 @@ function renderPreviewNode(session, n, ctl) {
       (cspToggleTarget === "answer" ? "Show answer entry" : "Show instructions") + '">' +
       (cspToggleTarget === "answer" ? cspGridIcon : cspInfoIcon) + '</button>';
     if (cspState.mode === "info") {
+      // Top-aligned (not vertically centred/bottom-pinned like a Simple
+      // Text screen's narrative body) — see .pv-csp-wrap in styles.css.
       html += '<div class="pv-csp-info"><div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div></div>';
     } else {
+      // Title/toggle/recipient boxes are one top-aligned group
+      // (.pv-csp-answer-top); the remaining-items menu is a second group
+      // pinned to the bottom of the screen (.pv-csp-answer-bottom) — see
+      // .pv-csp-answer's justify-content:space-between in styles.css.
       html += '<div class="pv-csp-answer">';
+      html += '<div class="pv-csp-answer-top">';
       html += '<div class="pv-csp-title"' + pvFontStyle(c.answerTitleFontSize, 16) + '>' + esc(c.answerTitle || "") + '</div>';
       html += '<div class="pv-csp-recipients" style="grid-template-columns:repeat(' + cspScale.recipCols + ',1fr)">';
       cspRecipients.forEach(function (r) {
@@ -2390,7 +2400,12 @@ function renderPreviewNode(session, n, ctl) {
         });
         html += '</div></div>';
       });
-      html += '</div>';
+      html += '</div>'; // .pv-csp-recipients
+      html += '</div>'; // .pv-csp-answer-top
+      // Always exactly one row — grid-template-columns is set to exactly
+      // the item count (never fewer), so there's no wrapping mechanism for
+      // it to fall back to a second row.
+      html += '<div class="pv-csp-answer-bottom">';
       html += '<div class="pv-csp-itemmenu" style="grid-template-columns:repeat(' + cspItems.length + ',1fr)">';
       cspItems.forEach(function (it) {
         var cspRemainMenu = cspItemRemaining(c, it.id, cspState.alloc);
@@ -2401,9 +2416,10 @@ function renderPreviewNode(session, n, ctl) {
           '<span class="pv-csp-itemmenu-count">' + cspRemainMenu + '</span>' +
         '</div>';
       });
-      html += '</div>';
+      html += '</div>'; // .pv-csp-itemmenu
       var fbCsp = session.state.feedback[n.id];
       if (fbCsp === "incorrect") html += '<div class="pv-feedback incorrect">✗ Not quite — check the requirements and try again.</div>';
+      html += '</div>'; // .pv-csp-answer-bottom
       html += '</div>'; // .pv-csp-answer
     }
     html += '</div>'; // .pv-csp-wrap
