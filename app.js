@@ -1796,11 +1796,16 @@ function initPaletteDrop() {
     var type = e.dataTransfer.getData("text/plain");
     if (!NODE_TYPES[type]) return;
     var world = screenToWorld(e.clientX, e.clientY);
-    // Where it's dropped picks its starting lane + scene column; the grid
-    // lays out the exact pixel position once it's added.
+    // Where it's dropped picks its starting lane + scene column, and — via
+    // cellPos below — the exact free-floating spot within that cell.
+    // Without cellPos, computeLayout() would treat the new node as
+    // "never dragged" and auto-stack it at the top of the cell instead of
+    // where the pointer actually released (see computeLayout()'s
+    // n.cellPos branch above).
     var li = laneIndexForWorldY(world.y), ci = colIndexForWorldX(world.x);
     var col = lastLayout.columns[ci];
     var n = Store.addNode(type, world.x, world.y, lastLayout.lanes[li].id, col.unassigned ? null : col.id);
+    n.cellPos = { x: world.x - lastLayout.colX[ci], y: world.y - lastLayout.laneY[li] };
     render();
     Store.select("node", n.id);
   });
