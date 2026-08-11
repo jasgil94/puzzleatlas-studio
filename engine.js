@@ -733,8 +733,18 @@ var NODE_TYPES = {
   videoReveal: {
     family: "media", label: "Video Reveal", icon: "🎬",
     defaultTitle: "New Video Reveal",
-    defaultContent: function () { return { videoAsset: "", caption: "" }; },
-    summary: function (c) { return c.caption || "Video reveal"; }
+    // videoAsset: the uploaded video itself, stored as a data URI — same
+    // "no backend, stash it on the node" pattern as imageAsset/pdfAsset.
+    // The video always fits to the screen at player-time (object-fit:
+    // contain, no cropping — see renderVideoRevealBlock below), so unlike
+    // Image Reveal there's no aspect-ratio/crop system here. showControls
+    // toggles the browser's native control bar (play/pause, scrub, volume)
+    // on or off — when off, a minimal custom play/pause tap target is
+    // shown instead so the player still has *some* way to start it (see
+    // wireVideoRevealPlayback). Off by default would strand the player
+    // with an unplayable video, so it defaults on.
+    defaultContent: function () { return { videoAsset: "", caption: "", showControls: true, loop: false, showBackButton: false }; },
+    summary: function (c) { return c.videoAsset ? "Video" + (c.caption ? " — " + c.caption : "") + (c.showControls === false ? " — controls hidden" : "") : "No video uploaded"; }
   },
   documentReveal: {
     family: "media", label: "Document / Letter Reveal", icon: "📄",
@@ -2132,7 +2142,7 @@ var CTP_GROUP_LABELS = { interactive: "Interactive", conditional: "Conditional",
 var CTP_PUSHBUTTON_SKINS = { arcade: "Arcade (round)", toggle: "Toggle (square)", industrial: "Industrial (guarded)" };
 var CTP_LIGHT_STYLES = { round: "Round bulb", square: "Square LED", strip: "LED strip" };
 var CTP_OP_LABELS = { on: "Is ON", off: "Is OFF", equals: "Equals", atleast: "At least", atmost: "At most", between: "Between" };
-var CTP_BOARD_MIN_W = 320, CTP_BOARD_MAX_W = 1400, CTP_ZONE_MAX_H = 600;
+var CTP_BOARD_MIN_W = 0, CTP_BOARD_MAX_W = 1400, CTP_ZONE_MAX_H = 600;
 
 function ctpComponentKind(type) { return (CTP_COMPONENT_TYPES[type] || {}).kind || "static"; }
 function ctpKnobArc(type) { return type.indexOf("270") !== -1 ? 270 : (type === "knobFull" ? 360 : 180); }
@@ -2384,7 +2394,11 @@ function ctpRenderBoard(content, valuesById, outputsById, interactive) {
   var comps = content.components || [];
   var upperH = Math.max(0, Number(board.upperHeight) || 0);
   var lowerH = Math.max(0, Number(board.lowerHeight) || 0);
-  var width = Math.max(CTP_BOARD_MIN_W, Math.min(CTP_BOARD_MAX_W, Number(board.width) || 640));
+  // Not `Number(board.width) || 640` — that would treat an explicit,
+  // intentional width of 0 (the minimum, so the panel fits a narrow player
+  // screen) as falsy and silently reset it back to 640.
+  var widthRaw = Number(board.width);
+  var width = Math.max(CTP_BOARD_MIN_W, Math.min(CTP_BOARD_MAX_W, isFinite(widthRaw) ? widthRaw : 640));
   var html = '<div class="ctp-board" style="width:' + width + 'px">';
   if (upperH > 0) {
     html += '<div class="ctp-zone ctp-zone-upper" data-zone="upper" style="height:' + upperH + 'px">' +
@@ -2448,7 +2462,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey", "controlPanel"];
+  "imageReveal", "videoReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey", "controlPanel"];
 
 // Node types offering a generic, opt-in "← Back" button — every
 // PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
@@ -2464,7 +2478,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // Studio inspector field.
 var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
-  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "lockAndKey", "controlPanel"];
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "videoReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "lockAndKey", "controlPanel"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -2474,7 +2488,7 @@ var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locat
 // inspector doesn't offer a button-label field for those either (see
 // BUTTON_LABEL_TYPES export).
 var DEFAULT_BUTTON_LABEL = {
-  scene: "Continue →", imageReveal: "Continue →", locationPlaceholder: "Continue →", pdfReveal: "Continue →",
+  scene: "Continue →", imageReveal: "Continue →", videoReveal: "Continue →", locationPlaceholder: "Continue →", pdfReveal: "Continue →",
   answerEntry: "Submit", cipher: "Submit", mathLogic: "Submit", anagram: "Submit", crossReferenceLookup: "Submit",
   ordering: "Submit order", matching: "Submit matches",
   multiPartAnswer: "Submit all parts", physicalLockCode: "Unlock", ropeTying: "Hoist"
@@ -2755,6 +2769,69 @@ function renderImageRevealBlock(c) {
   if (c.caption) html += '<div class="pv-image-caption">' + esc(c.caption) + '</div>';
   html += '</div>';
   return html;
+}
+
+// Video Reveal — shows the node's uploaded video (c.videoAsset, a data URI).
+// Always fits the whole video to the screen (object-fit: contain, no
+// cropping — see .pv-video-frame in styles.css), same "original" framing
+// as Image Reveal's default, just without a crop/aspect system since a
+// video's own dimensions should never be distorted or clipped. When
+// c.showControls is true (the default) the browser's native control bar
+// handles play/pause/seek/volume — that bar is effectively "the menu" a
+// creator can choose to show or hide from the Studio inspector (see
+// buildVideoRevealFields in app.js). When hidden, no controls at all would
+// leave the player with no way to start playback on their own, so a
+// minimal custom play/pause button is rendered over the video instead —
+// wired up by wireVideoRevealPlayback below, which toggles a
+// .pv-video-playing class in sync with the element's own play/pause
+// events (so it also reflects native fullscreen playback controls, if the
+// player double-taps into fullscreen).
+function renderVideoRevealBlock(c) {
+  c = c || {};
+  var html = '<div class="pv-video-reveal">';
+  if (!c.videoAsset) {
+    html += '<div class="pv-video-frame pv-video-empty">No video uploaded</div>';
+  } else {
+    html += '<div class="pv-video-frame">' +
+      '<video class="pv-video-el" id="pvVideoEl" src="' + esc(c.videoAsset) + '" playsinline' +
+      (c.showControls !== false ? " controls" : "") +
+      (c.loop ? " loop" : "") + '></video>' +
+      (c.showControls === false
+        ? '<button type="button" class="pv-video-playpause" id="pvVideoToggle" aria-label="Play video">▶</button>'
+        : '') +
+      '</div>';
+  }
+  if (c.caption) html += '<div class="pv-image-caption">' + esc(c.caption) + '</div>';
+  html += '</div>';
+  return html;
+}
+
+// Wires the custom play/pause overlay for a Video Reveal node when its
+// native controls are hidden (c.showControls === false — see
+// renderVideoRevealBlock). Tapping the video or the overlay button toggles
+// playback; a "play"/"pause"/"ended" listener on the element itself (not a
+// click count) keeps the button's icon and visibility in sync no matter
+// what triggered the state change. No-ops when controls are shown, since
+// the browser's own control bar already handles this.
+function wireVideoRevealPlayback(root, c) {
+  var wrap = root.querySelector(".pv-video-frame");
+  var video = root.querySelector("#pvVideoEl");
+  var toggle = root.querySelector("#pvVideoToggle");
+  if (!video || !wrap || c.showControls !== false) return;
+  var sync = function () {
+    var playing = !video.paused && !video.ended;
+    wrap.classList.toggle("pv-video-playing", playing);
+    if (toggle) {
+      toggle.textContent = playing ? "❚❚" : "▶";
+      toggle.setAttribute("aria-label", playing ? "Pause video" : "Play video");
+    }
+  };
+  video.addEventListener("play", sync);
+  video.addEventListener("pause", sync);
+  video.addEventListener("ended", sync);
+  var toggleFn = function () { if (video.paused || video.ended) video.play(); else video.pause(); };
+  wrap.onclick = toggleFn;
+  sync();
 }
 
 // PDF Document Reader — shows the node's uploaded PDF (c.pdfAsset, a data
@@ -3095,6 +3172,11 @@ function renderPreviewNode(session, n, ctl) {
     html += pvPrimaryButton(n, "pvContinue", "max-width:200px");
     var fbIr = session.state.feedback[n.id];
     if (fbIr === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
+  } else if (n.type === "videoReveal") {
+    html += renderVideoRevealBlock(c);
+    html += pvPrimaryButton(n, "pvContinue", "max-width:200px");
+    var fbVr = session.state.feedback[n.id];
+    if (fbVr === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "pdfReveal") {
     var pdfPage = ctl.pdfPageDraft[n.id] || 1;
     var pdfEnterCls = ctl.pdfEnterAnim[n.id] || "";
@@ -6291,6 +6373,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireCryptexInteractions(root, ctl, session, n);
   wireTextSubmitAction(root, ctl, session, n, "pvCrossRefInput", "pvSubmitCrossRef", pv_action_submitCrossReferenceAnswer);
   wirePdfReveal(root, ctl, session, n);
+  wireVideoRevealPlayback(root, n.content);
   wireRopeTyingInteractions(root, ctl, session, n);
   wireLumenPuzzleInteractions(root, ctl, session, n);
   wireGearPulleyInteractions(root, ctl, session, n);
@@ -6786,6 +6869,7 @@ return {
   mediaBrightnessOf: mediaBrightnessOf,
   mediaAdjustFilterCss: mediaAdjustFilterCss,
   renderImageRevealBlock: renderImageRevealBlock,
+  renderVideoRevealBlock: renderVideoRevealBlock,
   renderPdfRevealBlock: renderPdfRevealBlock,
   renderClickableImageBlock: renderClickableImageBlock,
   renderPreviewNode: renderPreviewNode,

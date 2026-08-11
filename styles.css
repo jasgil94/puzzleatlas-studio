@@ -845,6 +845,22 @@ button{font-family:inherit;cursor:pointer;}
 #imageCropPreview .pv-image-reveal{margin:6px 0 0;max-width:100%;}
 #imageCropPreview .pv-image-frame{max-height:220px;}
 
+/* Video Reveal — player screen. Always fits the whole video to the screen
+   (object-fit: contain, no cropping — same idea as Image Reveal's
+   "original" aspect ratio, just without a crop/aspect-ratio system since a
+   video's own framing shouldn't be distorted or clipped). .pv-video-el is
+   the <video> itself; when the creator hides its native controls (see
+   buildVideoRevealFields in app.js) a minimal .pv-video-playpause button is
+   overlaid instead, faded to a quiet ▶ until tapped, and swapped for ❚❚
+   while playing by wireVideoRevealPlayback in engine.js. */
+.pv-video-reveal{max-width:340px;margin:0 auto 14px;}
+.pv-video-frame{position:relative;display:block;width:100%;height:auto;max-height:55vh;overflow:hidden;background:#000;border-radius:var(--pv-radius);box-shadow:0 2px 10px rgba(0,0,0,.25);filter:var(--pv-image-filter);}
+.pv-video-el{display:block;width:100%;height:100%;max-height:55vh;object-fit:contain;background:#000;}
+.pv-video-frame.pv-video-empty{display:flex;align-items:center;justify-content:center;color:var(--pv-text-dim);font-size:12px;text-align:center;padding:10px;min-height:140px;}
+.pv-video-playpause{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:56px;height:56px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;font-size:18px;line-height:56px;text-align:center;padding:0 0 0 3px;cursor:pointer;transition:opacity .15s ease,transform .15s ease;}
+.pv-video-frame.pv-video-playing .pv-video-playpause{opacity:0;transform:translate(-50%,-50%) scale(.85);}
+.pv-video-frame:hover .pv-video-playpause,.pv-video-frame.pv-video-playing:hover .pv-video-playpause{opacity:1;transform:translate(-50%,-50%) scale(1);}
+
 /* PDF Document Reader — player screen. .pv-pdf-viewport is the fixed-ratio
    "book" frame; .pv-pdf-sheet holds the live <iframe> onto the PDF (the
    browser's own built-in viewer — see renderPdfRevealBlock in engine.js)
@@ -1091,8 +1107,8 @@ button{font-family:inherit;cursor:pointer;}
 /* Player screen — the live board, same widget classes as the designer
    (ctp-board/ctp-zone/ctp-comp/...) so the panel looks identical to what
    the creator designed; only the wrapper and interactivity differ. */
-.pv-ctp-wrap{margin:10px 0;display:flex;justify-content:center;}
-.pv-ctp-wrap .ctp-board{box-shadow:0 8px 24px rgba(0,0,0,.5);}
+.pv-ctp-wrap{margin:10px 0;display:flex;justify-content:center;max-width:100%;overflow-x:auto;}
+.pv-ctp-wrap .ctp-board{box-shadow:0 8px 24px rgba(0,0,0,.5);flex-shrink:0;}
 .pv-ctp-wrap.locked .ctp-comp-interactive{cursor:default;}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}

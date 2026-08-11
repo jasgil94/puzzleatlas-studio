@@ -26,6 +26,7 @@ var IMAGE_ASPECT_RATIOS = PAEngine.IMAGE_ASPECT_RATIOS;
 var IMAGE_FRAME_STYLES = PAEngine.IMAGE_FRAME_STYLES;
 var LOCK_STYLES = PAEngine.LOCK_STYLES;
 var renderImageRevealBlock = PAEngine.renderImageRevealBlock;
+var renderVideoRevealBlock = PAEngine.renderVideoRevealBlock;
 var renderPdfRevealBlock = PAEngine.renderPdfRevealBlock;
 var mediaBrightnessOf = PAEngine.mediaBrightnessOf;
 var mediaAdjustFilterCss = PAEngine.mediaAdjustFilterCss;
@@ -2384,6 +2385,9 @@ function buildTypeSpecificFields(n) {
     case "imageReveal":
       html += buildImageRevealFields(c);
       break;
+    case "videoReveal":
+      html += buildVideoRevealFields(c);
+      break;
     case "pdfReveal":
       html += buildPdfRevealFields(c);
       break;
@@ -2466,6 +2470,63 @@ function buildImageRevealFields(c) {
   html += fieldWrap("Caption (optional)", '<input type="text" id="fImageCaption" value="' + esc(c.caption || "") + '" />');
   html += fieldWrap("Let player zoom the image", '<select id="fImageZoomable"><option value="1"' + (c.zoomable !== false ? " selected" : "") + '>Yes</option><option value="0"' + (c.zoomable === false ? " selected" : "") + '>No</option></select>');
   return html;
+}
+
+/* Video Reveal — bespoke inspector: upload the video the player will
+   watch, a live preview (same renderVideoRevealBlock the real player
+   screen uses, so what a creator sees here always matches), a caption, and
+   the "Video controls" show/hide toggle — this is the on/off switch for
+   the native play/pause/scrub/volume bar, i.e. the choice to show or hide
+   that menu on the video. Reuses readImageFileCompressed for the upload
+   exactly like PDF Reader does: anything whose file type doesn't start
+   with "image/" is read as a raw data URI with no recompression, which is
+   exactly what a video file needs. Always fits to the screen at
+   player-time (see renderVideoRevealBlock in engine.js) — no crop/aspect
+   system, unlike Image Reveal, since a video's own framing shouldn't be
+   distorted or clipped. */
+function buildVideoRevealFields(c) {
+  var html = '<div class="field"><label>Video file</label>' +
+    '<input type="file" id="fVideoAsset" accept="video/*" style="display:none" />' +
+    '<button class="small-btn" id="btnVideoAssetUpload">⬆ Upload video</button>' +
+    (c.videoAsset ? ' <button class="small-btn" id="btnVideoAssetClear" style="color:var(--danger)">✕ Remove video</button>' : '') +
+    '</div>';
+
+  if (c.videoAsset) {
+    html += '<div class="field"><label>Preview</label><div style="max-width:260px">' + renderVideoRevealBlock(c) + '</div></div>';
+  } else {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Upload a video above to preview it here. It always plays fit to the full screen for the player.</p>';
+  }
+
+  html += fieldWrap("Video controls (menu)", '<select id="fVideoShowControls"><option value="1"' + (c.showControls !== false ? " selected" : "") + '>Show — play/pause, scrub bar and volume</option><option value="0"' + (c.showControls === false ? " selected" : "") + '>Hide — just a simple tap-to-play button</option></select>');
+  html += fieldWrap("Loop", '<select id="fVideoLoop"><option value="0"' + (!c.loop ? " selected" : "") + '>No</option><option value="1"' + (c.loop ? " selected" : "") + '>Yes — replay automatically when it ends</option></select>');
+  html += fieldWrap("Caption (optional)", '<input type="text" id="fVideoCaption" value="' + esc(c.caption || "") + '" />');
+  return html;
+}
+
+function wireVideoRevealFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+  if (byId("btnVideoAssetUpload")) byId("btnVideoAssetUpload").onclick = function () { byId("fVideoAsset").click(); };
+  if (byId("fVideoAsset")) byId("fVideoAsset").onchange = function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    readImageFileCompressed(file, function (dataUrl) {
+      if (!dataUrl) { toast("Couldn't read that video file."); return; }
+      c.videoAsset = dataUrl;
+      afterEdit(); renderInspector();
+      toast("Video attached.");
+    });
+  };
+  if (byId("btnVideoAssetClear")) byId("btnVideoAssetClear").onclick = function () {
+    c.videoAsset = ""; afterEdit(); renderInspector();
+  };
+
+  if (byId("fVideoShowControls")) byId("fVideoShowControls").onchange = function (e) { c.showControls = e.target.value === "1"; afterEdit(); renderInspector(); };
+  if (byId("fVideoLoop")) byId("fVideoLoop").onchange = function (e) { c.loop = e.target.value === "1"; afterEdit(); renderInspector(); };
+
+  if (byId("fVideoCaption")) {
+    byId("fVideoCaption").oninput = function (e) { c.caption = e.target.value; };
+    byId("fVideoCaption").onblur = function () { afterEdit(); };
+  }
 }
 
 /* PDF Document Reader — bespoke inspector: upload the PDF the player will
@@ -4600,7 +4661,10 @@ function wireControlPanelDesigner(n, prefix) {
     var board = c.board;
     var upperH = Math.max(0, Number(board.upperHeight) || 0);
     var lowerH = Math.max(0, Number(board.lowerHeight) || 0);
-    var width = Math.max(CTP_BOARD_MIN_W, Math.min(CTP_BOARD_MAX_W, Number(board.width) || 640));
+    // Not `Number(board.width) || 640` — an explicit width of 0 is falsy
+    // and would otherwise get silently reset back to 640 on every redraw.
+    var widthRaw = Number(board.width);
+    var width = Math.max(CTP_BOARD_MIN_W, Math.min(CTP_BOARD_MAX_W, isFinite(widthRaw) ? widthRaw : 640));
     var previewValues = testValuesMerged();
     var previewOutputs = ctpComputeOutputs(c, previewValues);
     var html = '<div class="ctp-board" style="width:' + width + 'px">';
@@ -5324,6 +5388,9 @@ function wireNodeInspector(n) {
     case "imageReveal":
       wireImageRevealFields(c);
       break;
+    case "videoReveal":
+      wireVideoRevealFields(c);
+      break;
     case "pdfReveal":
       wirePdfRevealFields(c);
       break;
@@ -5470,7 +5537,7 @@ function defaultCompletionSummary(n) {
   if (n.type === "choice") return "the player picks an option";
   if (n.type === "storyBlock") return "the player presses one of its buttons";
   if (n.type === "clickableImage") return "the player clicks a hotspot or presses a button";
-  if (BUTTON_LABEL_TYPES[n.type] && (n.type === "scene" || n.type === "imageReveal" || n.type === "pdfReveal" || n.type === "locationPlaceholder")) return "the player presses the button";
+  if (BUTTON_LABEL_TYPES[n.type] && (n.type === "scene" || n.type === "imageReveal" || n.type === "videoReveal" || n.type === "pdfReveal" || n.type === "locationPlaceholder")) return "the player presses the button";
   return "the player submits a correct answer/solution";
 }
 
