@@ -844,6 +844,142 @@ button{font-family:inherit;cursor:pointer;}
 .gpb-window{width:min(1300px,97vw);height:min(820px,92vh);}
 .gpb-design-svg{width:100%;max-width:760px;height:auto;aspect-ratio:900/620;border-radius:8px;touch-action:none;cursor:default;display:block;background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);}
 
+/* Control Panel Builder — the inspector-embedded board designer (build
+   pane) plus the shared widget visuals it and the real player screen both
+   render via ctpComponentInnerHtml (engine.js). Same "expandable details +
+   palette + stage + props panel" shape as Gear & Pulley's .gp-* rules
+   above, but the stage holds freeform absolutely-positioned .ctp-comp divs
+   (a two-tier board) instead of an SVG. */
+.ctp-builder-details{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;background:var(--bg2);overflow:hidden;}
+.ctp-builder-summary{list-style:none;display:flex;align-items:center;gap:6px;padding:8px 10px;cursor:pointer;font-size:12px;font-weight:700;color:var(--text-dim);user-select:none;}
+.ctp-builder-summary::-webkit-details-marker{display:none;}
+.ctp-builder-summary:hover{color:var(--text);background:var(--bg3);}
+.ctp-builder-chevron{display:inline-block;width:10px;font-size:10px;transition:transform .12s;}
+.ctp-builder-details[open] .ctp-builder-chevron{transform:rotate(90deg);}
+.ctp-builder-body{padding:0 10px 10px;}
+
+.ctp-palette{margin:6px 0 10px;}
+.ctp-palette>.small-btn{width:100%;margin-bottom:6px;text-align:left;}
+.ctp-palette-group{margin-bottom:8px;}
+.ctp-palette-group-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin:6px 0 4px;}
+.ctp-palette-buttons{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;}
+.ctp-palette-buttons .small-btn{padding:6px 4px;text-align:left;font-size:10.5px;}
+
+.ctp-stage{background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);border:1px solid var(--line);border-radius:8px;padding:16px 10px;display:flex;justify-content:center;margin-bottom:8px;overflow:auto;}
+.ctp-board{position:relative;margin:0 auto;background:#1b1e26;border:1px solid #0a0c11;border-radius:8px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.5);}
+.ctp-zone{position:relative;touch-action:none;}
+.ctp-zone-upper{background:linear-gradient(180deg,#2e323d 0%,#20232c 100%);border-bottom:2px solid #0a0c11;}
+.ctp-zone-lower{background:linear-gradient(180deg,#413828 0%,#2a241d 100%);}
+.ctp-zone-empty-note{padding:24px 14px;text-align:center;color:var(--text-dim);font-size:12px;}
+
+.ctp-comp{position:absolute;box-sizing:border-box;cursor:default;touch-action:none;}
+.ctp-comp-interactive{cursor:pointer;}
+.ctp-comp-interactive:focus-visible{outline:2px solid rgba(255,154,60,.6);outline-offset:2px;}
+.ctp-comp.selected{outline:2px dashed #7fd8ff;outline-offset:3px;}
+.ctp-handle{position:absolute;width:12px;height:12px;background:#7fd8ff;border:1.5px solid #0a0e1a;border-radius:50%;z-index:5;}
+.ctp-handle-resize{right:-7px;bottom:-7px;cursor:nwse-resize;}
+.ctp-handle-rotate{left:50%;top:-20px;margin-left:-6px;cursor:grab;}
+.ctp-handle-rotate::after{content:"";position:absolute;left:50%;top:100%;width:1px;height:8px;background:#7fd8ff;margin-left:-0.5px;}
+
+/* Vertical / Horizontal Switch */
+.ctp-switch{position:relative;width:100%;height:100%;}
+.ctp-switch-track{position:absolute;inset:0;border-radius:6px;background:linear-gradient(175deg,#26241f,#1b1a16 80%);box-shadow:inset 0 0 0 1px rgba(0,0,0,.6);}
+.ctp-switch-knob{position:absolute;border-radius:4px;background:linear-gradient(120deg,#3d3d3d 0%,#0b0b0b 35%,#000 100%);box-shadow:0 1px 2px rgba(0,0,0,.8),inset 0 1px 1px rgba(255,255,255,.12);transition:transform .16s cubic-bezier(.4,1.3,.6,1);}
+.ctp-switch-v .ctp-switch-knob{left:15%;right:15%;height:38%;top:8%;}
+.ctp-switch-v.on .ctp-switch-knob{transform:translateY(150%);}
+.ctp-switch-h .ctp-switch-knob{top:15%;bottom:15%;width:38%;left:8%;}
+.ctp-switch-h.on .ctp-switch-knob{transform:translateX(150%);}
+.ctp-switch-poslabel{position:absolute;font-family:var(--pv-font-mono,'Courier New',monospace);font-size:8px;color:#8f8a7a;opacity:.6;text-align:center;}
+.ctp-switch-v .ctp-switch-poslabel-on{top:2px;left:0;right:0;}
+.ctp-switch-v .ctp-switch-poslabel-off{bottom:2px;left:0;right:0;}
+.ctp-switch-v.on .ctp-switch-poslabel-on{opacity:1;color:#ffd48a;}
+.ctp-switch-v:not(.on) .ctp-switch-poslabel-off{opacity:1;color:#e8e0c8;}
+.ctp-switch-h .ctp-switch-poslabel-on{left:2px;top:0;bottom:0;display:flex;align-items:center;}
+.ctp-switch-h .ctp-switch-poslabel-off{right:2px;top:0;bottom:0;display:flex;align-items:center;}
+.ctp-switch-h.on .ctp-switch-poslabel-on{opacity:1;color:#ffd48a;}
+.ctp-switch-h:not(.on) .ctp-switch-poslabel-off{opacity:1;color:#e8e0c8;}
+
+/* Push Button (three visual skins) */
+.ctp-pushbtn{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
+.ctp-pushbtn-arcade{border-radius:50%;background:radial-gradient(circle at 35% 30%,#5a2020,#280808);box-shadow:inset 0 0 0 3px #1a0505,0 2px 4px rgba(0,0,0,.6);}
+.ctp-pushbtn-arcade .ctp-pushbtn-cap{width:76%;height:76%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ff6b5c,#c21e1e 70%,#7a0f0f);box-shadow:0 2px 3px rgba(0,0,0,.5);transition:transform .1s;}
+.ctp-pushbtn-arcade.on .ctp-pushbtn-cap{transform:scale(.86);box-shadow:0 0 10px 3px rgba(255,80,60,.7),0 1px 1px rgba(0,0,0,.5);}
+.ctp-pushbtn-toggle{border-radius:5px;width:100%;height:100%;background:linear-gradient(160deg,#3a3d44,#1c1e22);box-shadow:inset 0 0 0 2px #101114;}
+.ctp-pushbtn-toggle .ctp-pushbtn-cap{width:80%;height:80%;border-radius:3px;background:linear-gradient(160deg,#565c66,#2a2c30);box-shadow:0 2px 2px rgba(0,0,0,.5);}
+.ctp-pushbtn-toggle.on .ctp-pushbtn-cap{background:linear-gradient(160deg,#3ddc7a,#1c8a48);box-shadow:0 0 8px 2px rgba(60,220,120,.6);}
+.ctp-pushbtn-industrial{border-radius:50%;background:radial-gradient(circle at 40% 30%,#4a4f57,#1c1e22);box-shadow:inset 0 0 0 4px #101114,0 2px 4px rgba(0,0,0,.6);}
+.ctp-pushbtn-industrial .ctp-pushbtn-cap{width:60%;height:60%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffd24d,#a67300);box-shadow:0 2px 3px rgba(0,0,0,.5);}
+.ctp-pushbtn-industrial.on .ctp-pushbtn-cap{box-shadow:0 0 10px 3px rgba(255,210,80,.7);}
+
+/* Vertical / Horizontal Slider */
+.ctp-slider{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
+.ctp-slider-track{position:relative;background:linear-gradient(175deg,#26241f,#1b1a16 80%);border-radius:5px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.6);}
+.ctp-slider-v .ctp-slider-track{width:24%;height:88%;}
+.ctp-slider-h .ctp-slider-track{height:24%;width:88%;}
+.ctp-slider-fill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#ffb35c,#c96b0f);border-radius:5px;}
+.ctp-slider-h .ctp-slider-fill{top:0;bottom:0;left:0;right:auto;background:linear-gradient(90deg,#c96b0f,#ffb35c);}
+.ctp-slider-thumb{position:absolute;border-radius:3px;background:linear-gradient(160deg,#e8ddc8,#a99a72);box-shadow:0 1px 2px rgba(0,0,0,.6);}
+.ctp-slider-v .ctp-slider-thumb{left:50%;width:160%;height:12px;transform:translate(-50%,50%);}
+.ctp-slider-h .ctp-slider-thumb{top:50%;height:160%;width:12px;transform:translate(-50%,-50%);}
+.ctp-slider-val{position:absolute;bottom:-15px;left:0;right:0;text-align:center;font-size:9px;color:var(--text-dim);font-family:var(--pv-font-mono,monospace);}
+
+/* Rotary knobs — 180°/270° numbered/named (detent) and full-rotation */
+.ctp-knob{position:relative;width:100%;height:100%;}
+.ctp-knob-body{position:absolute;inset:8%;border-radius:50%;background:radial-gradient(circle at 35% 25%,#8a8f99,#3a3d44 70%,#1c1e22);box-shadow:0 2px 4px rgba(0,0,0,.6),inset 0 0 0 2px rgba(0,0,0,.4);}
+.ctp-knob-pointer{position:absolute;left:50%;top:6%;width:3px;height:44%;margin-left:-1.5px;background:#ffd24d;border-radius:2px;transform-origin:50% 100%;}
+.ctp-knob-ticks{position:absolute;inset:0;pointer-events:none;}
+.ctp-knob-tick{position:absolute;left:50%;top:2%;width:1px;height:46%;margin-left:-0.5px;transform-origin:50% 100%;}
+.ctp-knob-tick span{position:absolute;top:-13px;left:50%;transform:translateX(-50%);font-size:8px;color:var(--text-dim);white-space:nowrap;}
+.ctp-knob-label{position:absolute;left:0;right:0;bottom:-15px;text-align:center;font-size:9px;color:var(--text-dim);font-family:var(--pv-font-mono,monospace);}
+
+/* Light (three visual styles) */
+.ctp-light{width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#4a2222,#1a0808);box-shadow:inset 0 0 0 2px #0a0505,0 1px 2px rgba(0,0,0,.5);}
+.ctp-light-square{border-radius:4px;}
+.ctp-light-strip{border-radius:3px;}
+.ctp-light.on{background:var(--ctp-light-color,#ff453a);box-shadow:0 0 10px 3px var(--ctp-light-color,#ff453a),inset 0 0 0 2px rgba(0,0,0,.3);}
+
+/* Gauge */
+.ctp-gauge{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.ctp-gauge-face{position:relative;width:82%;height:70%;border-radius:50%;background:radial-gradient(circle at 35% 25%,#2c2f38,#12141a 75%);box-shadow:inset 0 0 0 2px #050608,0 1px 3px rgba(0,0,0,.6);}
+.ctp-gauge-needle{position:absolute;left:50%;top:10%;width:2px;height:40%;margin-left:-1px;background:#ff5c5c;transform-origin:50% 100%;}
+.ctp-gauge-hub{position:absolute;left:50%;top:50%;width:14%;height:14%;margin:-7% 0 0 -7%;border-radius:50%;background:#8a8f99;box-shadow:0 1px 1px rgba(0,0,0,.6);}
+.ctp-gauge-val{margin-top:2px;font-size:9px;color:var(--text-dim);font-family:var(--pv-font-mono,monospace);}
+
+/* Digital number display */
+.ctp-digital{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0a1208;border-radius:3px;box-shadow:inset 0 0 0 2px #000,inset 0 0 6px rgba(0,0,0,.6);}
+.ctp-digital-text{font-family:var(--pv-font-mono,'Courier New',monospace);font-size:14px;letter-spacing:2px;color:#5cff7a;text-shadow:0 0 6px rgba(92,255,122,.7);white-space:nowrap;overflow:hidden;}
+
+/* Static: image/GIF, editable label, shape/divider */
+.ctp-media{width:100%;height:100%;display:block;}
+.ctp-media-empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg3);border:1px dashed var(--line);border-radius:4px;font-size:18px;color:var(--text-dim);}
+.ctp-label-text{width:100%;height:100%;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ctp-shape-rect{width:100%;height:100%;border-style:solid;box-sizing:border-box;}
+.ctp-shape-line{width:100%;height:100%;border-radius:2px;}
+
+/* Props panel (selected component) + condition rows, reused by both the
+   node-level completion-requirements list and each conditional
+   component's own rule editor (see buildCtpConditionRow/buildCtpRulesEditor
+   in app.js). */
+.ctp-props{background:var(--bg3);border:1px solid var(--line);border-radius:6px;padding:8px;}
+.ctp-cond-row{display:flex;gap:6px;align-items:center;}
+.ctp-rule-block{border:1px solid var(--line);border-radius:6px;padding:8px;margin-bottom:10px;background:var(--bg2);}
+
+/* Control Panel Builder overlay — the full-screen counterpart of the
+   inline board designer (opened via "⛶ Open in Larger Pane"), same window
+   chrome as the other builder overlays (.hb-window/.lb-window) but its
+   body is filled in dynamically by buildCtpDesignerMarkup rather than
+   declared statically (see renderControlPanelBuilderOverlay in app.js). */
+.ctpb-window{width:min(1300px,97vw);height:min(880px,94vh);}
+.ctpb-body{flex:1;overflow-y:auto;padding:14px;background:var(--bg2);}
+.ctpb-body .ctp-stage{padding:24px 16px;}
+
+/* Player screen — the live board, same widget classes as the designer
+   (ctp-board/ctp-zone/ctp-comp/...) so the panel looks identical to what
+   the creator designed; only the wrapper and interactivity differ. */
+.pv-ctp-wrap{margin:10px 0;display:flex;justify-content:center;}
+.pv-ctp-wrap .ctp-board{box-shadow:0 8px 24px rgba(0,0,0,.5);}
+.pv-ctp-wrap.locked .ctp-comp-interactive{cursor:default;}
+
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}
 
 /* Category Grid (3x3 image puzzle) — Studio inspector: 9 image sections

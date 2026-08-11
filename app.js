@@ -115,6 +115,29 @@ var gpGearPathD = PAEngine.gpGearPathD;
 var gpComputeMesh = PAEngine.gpComputeMesh;
 var gpSolveState = PAEngine.gpSolveState;
 
+// Control Panel Builder — component-type metadata, condition evaluation and
+// shared widget-rendering math, used by the inspector-embedded board
+// designer below (buildControlPanelFields/wireControlPanelDesigner) — see
+// the comment above NODE_TYPES.controlPanel in engine.js.
+var CTP_COMPONENT_TYPES = PAEngine.CTP_COMPONENT_TYPES;
+var CTP_GROUP_LABELS = PAEngine.CTP_GROUP_LABELS;
+var CTP_PUSHBUTTON_SKINS = PAEngine.CTP_PUSHBUTTON_SKINS;
+var CTP_LIGHT_STYLES = PAEngine.CTP_LIGHT_STYLES;
+var CTP_OP_LABELS = PAEngine.CTP_OP_LABELS;
+var CTP_BOARD_MIN_W = PAEngine.CTP_BOARD_MIN_W, CTP_BOARD_MAX_W = PAEngine.CTP_BOARD_MAX_W, CTP_ZONE_MAX_H = PAEngine.CTP_ZONE_MAX_H;
+var ctpComponentKind = PAEngine.ctpComponentKind;
+var ctpKnobArc = PAEngine.ctpKnobArc;
+var ctpIsNamedKnob = PAEngine.ctpIsNamedKnob;
+var ctpOpsForKind = PAEngine.ctpOpsForKind;
+var ctpNewComponent = PAEngine.ctpNewComponent;
+var ctpDefaultValuesById = PAEngine.ctpDefaultValuesById;
+var ctpEvalRules = PAEngine.ctpEvalRules;
+var ctpWinConditionsMet = PAEngine.ctpWinConditionsMet;
+var ctpComputeOutputs = PAEngine.ctpComputeOutputs;
+var ctpResolvedValue = PAEngine.ctpResolvedValue;
+var ctpComponentInnerHtml = PAEngine.ctpComponentInnerHtml;
+var ctpComponentWrapStyle = PAEngine.ctpComponentWrapStyle;
+
 // Lock and Key — the "which keys does this puzzle's supplying keychain
 // offer" lookup, shared with engine.js's player runtime (see the comment
 // above NODE_TYPES.lockAndKey in engine.js) and used below by
@@ -550,7 +573,7 @@ var SUGGESTED_LANE = {
   // puzzles in Leads; state-family goes to Inventory; the new Support
   // type goes to Hints, same as the existing Hint node.
   cipher: "leads", mathLogic: "leads", anagram: "leads", sequencePattern: "leads", slidingTile: "leads",
-  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads", lumenPuzzle: "leads", gearPulley: "leads", categoryGrid: "leads", constraintSatisfaction: "leads",
+  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads", lumenPuzzle: "leads", gearPulley: "leads", categoryGrid: "leads", constraintSatisfaction: "leads", controlPanel: "leads",
   gate: "leads", randomizer: "leads", teamSplitMerge: "leads", metaPuzzleCombine: "leads",
   timer: "leads", attemptLimiter: "leads",
   combineCraftItem: "inventory", trade: "inventory",
@@ -2129,6 +2152,9 @@ function buildTypeSpecificFields(n) {
       html += '<button type="button" class="small-btn" id="btnOpenGearPulleyBuilder" style="margin:8px 0">⛶ Open in Larger Pane</button>';
       html += '<button type="button" class="small-btn" style="color:var(--danger)" id="gpBtnClear">Clear board</button>';
       html += '</div></details>';
+      break;
+    case "controlPanel":
+      html += buildControlPanelFields(n);
       break;
     case "categoryGrid":
       html += buildCategoryGridFields(c);
@@ -3817,6 +3843,694 @@ function renderLumenBuilder() {
   wireLumenDesigner(n, "lb");
 }
 
+/* -----------------------------------------------------------------------
+   Control Panel Builder — the inspector-embedded board designer. Every
+   placed component is a freeform, resizable, rotatable div positioned by
+   plain x/y/w/h/rot on top of a two-tier board (see ctpNewComponent/
+   ctpComponentWrapStyle in engine.js); this is the first Studio designer to
+   combine free placement (like Gear & Pulley/Lumen Puzzle) with rich
+   DOM-styled hardware widgets (like Fuse Panel's switches) — see the
+   research note above NODE_TYPES.controlPanel in engine.js. Structured the
+   same three ways as every other embedded designer in this file: a set of
+   pure "build*" functions that only produce HTML strings (top-level, no
+   closures needed), and a stateful "wireControlPanelDesigner(n, prefix)"
+   that owns the live stage/props-panel interaction, run twice against the
+   same node — once for the compact inline copy (prefix "ctp"), once for
+   the full-screen overlay (prefix "ctpb", see openControlPanelBuilder
+   below) — exactly like wireGearPulleyDesigner.
+----------------------------------------------------------------------- */
+
+// Standing HTML shell for the "Content" section above the collapsible
+// build pane: prompt, board size, and the completion-requirements list —
+// the "standard pane" fields the node-expansion spec calls for, as opposed
+// to the expandable build pane below (see buildCtpDesignerMarkup).
+function buildControlPanelFields(n) {
+  var c = n.content;
+  c.board = c.board || { width: 640, upperHeight: 220, lowerHeight: 260 };
+  c.components = c.components || [];
+  c.winConditions = c.winConditions || [];
+  var html = playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+
+  html += '<div class="section-title">Board size</div>';
+  html += '<div style="display:flex;gap:6px">' +
+    '<label style="font-size:11px;color:var(--text-dim);flex:1">Width<input type="number" id="fCtpBoardWidth" min="' + CTP_BOARD_MIN_W + '" max="' + CTP_BOARD_MAX_W + '" value="' + c.board.width + '" /></label>' +
+    '<label style="font-size:11px;color:var(--text-dim);flex:1">Wall height (upper)<input type="number" id="fCtpUpperHeight" min="0" max="' + CTP_ZONE_MAX_H + '" value="' + c.board.upperHeight + '" /></label>' +
+    '<label style="font-size:11px;color:var(--text-dim);flex:1">Desk height (lower)<input type="number" id="fCtpLowerHeight" min="0" max="' + CTP_ZONE_MAX_H + '" value="' + c.board.lowerHeight + '" /></label>' +
+  '</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:4px 0 8px">Set either section\'s height to 0 for a single-section board (just a wall, or just a desk).</p>';
+
+  html += '<div class="section-title">Completion requirements</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">The panel completes the instant every requirement below is true at the same time. Sliders and the full-rotation knob can require an exact value or a range; switches/buttons a position; numbered/named knobs a specific point.</p>';
+  var interactiveComps = c.components.filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; });
+  html += '<div id="ctpWinList">' + c.winConditions.map(function (wc, i) { return buildCtpConditionRow(wc, i, interactiveComps, "ctpWin", ""); }).join("") + '</div>';
+  html += interactiveComps.length ? '<button type="button" class="small-btn" id="btnAddCtpWin">+ Add requirement</button>' : '<p style="font-size:11px;color:var(--text-dim)">Add interactive components in the builder below first.</p>';
+
+  var ctpExpanded = ctpUiState(n).expanded !== false;
+  html += '<details class="ctp-builder-details"' + (ctpExpanded ? " open" : "") + ' id="ctpBuilderDetails">' +
+    '<summary class="ctp-builder-summary"><span class="ctp-builder-chevron">▸</span>🎛️ Board Designer — place &amp; configure components</summary>' +
+    '<div class="ctp-builder-body">';
+  html += buildCtpDesignerMarkup("ctp");
+  html += '<button type="button" class="small-btn" id="btnOpenControlPanelBuilder" style="margin:8px 0">⛶ Open in Larger Pane</button>';
+  html += '<button type="button" class="small-btn" style="color:var(--danger)" id="ctpBtnClear">Clear board</button>';
+  html += '</div></details>';
+  return html;
+}
+
+// The static palette + empty stage/props shells — redraw()/renderProps()
+// (inside wireControlPanelDesigner) fill the stage and props panel in once
+// the designer is wired, same "empty shell in the HTML string, filled in by
+// JS after mount" split as gpDesignSvg/gpPropsPanel.
+function buildCtpDesignerMarkup(prefix) {
+  var eid = function (suffix) { return prefix + suffix; };
+  var html = '<p style="font-size:11px;color:var(--text-dim);margin:8px 0 8px">Pick a tool below, then click the board to place a component — it drops into whichever section you click. With Select active: drag a component to move it, drag its bottom-right handle to resize, or drag its top handle to rotate.</p>';
+  html += '<div class="ctp-palette">';
+  html += '<button type="button" class="small-btn ' + eid("ToolBtn") + ' active" data-tool="select">🖱️ Select / Move</button>';
+  ["interactive", "conditional", "static"].forEach(function (group) {
+    html += '<div class="ctp-palette-group"><div class="ctp-palette-group-label">' + esc(CTP_GROUP_LABELS[group]) + '</div><div class="ctp-palette-buttons">';
+    Object.keys(CTP_COMPONENT_TYPES).forEach(function (type) {
+      var meta = CTP_COMPONENT_TYPES[type];
+      if (meta.group !== group) return;
+      html += '<button type="button" class="small-btn ' + eid("ToolBtn") + '" data-tool="' + type + '">' + meta.icon + ' ' + esc(meta.label) + '</button>';
+    });
+    html += '</div></div>';
+  });
+  html += '</div>';
+  html += '<div class="ctp-stage" id="' + eid("Stage") + '"></div>';
+  html += '<div class="field"><label>Selected component</label><div id="' + eid("PropsPanel") + '" class="ctp-props"></div></div>';
+  return html;
+}
+
+// One "component [operator] value/range" condition row — shared by the
+// node-level win-conditions list (classPrefix "ctpWin", no extraAttrs) and
+// each conditional component's own rule conditions (classPrefix
+// "ctpRuleCond"/"ctpbRuleCond", extraAttrs carrying which component+rule
+// they belong to) — see buildCtpRulesEditor/wireCtpConditionRows below.
+function buildCtpConditionRow(cond, idx, comps, classPrefix, extraAttrs) {
+  extraAttrs = extraAttrs || "";
+  var comp = comps.find(function (x) { return x.id === cond.componentId; });
+  var kind = comp ? ctpComponentKind(comp.type) : "numeric";
+  var ops = ctpOpsForKind(kind);
+  var html = '<div class="list-item ctp-cond-row" style="flex-wrap:wrap;row-gap:6px">';
+  html += '<select class="' + classPrefix + 'CompSelect" data-idx="' + idx + '"' + extraAttrs + ' style="flex:1;min-width:110px">' +
+    '<option value="">— choose component —</option>' +
+    comps.map(function (c2) { return '<option value="' + esc(c2.id) + '"' + (cond.componentId === c2.id ? " selected" : "") + '>' + esc(c2.name || c2.type) + '</option>'; }).join("") +
+  '</select>';
+  html += '<select class="' + classPrefix + 'OpSelect" data-idx="' + idx + '"' + extraAttrs + ' style="flex:none">' +
+    ops.map(function (op) { return '<option value="' + op + '"' + (cond.op === op ? " selected" : "") + '>' + esc(CTP_OP_LABELS[op]) + '</option>'; }).join("") +
+  '</select>';
+  if (comp && kind === "index") {
+    html += '<select class="' + classPrefix + 'ValSelect" data-idx="' + idx + '"' + extraAttrs + ' style="flex:none">' + buildCtpPointOptions(comp.data, cond.value) + '</select>';
+  } else if (cond.op === "between") {
+    html += '<input type="number" class="' + classPrefix + 'MinInput" data-idx="' + idx + '"' + extraAttrs + ' placeholder="min" value="' + (cond.min != null ? cond.min : "") + '" style="width:60px;flex:none" />';
+    html += '<input type="number" class="' + classPrefix + 'MaxInput" data-idx="' + idx + '"' + extraAttrs + ' placeholder="max" value="' + (cond.max != null ? cond.max : "") + '" style="width:60px;flex:none" />';
+  } else if (cond.op === "equals" || cond.op === "atleast" || cond.op === "atmost") {
+    html += '<input type="number" class="' + classPrefix + 'ValInput" data-idx="' + idx + '"' + extraAttrs + ' value="' + (cond.value != null ? cond.value : "") + '" style="width:70px;flex:none" />';
+  }
+  html += '<button type="button" class="small-btn ' + classPrefix + 'RemoveBtn" data-idx="' + idx + '"' + extraAttrs + '">✕</button>';
+  html += '</div>';
+  return html;
+}
+function buildCtpPointOptions(d, curValue) {
+  var points = Math.max(2, Number(d.points) || 5);
+  var named = !!d.names;
+  var opts = "";
+  for (var i = 0; i < points; i++) {
+    var lbl = named ? ((d.names || [])[i] || (i + 1)) : (i + 1);
+    opts += '<option value="' + i + '"' + (Number(curValue) === i ? " selected" : "") + '>' + esc(String(lbl)) + '</option>';
+  }
+  return opts;
+}
+
+// The rule list ("checked top to bottom, first match wins") for one
+// light/gauge/digital-display component — outputField says which shape
+// each rule's output takes ("on" for lights, "value" for gauges, "text"
+// for digital displays). Rendered as part of that component's own props
+// panel (see buildCtpTypeFields), never shown for interactive/static types.
+function buildCtpRulesEditor(comp, eid, outputField, allComponents) {
+  var interactiveComps = allComponents.filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; });
+  var rules = comp.data.rules || [];
+  var html = '<div class="section-title" style="margin-top:10px">Rules (checked top to bottom — first match wins)</div>';
+  if (!interactiveComps.length) {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Add an interactive component to the board first, then come back here to set rules for this one.</p>';
+    return html;
+  }
+  var condPrefix = eid("RuleCond");
+  html += '<div>' + rules.map(function (rule, ri) {
+    var attrs = ' data-compid="' + esc(comp.id) + '" data-ruleidx="' + ri + '"';
+    var rhtml = '<div class="ctp-rule-block">';
+    rhtml += '<div style="display:flex;align-items:center;justify-content:space-between"><span class="chip">Rule ' + (ri + 1) + '</span><button type="button" class="small-btn ' + eid("RuleRemoveBtn") + '"' + attrs + '>✕ Remove rule</button></div>';
+    rhtml += (rule.conditions || []).map(function (cond, ci) { return buildCtpConditionRow(cond, ci, interactiveComps, condPrefix, attrs); }).join("");
+    rhtml += '<button type="button" class="small-btn ' + eid("RuleAddCondBtn") + '"' + attrs + ' style="margin:2px 0 8px">+ Add condition</button>';
+    if (outputField === "on") {
+      rhtml += fieldWrap("Then turn light", '<select class="' + eid("RuleOutSelect") + '"' + attrs + '><option value="1"' + (rule.output && rule.output.on ? " selected" : "") + '>On</option><option value="0"' + (!(rule.output && rule.output.on) ? " selected" : "") + '>Off</option></select>');
+    } else if (outputField === "value") {
+      rhtml += fieldWrap("Then show value", '<input type="number" class="' + eid("RuleOutInput") + '"' + attrs + ' value="' + (rule.output && rule.output.value != null ? rule.output.value : 0) + '" />');
+    } else {
+      rhtml += fieldWrap("Then show text", '<input type="text" class="' + eid("RuleOutInput") + '"' + attrs + ' value="' + esc(rule.output && rule.output.text != null ? rule.output.text : "") + '" />');
+    }
+    rhtml += '</div>';
+    return rhtml;
+  }).join("") + '</div>';
+  html += '<button type="button" class="small-btn ' + eid("RuleAddBtn") + '" data-compid="' + esc(comp.id) + '">+ Add rule</button>';
+  return html;
+}
+
+// Component-type-specific fields for the selected component's props panel
+// (placement/size/rotation are generic, handled by renderProps itself —
+// see wireControlPanelDesigner). Conditional types (light/gauge/
+// digitalDisplay) end with their rule list (buildCtpRulesEditor).
+function buildCtpTypeFields(comp, eid, allComponents) {
+  var d = comp.data;
+  var html = '<div class="section-title" style="margin-top:10px">Component settings</div>';
+  switch (comp.type) {
+    case "vSwitch": case "hSwitch":
+      html += fieldWrap("ON label", '<input type="text" id="' + eid("DOnLabel") + '" value="' + esc(d.onLabel || "") + '" />');
+      html += fieldWrap("OFF label", '<input type="text" id="' + eid("DOffLabel") + '" value="' + esc(d.offLabel || "") + '" />');
+      html += fieldWrap("Starting position", '<select id="' + eid("DOn") + '"><option value="0"' + (!d.on ? " selected" : "") + '>OFF</option><option value="1"' + (d.on ? " selected" : "") + '>ON</option></select>');
+      break;
+    case "pushButton":
+      html += fieldWrap("Visual style", '<select id="' + eid("DSkin") + '">' + Object.keys(CTP_PUSHBUTTON_SKINS).map(function (k) { return '<option value="' + k + '"' + ((d.skin || "arcade") === k ? " selected" : "") + '>' + esc(CTP_PUSHBUTTON_SKINS[k]) + '</option>'; }).join("") + '</select>');
+      html += fieldWrap("Starting position", '<select id="' + eid("DOn") + '"><option value="0"' + (!d.on ? " selected" : "") + '>OFF</option><option value="1"' + (d.on ? " selected" : "") + '>ON</option></select>');
+      break;
+    case "vSlider": case "hSlider":
+      html += '<div style="display:flex;gap:6px">' +
+        fieldWrap("Min", '<input type="number" id="' + eid("DMin") + '" value="' + d.min + '" />') +
+        fieldWrap("Max", '<input type="number" id="' + eid("DMax") + '" value="' + d.max + '" />') +
+        fieldWrap("Step", '<input type="number" id="' + eid("DStep") + '" min="0.01" step="0.01" value="' + d.step + '" />') +
+      '</div>';
+      html += fieldWrap("Starting value", '<input type="number" id="' + eid("DValue") + '" value="' + d.value + '" />');
+      break;
+    case "knob180Num": case "knob270Num":
+      html += fieldWrap("Number of fixed points", '<input type="number" id="' + eid("DPoints") + '" min="2" max="24" value="' + (d.points || 5) + '" />');
+      html += fieldWrap("Starting point", '<select id="' + eid("DValue") + '">' + buildCtpPointOptions(d, d.value) + '</select>');
+      break;
+    case "knob180Named": case "knob270Named":
+      html += fieldWrap("Number of fixed points", '<input type="number" id="' + eid("DPoints") + '" min="2" max="24" value="' + (d.points || 5) + '" />');
+      html += '<div class="field"><label>Point names (appear on the board)</label><div id="' + eid("NameList") + '">' +
+        (d.names || []).map(function (nm, i) { return '<div class="list-item"><span class="chip">' + (i + 1) + '</span><input type="text" class="' + eid("NameInput") + '" data-idx="' + i + '" value="' + esc(nm) + '" /></div>'; }).join("") +
+      '</div></div>';
+      html += fieldWrap("Starting point", '<select id="' + eid("DValue") + '">' + buildCtpPointOptions(d, d.value) + '</select>');
+      break;
+    case "knobFull":
+      html += fieldWrap("Starting angle (0-359°)", '<input type="number" id="' + eid("DValue") + '" min="0" max="359" value="' + (d.value || 0) + '" />');
+      html += fieldWrap("Show interval marks on board", '<select id="' + eid("DShowIntervals") + '"><option value="0"' + (!d.showIntervals ? " selected" : "") + '>No</option><option value="1"' + (d.showIntervals ? " selected" : "") + '>Yes</option></select>');
+      if (d.showIntervals) html += fieldWrap("Interval count", '<input type="number" id="' + eid("DIntervalCount") + '" min="2" max="36" value="' + (d.intervalCount || 12) + '" />');
+      break;
+    case "light":
+      html += fieldWrap("Visual style", '<select id="' + eid("DStyle") + '">' + Object.keys(CTP_LIGHT_STYLES).map(function (k) { return '<option value="' + k + '"' + ((d.style || "round") === k ? " selected" : "") + '>' + esc(CTP_LIGHT_STYLES[k]) + '</option>'; }).join("") + '</select>');
+      html += fieldWrap("Color (when on)", '<input type="color" id="' + eid("DColor") + '" value="' + (d.color || "#ff453a") + '" />');
+      html += fieldWrap("Default (when no rule matches)", '<select id="' + eid("DDefaultOn") + '"><option value="0"' + (!d.defaultOn ? " selected" : "") + '>Off</option><option value="1"' + (d.defaultOn ? " selected" : "") + '>On</option></select>');
+      html += buildCtpRulesEditor(comp, eid, "on", allComponents);
+      break;
+    case "gauge":
+      html += '<div style="display:flex;gap:6px">' + fieldWrap("Min", '<input type="number" id="' + eid("DMin") + '" value="' + d.min + '" />') + fieldWrap("Max", '<input type="number" id="' + eid("DMax") + '" value="' + d.max + '" />') + '</div>';
+      html += fieldWrap("Default value (when no rule matches)", '<input type="number" id="' + eid("DDefaultValue") + '" value="' + d.defaultValue + '" />');
+      html += buildCtpRulesEditor(comp, eid, "value", allComponents);
+      break;
+    case "digitalDisplay":
+      html += fieldWrap("Default text (when no rule matches)", '<input type="text" id="' + eid("DDefaultText") + '" value="' + esc(d.defaultText || "") + '" />');
+      html += buildCtpRulesEditor(comp, eid, "text", allComponents);
+      break;
+    case "image": case "gif":
+      html += '<div class="field"><label>' + (comp.type === "gif" ? "GIF file" : "Image file") + '</label>' +
+        '<input type="file" id="' + eid("DFile") + '" accept="' + (comp.type === "gif" ? "image/gif" : "image/*") + '" style="display:none" />' +
+        '<button type="button" class="small-btn" id="' + eid("DUploadBtn") + '">⬆ Upload</button>' +
+        (d.src ? ' <button type="button" class="small-btn" id="' + eid("DClearBtn") + '" style="color:var(--danger)">✕ Remove</button>' : '') +
+      '</div>';
+      if (d.src) html += fieldWrap("Fit", '<select id="' + eid("DFit") + '"><option value="contain"' + (d.fit !== "cover" ? " selected" : "") + '>Contain</option><option value="cover"' + (d.fit === "cover" ? " selected" : "") + '>Cover</option></select>');
+      break;
+    case "label":
+      html += fieldWrap("Text", '<input type="text" id="' + eid("DText") + '" value="' + esc(d.text || "") + '" />');
+      html += '<div style="display:flex;gap:6px">' + fieldWrap("Font size", '<input type="number" id="' + eid("DFontSize") + '" min="8" max="60" value="' + (d.fontSize || 14) + '" />') + fieldWrap("Color", '<input type="color" id="' + eid("DColor") + '" value="' + (d.color || "#e8e8e8") + '" />') + '</div>';
+      html += fieldWrap("Align", '<select id="' + eid("DAlign") + '"><option value="left"' + (d.align === "left" ? " selected" : "") + '>Left</option><option value="center"' + ((d.align || "center") === "center" ? " selected" : "") + '>Center</option><option value="right"' + (d.align === "right" ? " selected" : "") + '>Right</option></select>');
+      break;
+    case "shape":
+      html += fieldWrap("Shape", '<select id="' + eid("DShapeType") + '"><option value="rect"' + ((d.shapeType || "rect") === "rect" ? " selected" : "") + '>Rectangle / border</option><option value="line"' + (d.shapeType === "line" ? " selected" : "") + '>Line / divider</option></select>');
+      html += fieldWrap("Color", '<input type="color" id="' + eid("DColor") + '" value="' + (d.color || "#5a5f68") + '" />');
+      if ((d.shapeType || "rect") === "rect") {
+        html += fieldWrap("Fill", '<input type="color" id="' + eid("DFill") + '" value="' + (d.fill && d.fill !== "transparent" ? d.fill : "#000000") + '" />');
+        html += fieldWrap("Border width", '<input type="number" id="' + eid("DStrokeWidth") + '" min="0" max="20" value="' + (d.strokeWidth != null ? d.strokeWidth : 2) + '" />');
+      }
+      break;
+  }
+  return html;
+}
+
+// Wires every "component [operator] value/range" row currently in the DOM
+// for one classPrefix (shared by the win-conditions list and every
+// conditional component's rule-condition lists — see buildCtpConditionRow).
+// resolveArray(el) reads back whatever data-* attributes the row's own
+// controls carry (data-compid/data-ruleidx for rule conditions, nothing
+// extra for win conditions) to find the live conditions array to mutate.
+function wireCtpConditionRows(classPrefix, resolveArray) {
+  function mutate(el, fn) {
+    var arr = resolveArray(el);
+    if (!arr) return;
+    var cond = arr[+el.dataset.idx];
+    if (!cond) return;
+    fn(cond);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("." + classPrefix + "CompSelect"), function (sel) {
+    sel.onchange = function () { mutate(sel, function (cond) { cond.componentId = sel.value; delete cond.value; delete cond.min; delete cond.max; }); afterEdit(false); renderInspector(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + classPrefix + "OpSelect"), function (sel) {
+    sel.onchange = function () { mutate(sel, function (cond) { cond.op = sel.value; }); afterEdit(false); renderInspector(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + classPrefix + "ValSelect"), function (sel) {
+    sel.onchange = function () { mutate(sel, function (cond) { cond.value = parseInt(sel.value, 10) || 0; }); afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + classPrefix + "ValInput"), function (inp) {
+    inp.oninput = function () { mutate(inp, function (cond) { cond.value = parseFloat(inp.value); }); };
+    inp.onblur = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + classPrefix + "MinInput"), function (inp) {
+    inp.oninput = function () { mutate(inp, function (cond) { cond.min = parseFloat(inp.value); }); };
+    inp.onblur = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + classPrefix + "MaxInput"), function (inp) {
+    inp.oninput = function () { mutate(inp, function (cond) { cond.max = parseFloat(inp.value); }); };
+    inp.onblur = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + classPrefix + "RemoveBtn"), function (btn) {
+    btn.onclick = function () { var arr = resolveArray(btn); if (!arr) return; arr.splice(+btn.dataset.idx, 1); afterEdit(false); renderInspector(); };
+  });
+}
+
+// Node-level "Completion requirements" list (the standard-pane section
+// built by buildControlPanelFields) — always resolves against
+// n.content.winConditions.
+function wireCtpWinConditions(n) {
+  var c = n.content;
+  c.winConditions = c.winConditions || [];
+  var interactiveComps = (c.components || []).filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; });
+  wireCtpConditionRows("ctpWin", function () { return c.winConditions; });
+  if (document.getElementById("btnAddCtpWin")) document.getElementById("btnAddCtpWin").onclick = function () {
+    var first = interactiveComps[0];
+    c.winConditions.push({ componentId: first ? first.id : "", op: first ? ctpOpsForKind(ctpComponentKind(first.type))[0] : "on" });
+    afterEdit(false); renderInspector();
+  };
+}
+
+// One conditional component's rule list — resolves against
+// component.data.rules[ruleIdx].conditions, both read off the triggering
+// element's own data-compid/data-ruleidx (set by buildCtpRulesEditor).
+function wireCtpRulesEditor(comp, eid, outputField, c) {
+  var d = comp.data;
+  d.rules = d.rules || [];
+  wireCtpConditionRows(eid("RuleCond"), function (el) {
+    var target = c.components.find(function (x) { return x.id === el.dataset.compid; });
+    var rule = target && target.data.rules[+el.dataset.ruleidx];
+    return rule ? (rule.conditions = rule.conditions || []) : null;
+  });
+  var addBtn = document.getElementById(eid("RuleAddBtn"));
+  if (addBtn) addBtn.onclick = function () {
+    d.rules.push({ conditions: [], output: outputField === "on" ? { on: true } : outputField === "value" ? { value: 0 } : { text: "" } });
+    afterEdit(false); renderInspector();
+  };
+  Array.prototype.forEach.call(document.querySelectorAll("." + eid("RuleRemoveBtn")), function (btn) {
+    btn.onclick = function () {
+      var target = c.components.find(function (x) { return x.id === btn.dataset.compid; });
+      if (target) target.data.rules.splice(+btn.dataset.ruleidx, 1);
+      afterEdit(false); renderInspector();
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + eid("RuleAddCondBtn")), function (btn) {
+    btn.onclick = function () {
+      var target = c.components.find(function (x) { return x.id === btn.dataset.compid; });
+      var rule = target && target.data.rules[+btn.dataset.ruleidx];
+      if (rule) { rule.conditions = rule.conditions || []; rule.conditions.push({ componentId: "", op: "on" }); }
+      afterEdit(false); renderInspector();
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + eid("RuleOutSelect")), function (sel) {
+    sel.onchange = function () {
+      var target = c.components.find(function (x) { return x.id === sel.dataset.compid; });
+      var rule = target && target.data.rules[+sel.dataset.ruleidx];
+      if (rule) rule.output = { on: sel.value === "1" };
+      afterEdit(false);
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + eid("RuleOutInput")), function (inp) {
+    inp.oninput = function () {
+      var target = c.components.find(function (x) { return x.id === inp.dataset.compid; });
+      var rule = target && target.data.rules[+inp.dataset.ruleidx];
+      if (rule) rule.output = outputField === "value" ? { value: parseFloat(inp.value) || 0 } : { text: inp.value };
+    };
+    inp.onblur = function () { afterEdit(false); };
+  });
+}
+
+// Authoring-only UI state (which tool is active, which component is
+// selected, whether the build pane is expanded) — kept outside n.content
+// since it's not part of the saved hunt, same idea as gpDesignerUiState/
+// gpUiState (see that comment in this file for why it must live at module
+// scope rather than as a wireControlPanelDesigner-local variable: redraw()
+// tears down and rebuilds the stage's DOM on every structural edit).
+var ctpDesignerUiState = {};
+function ctpUiState(n) {
+  if (!ctpDesignerUiState[n.id]) ctpDesignerUiState[n.id] = { tool: "select", selectedId: null, expanded: true };
+  return ctpDesignerUiState[n.id];
+}
+
+// Control Panel Builder — the inspector-embedded board designer. Wired
+// twice for the same node: once against the compact inline copy (prefix
+// "ctp"), once against the full-screen Control Panel Builder overlay
+// (prefix "ctpb" — see openControlPanelBuilder/closeControlPanelBuilder
+// below), same "one implementation, two DOM locations" pattern as
+// wireGearPulleyDesigner. Every edit writes straight into n.content.
+function wireControlPanelDesigner(n, prefix) {
+  prefix = prefix || "ctp";
+  var eid = function (suffix) { return prefix + suffix; };
+  var c = n.content;
+  c.board = c.board || { width: 640, upperHeight: 220, lowerHeight: 260 };
+  c.components = c.components || [];
+  var stage = document.getElementById(eid("Stage"));
+  if (!stage) return;
+  var ui = ctpUiState(n);
+  var propsPanel = document.getElementById(eid("PropsPanel"));
+
+  function selectedComp() { return c.components.find(function (x) { return x.id === ui.selectedId; }) || null; }
+
+  function setActiveToolBtn() {
+    Array.prototype.forEach.call(document.querySelectorAll("." + eid("ToolBtn")), function (b) { b.classList.toggle("active", b.dataset.tool === ui.tool); });
+  }
+
+  function zoneCompsHtml(zone, previewValues, previewOutputs) {
+    return c.components.filter(function (x) { return x.zone === zone; }).map(function (comp) {
+      var selected = comp.id === ui.selectedId;
+      var val = ctpResolvedValue(comp, previewValues, previewOutputs);
+      var html = '<div class="ctp-comp ctp-comp-' + comp.type + (selected ? ' selected' : '') + '" data-compid="' + esc(comp.id) + '" style="' + ctpComponentWrapStyle(comp) + '" title="' + esc(comp.name || "") + '">' +
+        ctpComponentInnerHtml(comp, val);
+      if (selected) {
+        html += '<div class="ctp-handle ctp-handle-rotate" data-handle="rotate" title="Drag to rotate"></div>';
+        html += '<div class="ctp-handle ctp-handle-resize" data-handle="resize" title="Drag to resize"></div>';
+      }
+      html += '</div>';
+      return html;
+    }).join("");
+  }
+
+  function redraw() {
+    var board = c.board;
+    var upperH = Math.max(0, Number(board.upperHeight) || 0);
+    var lowerH = Math.max(0, Number(board.lowerHeight) || 0);
+    var width = Math.max(CTP_BOARD_MIN_W, Math.min(CTP_BOARD_MAX_W, Number(board.width) || 640));
+    var previewValues = ctpDefaultValuesById(c);
+    var previewOutputs = ctpComputeOutputs(c, previewValues);
+    var html = '<div class="ctp-board" style="width:' + width + 'px">';
+    if (upperH > 0) html += '<div class="ctp-zone ctp-zone-upper" data-zone="upper" style="height:' + upperH + 'px">' + zoneCompsHtml("upper", previewValues, previewOutputs) + '</div>';
+    if (lowerH > 0) html += '<div class="ctp-zone ctp-zone-lower" data-zone="lower" style="height:' + lowerH + 'px">' + zoneCompsHtml("lower", previewValues, previewOutputs) + '</div>';
+    if (upperH <= 0 && lowerH <= 0) html += '<div class="ctp-zone-empty-note">No sections have height — set a wall/desk height above.</div>';
+    html += '</div>';
+    stage.innerHTML = html;
+    setActiveToolBtn();
+    wireStagePointer();
+  }
+
+  function redrawWrapOnly(comp) {
+    var el = stage.querySelector('.ctp-comp[data-compid="' + comp.id + '"]');
+    if (el) el.setAttribute("style", ctpComponentWrapStyle(comp));
+  }
+
+  function updateSelectionVisuals() {
+    Array.prototype.forEach.call(stage.querySelectorAll(".ctp-comp.selected"), function (el) {
+      el.classList.remove("selected");
+      Array.prototype.forEach.call(el.querySelectorAll(".ctp-handle"), function (h) { h.parentNode.removeChild(h); });
+    });
+    if (ui.selectedId) {
+      var el2 = stage.querySelector('.ctp-comp[data-compid="' + ui.selectedId + '"]');
+      if (el2) {
+        el2.classList.add("selected");
+        var rotH = document.createElement("div"); rotH.className = "ctp-handle ctp-handle-rotate"; rotH.dataset.handle = "rotate"; rotH.title = "Drag to rotate";
+        var resH = document.createElement("div"); resH.className = "ctp-handle ctp-handle-resize"; resH.dataset.handle = "resize"; resH.title = "Drag to resize";
+        el2.appendChild(rotH); el2.appendChild(resH);
+      }
+    }
+  }
+
+  function wireStagePointer() {
+    var dragInfo = null; // { compId, mode: "move"|"resize"|"rotate", startClientX, startClientY, orig:{x,y,w,h,rot}, centerClientX, centerClientY }
+
+    Array.prototype.forEach.call(stage.querySelectorAll(".ctp-zone"), function (zoneEl) {
+      zoneEl.onpointerdown = function (evt) {
+        var handleEl = evt.target.closest && evt.target.closest(".ctp-handle");
+        var compEl = evt.target.closest && evt.target.closest(".ctp-comp");
+
+        if (ui.tool !== "select") {
+          var rect = zoneEl.getBoundingClientRect();
+          var meta = CTP_COMPONENT_TYPES[ui.tool];
+          var x = evt.clientX - rect.left - (meta ? meta.defaultW / 2 : 0);
+          var y = evt.clientY - rect.top - (meta ? meta.defaultH / 2 : 0);
+          var comp = ctpNewComponent(ui.tool, zoneEl.dataset.zone, x, y);
+          c.components.push(comp);
+          ui.selectedId = comp.id;
+          ui.tool = "select";
+          afterEdit(false); redraw(); renderProps();
+          return;
+        }
+
+        if (handleEl && compEl) {
+          var comp2 = c.components.find(function (x) { return x.id === compEl.dataset.compid; });
+          if (!comp2) return;
+          var rect2 = zoneEl.getBoundingClientRect();
+          dragInfo = {
+            compId: comp2.id, mode: handleEl.dataset.handle,
+            startClientX: evt.clientX, startClientY: evt.clientY,
+            orig: { x: comp2.x, y: comp2.y, w: comp2.w, h: comp2.h, rot: comp2.rot },
+            centerClientX: rect2.left + comp2.x + comp2.w / 2, centerClientY: rect2.top + comp2.y + comp2.h / 2
+          };
+          try { zoneEl.setPointerCapture(evt.pointerId); } catch (e) {}
+          evt.preventDefault();
+          return;
+        }
+
+        if (compEl) {
+          var comp3 = c.components.find(function (x) { return x.id === compEl.dataset.compid; });
+          if (!comp3) return;
+          ui.selectedId = comp3.id;
+          dragInfo = { compId: comp3.id, mode: "move", startClientX: evt.clientX, startClientY: evt.clientY, orig: { x: comp3.x, y: comp3.y } };
+          try { zoneEl.setPointerCapture(evt.pointerId); } catch (e) {}
+          updateSelectionVisuals(); renderProps();
+          return;
+        }
+
+        ui.selectedId = null;
+        updateSelectionVisuals(); renderProps();
+      };
+
+      zoneEl.onpointermove = function (evt) {
+        if (!dragInfo) return;
+        var comp = c.components.find(function (x) { return x.id === dragInfo.compId; });
+        if (!comp) return;
+        var dx = evt.clientX - dragInfo.startClientX, dy = evt.clientY - dragInfo.startClientY;
+        if (dragInfo.mode === "move") {
+          comp.x = Math.round(dragInfo.orig.x + dx);
+          comp.y = Math.round(dragInfo.orig.y + dy);
+        } else if (dragInfo.mode === "resize") {
+          comp.w = Math.max(16, Math.round(dragInfo.orig.w + dx));
+          comp.h = Math.max(16, Math.round(dragInfo.orig.h + dy));
+        } else if (dragInfo.mode === "rotate") {
+          var a = Math.atan2(evt.clientY - dragInfo.centerClientY, evt.clientX - dragInfo.centerClientX) * 180 / Math.PI;
+          comp.rot = ((Math.round(a + 90) % 360) + 360) % 360;
+        }
+        redrawWrapOnly(comp);
+      };
+
+      function endDrag(evt) {
+        if (!dragInfo) return;
+        try { zoneEl.releasePointerCapture(evt.pointerId); } catch (e) {}
+        dragInfo = null;
+        afterEdit(false);
+        renderProps();
+      }
+      zoneEl.onpointerup = endDrag;
+      zoneEl.onpointercancel = endDrag;
+    });
+
+    var toolBtnClass = eid("ToolBtn");
+    Array.prototype.forEach.call(document.querySelectorAll("." + toolBtnClass), function (btn) {
+      btn.onclick = function () {
+        ui.tool = btn.dataset.tool;
+        setActiveToolBtn();
+        if (ui.tool !== "select") { ui.selectedId = null; updateSelectionVisuals(); renderProps(); }
+      };
+    });
+  }
+
+  function renderProps() {
+    if (!propsPanel) return;
+    var comp = selectedComp();
+    if (!comp) { propsPanel.innerHTML = '<p style="font-size:11px;color:var(--text-dim)">Select a placed component, or choose one from the palette above to place a new one.</p>'; return; }
+    var meta = CTP_COMPONENT_TYPES[comp.type] || {};
+    var html = '<div style="font-size:11.5px;font-weight:700;color:var(--text-dim);margin-bottom:6px">' + (meta.icon || "") + ' ' + esc(meta.label || comp.type) + '</div>';
+    html += '<label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:8px">Name<input type="text" id="' + eid("PropName") + '" value="' + esc(comp.name || "") + '" /></label>';
+    html += '<label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:8px">Section<select id="' + eid("PropZone") + '"><option value="upper"' + (comp.zone === "upper" ? " selected" : "") + '>Wall (upper)</option><option value="lower"' + (comp.zone === "lower" ? " selected" : "") + '>Desk (lower)</option></select></label>';
+    html += '<div style="display:flex;gap:6px;margin-bottom:8px">' +
+      '<label style="font-size:11px;color:var(--text-dim);flex:1">X<input type="number" id="' + eid("PropX") + '" value="' + Math.round(comp.x) + '" /></label>' +
+      '<label style="font-size:11px;color:var(--text-dim);flex:1">Y<input type="number" id="' + eid("PropY") + '" value="' + Math.round(comp.y) + '" /></label>' +
+    '</div>';
+    html += '<div style="display:flex;gap:6px;margin-bottom:8px">' +
+      '<label style="font-size:11px;color:var(--text-dim);flex:1">Width<input type="number" id="' + eid("PropW") + '" min="8" value="' + Math.round(comp.w) + '" /></label>' +
+      '<label style="font-size:11px;color:var(--text-dim);flex:1">Height<input type="number" id="' + eid("PropH") + '" min="8" value="' + Math.round(comp.h) + '" /></label>' +
+      '<label style="font-size:11px;color:var(--text-dim);flex:1">Rotation°<input type="number" id="' + eid("PropRot") + '" value="' + Math.round(comp.rot || 0) + '" /></label>' +
+    '</div>';
+    html += buildCtpTypeFields(comp, eid, c.components);
+    html += '<button type="button" class="small-btn" style="color:var(--danger);margin-top:8px" id="' + eid("PropDelete") + '">Remove this component</button>';
+    propsPanel.innerHTML = html;
+    wirePropsFields(comp);
+  }
+
+  function wirePropsFields(comp) {
+    var byId = function (id) { return document.getElementById(id); };
+    if (byId(eid("PropName"))) {
+      byId(eid("PropName")).oninput = function (e) { comp.name = e.target.value; };
+      byId(eid("PropName")).onblur = function () { afterEdit(false); renderInspector(); };
+    }
+    if (byId(eid("PropZone"))) byId(eid("PropZone")).onchange = function (e) { comp.zone = e.target.value; afterEdit(false); redraw(); renderProps(); };
+    [["PropX", "x"], ["PropY", "y"], ["PropW", "w"], ["PropH", "h"], ["PropRot", "rot"]].forEach(function (pair) {
+      var el = byId(eid(pair[0]));
+      if (!el) return;
+      var key = pair[1];
+      el.oninput = function (e) {
+        var v = parseFloat(e.target.value);
+        if (!isFinite(v)) return;
+        if (key === "w" || key === "h") v = Math.max(8, v);
+        comp[key] = v;
+        redrawWrapOnly(comp);
+      };
+      el.onblur = function () { afterEdit(false); };
+    });
+    if (byId(eid("PropDelete"))) byId(eid("PropDelete")).onclick = function () {
+      c.components = c.components.filter(function (x) { return x.id !== comp.id; });
+      if (ui.selectedId === comp.id) ui.selectedId = null;
+      afterEdit(false); redraw(); renderProps(); renderInspector();
+    };
+    wireCtpTypeFields(comp);
+  }
+
+  function wireCtpTypeFields(comp) {
+    var byId = function (id) { return document.getElementById(id); };
+    var d = comp.data;
+    function bindLive(el, setter) { if (!el) return; el.oninput = function (e) { setter(e.target.value); redraw(); }; el.onblur = function () { afterEdit(false); }; }
+    function bindNumLive(el, setter) { if (!el) return; el.oninput = function (e) { var v = parseFloat(e.target.value); if (isFinite(v)) { setter(v); redraw(); } }; el.onblur = function () { afterEdit(false); }; }
+    function bindChangeRerender(el, setter) { if (!el) return; el.onchange = function (e) { setter(e.target.value); afterEdit(false); renderProps(); redraw(); }; }
+    function bindColorLive(el, setter) { if (!el) return; el.oninput = function (e) { setter(e.target.value); redraw(); }; el.onchange = function () { afterEdit(false); }; }
+
+    switch (comp.type) {
+      case "vSwitch": case "hSwitch":
+        bindLive(byId(eid("DOnLabel")), function (v) { d.onLabel = v; });
+        bindLive(byId(eid("DOffLabel")), function (v) { d.offLabel = v; });
+        bindChangeRerender(byId(eid("DOn")), function (v) { d.on = v === "1"; });
+        break;
+      case "pushButton":
+        bindChangeRerender(byId(eid("DSkin")), function (v) { d.skin = v; });
+        bindChangeRerender(byId(eid("DOn")), function (v) { d.on = v === "1"; });
+        break;
+      case "vSlider": case "hSlider":
+        bindNumLive(byId(eid("DMin")), function (v) { d.min = v; });
+        bindNumLive(byId(eid("DMax")), function (v) { d.max = v; });
+        bindNumLive(byId(eid("DStep")), function (v) { d.step = v; });
+        bindNumLive(byId(eid("DValue")), function (v) { d.value = v; });
+        break;
+      case "knob180Num": case "knob270Num": case "knob180Named": case "knob270Named":
+        if (byId(eid("DPoints"))) byId(eid("DPoints")).onchange = function (e) {
+          var pts = Math.max(2, Math.min(24, parseInt(e.target.value, 10) || 5));
+          d.points = pts;
+          if (d.names) { while (d.names.length < pts) d.names.push(String(d.names.length + 1)); d.names.length = pts; }
+          if (d.value >= pts) d.value = pts - 1;
+          afterEdit(false); renderProps(); redraw();
+        };
+        bindChangeRerender(byId(eid("DValue")), function (v) { d.value = parseInt(v, 10) || 0; });
+        Array.prototype.forEach.call(document.querySelectorAll("." + eid("NameInput")), function (inp) {
+          inp.oninput = function (e) { d.names[+inp.dataset.idx] = e.target.value; redraw(); };
+          inp.onblur = function () { afterEdit(false); renderProps(); };
+        });
+        break;
+      case "knobFull":
+        bindNumLive(byId(eid("DValue")), function (v) { d.value = ((v % 360) + 360) % 360; });
+        if (byId(eid("DShowIntervals"))) byId(eid("DShowIntervals")).onchange = function (e) { d.showIntervals = e.target.value === "1"; afterEdit(false); renderProps(); redraw(); };
+        bindNumLive(byId(eid("DIntervalCount")), function (v) { d.intervalCount = Math.max(2, Math.min(36, v)); });
+        break;
+      case "light":
+        bindChangeRerender(byId(eid("DStyle")), function (v) { d.style = v; });
+        bindColorLive(byId(eid("DColor")), function (v) { d.color = v; });
+        bindChangeRerender(byId(eid("DDefaultOn")), function (v) { d.defaultOn = v === "1"; });
+        wireCtpRulesEditor(comp, eid, "on", c);
+        break;
+      case "gauge":
+        bindNumLive(byId(eid("DMin")), function (v) { d.min = v; });
+        bindNumLive(byId(eid("DMax")), function (v) { d.max = v; });
+        bindNumLive(byId(eid("DDefaultValue")), function (v) { d.defaultValue = v; });
+        wireCtpRulesEditor(comp, eid, "value", c);
+        break;
+      case "digitalDisplay":
+        bindLive(byId(eid("DDefaultText")), function (v) { d.defaultText = v; });
+        wireCtpRulesEditor(comp, eid, "text", c);
+        break;
+      case "image": case "gif":
+        if (byId(eid("DUploadBtn"))) byId(eid("DUploadBtn")).onclick = function () { byId(eid("DFile")).click(); };
+        if (byId(eid("DFile"))) byId(eid("DFile")).onchange = function (e) {
+          var file = e.target.files && e.target.files[0];
+          if (!file) return;
+          readImageFileCompressed(file, function (dataUrl) {
+            if (!dataUrl) { toast("Couldn't read that file."); return; }
+            d.src = dataUrl; afterEdit(false); renderProps(); redraw();
+          });
+        };
+        if (byId(eid("DClearBtn"))) byId(eid("DClearBtn")).onclick = function () { d.src = ""; afterEdit(false); renderProps(); redraw(); };
+        bindChangeRerender(byId(eid("DFit")), function (v) { d.fit = v; });
+        break;
+      case "label":
+        bindLive(byId(eid("DText")), function (v) { d.text = v; });
+        bindNumLive(byId(eid("DFontSize")), function (v) { d.fontSize = v; });
+        bindColorLive(byId(eid("DColor")), function (v) { d.color = v; });
+        bindChangeRerender(byId(eid("DAlign")), function (v) { d.align = v; });
+        break;
+      case "shape":
+        bindChangeRerender(byId(eid("DShapeType")), function (v) { d.shapeType = v; });
+        bindColorLive(byId(eid("DColor")), function (v) { d.color = v; });
+        bindColorLive(byId(eid("DFill")), function (v) { d.fill = v; });
+        bindNumLive(byId(eid("DStrokeWidth")), function (v) { d.strokeWidth = v; });
+        break;
+    }
+  }
+
+  redraw();
+  renderProps();
+}
+
+// Control Panel Builder — the full-screen counterpart of the inline board
+// designer, opened from a Control Panel node's inspector ("⛶ Open in Larger
+// Pane"), mirroring openGearPulleyBuilder's overlay. No separate save/
+// discard step — the inline designer already writes straight into
+// n.content on every edit, and this overlay is wired against that same
+// content via wireControlPanelDesigner(n, "ctpb"); Done just closes it and
+// refreshes the inspector.
+var ControlPanelBuilder = { nodeId: null };
+
+function openControlPanelBuilder(nodeId) {
+  var n = Store.getNode(nodeId);
+  if (!n || n.type !== "controlPanel") return;
+  ControlPanelBuilder.nodeId = nodeId;
+  document.getElementById("ctpbTitle").textContent = "Control Panel Builder — " + n.title;
+  document.getElementById("controlPanelBuilderOverlay").classList.remove("hidden");
+  renderControlPanelBuilderOverlay();
+}
+
+function closeControlPanelBuilder() {
+  document.getElementById("controlPanelBuilderOverlay").classList.add("hidden");
+  ControlPanelBuilder.nodeId = null;
+  renderInspector();
+}
+
+function renderControlPanelBuilderOverlay() {
+  var n = Store.getNode(ControlPanelBuilder.nodeId);
+  if (!n) return;
+  var body = document.getElementById("ctpbBody");
+  if (body) body.innerHTML = buildCtpDesignerMarkup("ctpb");
+  wireControlPanelDesigner(n, "ctpb");
+}
+
 function wireNodeInspector(n) {
   var byId = function (id) { return document.getElementById(id); };
   if (byId("fTitle")) {
@@ -4025,6 +4739,34 @@ function wireNodeInspector(n) {
         btn.onclick = function () { c.decoyTeeth.splice(+btn.dataset.idx, 1); afterEdit(false); renderInspector(); };
       });
       if (byId("gpBtnAddDecoy")) byId("gpBtnAddDecoy").onclick = function () { c.decoyTeeth.push(GP_TEETH_DEFAULT); afterEdit(false); renderInspector(); };
+      break;
+    case "controlPanel":
+      bindText("fPrompt", "prompt");
+      c.board = c.board || { width: 640, upperHeight: 220, lowerHeight: 260 };
+      c.components = c.components || [];
+      c.winConditions = c.winConditions || [];
+      if (byId("fCtpBoardWidth")) {
+        byId("fCtpBoardWidth").oninput = function (e) { var v = parseInt(e.target.value, 10); if (isFinite(v)) c.board.width = Math.max(CTP_BOARD_MIN_W, Math.min(CTP_BOARD_MAX_W, v)); };
+        byId("fCtpBoardWidth").onblur = function () { afterEdit(false); renderInspector(); };
+      }
+      if (byId("fCtpUpperHeight")) {
+        byId("fCtpUpperHeight").oninput = function (e) { var v = parseInt(e.target.value, 10); if (isFinite(v)) c.board.upperHeight = Math.max(0, Math.min(CTP_ZONE_MAX_H, v)); };
+        byId("fCtpUpperHeight").onblur = function () { afterEdit(false); renderInspector(); };
+      }
+      if (byId("fCtpLowerHeight")) {
+        byId("fCtpLowerHeight").oninput = function (e) { var v = parseInt(e.target.value, 10); if (isFinite(v)) c.board.lowerHeight = Math.max(0, Math.min(CTP_ZONE_MAX_H, v)); };
+        byId("fCtpLowerHeight").onblur = function () { afterEdit(false); renderInspector(); };
+      }
+      wireCtpWinConditions(n);
+      wireControlPanelDesigner(n);
+      if (byId("btnOpenControlPanelBuilder")) byId("btnOpenControlPanelBuilder").onclick = function () { openControlPanelBuilder(n.id); };
+      if (byId("ctpBuilderDetails")) byId("ctpBuilderDetails").addEventListener("toggle", function (e) { ctpUiState(n).expanded = e.target.open; });
+      if (byId("ctpBtnClear")) byId("ctpBtnClear").onclick = function () {
+        if (!confirm("Remove every component from this board?")) return;
+        c.components = [];
+        ctpUiState(n).selectedId = null;
+        afterEdit(false); renderInspector();
+      };
       break;
     case "categoryGrid":
       bindText("fBody", "body");
@@ -6002,6 +6744,7 @@ function init() {
 
   document.getElementById("lbBtnDone").onclick = closeLumenBuilder;
   document.getElementById("gpbBtnDone").onclick = closeGearPulleyBuilder;
+  document.getElementById("ctpbBtnDone").onclick = closeControlPanelBuilder;
 
   // Library screen controls
   document.getElementById("btnNewHunt").onclick = createNewHuntAndOpen;

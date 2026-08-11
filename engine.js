@@ -853,6 +853,50 @@ var NODE_TYPES = {
     defaultTitle: "Location (stub)",
     defaultContent: function () { return { placeholderNote: "Location/GPS logic is out of scope for this Phase 1 prototype. This node is a structural stub only.", showBackButton: false }; },
     summary: function () { return "GPS/map out of scope — stub only"; }
+  },
+  controlPanel: {
+    family: "puzzle", label: "Control Panel Builder", icon: "🎛️",
+    defaultTitle: "New Control Panel",
+    // A freeform hardware-panel puzzle: the creator places any number of
+    // interactive components (switches, sliders, rotary knobs, push
+    // buttons), conditional readouts (lights, gauges, digital displays)
+    // and static dressing (images/GIFs, editable labels, shapes) onto a
+    // two-tier board — an upper "wall" section and a lower "desk" section,
+    // either of which can be set to 0 height to use just one (see
+    // content.board/content.components below). Every component is freely
+    // positioned, sized and rotated. Conditional components don't have
+    // their own interaction: each carries a small ordered list of rules
+    // (content.components[i].data.rules), evaluated top to bottom against
+    // the live values of the panel's interactive components, first match
+    // wins — same "component + operator + value" shape as Lumen Puzzle's
+    // target conditions (see CTP_OP_LABELS/ctpEvalRules below), just
+    // scoped to this node's own components instead of the hex grid. The
+    // panel as a whole is solved when every entry in content.winConditions
+    // is satisfied simultaneously (auto-validates on every interaction,
+    // same "no submit button" family as Fuse Panel/Lumen Puzzle/Gear &
+    // Pulley — see pv_action_submitControlPanel below). The creator builds
+    // the board in the inspector-embedded designer (buildTypeSpecificFields/
+    // wireNodeInspector's "controlPanel" case in app.js), and the exact
+    // same widget markup (ctpComponentInnerHtml) and condition evaluator
+    // (ctpEvalRules/ctpWinConditionsMet) drive both that design-time board
+    // and the real player screen (see the "controlPanel" branch in
+    // renderPreviewNode and wireControlPanelInteractions, below) — one
+    // shared implementation of the visuals and logic, not two.
+    defaultContent: function () {
+      return {
+        prompt: "Set the controls to bring the panel online.",
+        board: { width: 640, upperHeight: 220, lowerHeight: 260 },
+        components: [],
+        winConditions: [],
+        showBackButton: false
+      };
+    },
+    summary: function (c) {
+      var comps = c.components || [];
+      var interactiveCount = comps.filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; }).length;
+      var outputCount = comps.filter(function (x) { return ctpComponentKind(x.type) === "output"; }).length;
+      return comps.length + " component(s) — " + interactiveCount + " interactive, " + outputCount + " readout(s), " + (c.winConditions || []).length + " win condition(s)";
+    }
   }
 };
 
@@ -1952,6 +1996,325 @@ function pv_action_submitGearPulley(session, nodeId, driveConnected) {
   return ok;
 }
 
+// Control Panel Builder — shared component-type metadata, condition
+// evaluation and widget-rendering helpers, used identically by the
+// Studio-embedded board designer (wireControlPanelDesigner in app.js) and
+// the real player screen (the "controlPanel" branch of renderPreviewNode/
+// wireControlPanelInteractions below) — see the doc comment above
+// NODE_TYPES.controlPanel for the overall shape.
+//
+// Every placed component is { id, type, name, zone, x, y, w, h, rot, data }
+// where type/data vary per CTP_COMPONENT_TYPES entry below: `kind` says
+// what a component's live value looks like — "boolean" (switches, push
+// buttons), "index" (numbered/named rotary knobs — an integer 0..points-1),
+// "numeric" (sliders, the full-rotation knob — degrees 0-359), "output"
+// (lights/gauges/digital displays — driven by rules, never by the player
+// directly) or "static" (images/GIFs/labels/shapes — decorative only).
+var CTP_COMPONENT_TYPES = {
+  vSwitch:        { group: "interactive", label: "Vertical Switch",        icon: "🔀", kind: "boolean", defaultW: 40,  defaultH: 90 },
+  hSwitch:        { group: "interactive", label: "Horizontal Switch",      icon: "🔀", kind: "boolean", defaultW: 90,  defaultH: 40 },
+  pushButton:     { group: "interactive", label: "Push Button",            icon: "🔴", kind: "boolean", defaultW: 56,  defaultH: 56 },
+  vSlider:        { group: "interactive", label: "Vertical Slider",        icon: "🎚️", kind: "numeric", defaultW: 46,  defaultH: 150 },
+  hSlider:        { group: "interactive", label: "Horizontal Slider",      icon: "🎚️", kind: "numeric", defaultW: 150, defaultH: 46 },
+  knob180Num:     { group: "interactive", label: "180° Knob (Numbered)",   icon: "🎛️", kind: "index",   defaultW: 74,  defaultH: 74 },
+  knob270Num:     { group: "interactive", label: "270° Knob (Numbered)",   icon: "🎛️", kind: "index",   defaultW: 80,  defaultH: 80 },
+  knob180Named:   { group: "interactive", label: "180° Knob (Named)",      icon: "🎛️", kind: "index",   defaultW: 86,  defaultH: 86 },
+  knob270Named:   { group: "interactive", label: "270° Knob (Named)",      icon: "🎛️", kind: "index",   defaultW: 92,  defaultH: 92 },
+  knobFull:       { group: "interactive", label: "Full Rotation Knob",     icon: "🎡", kind: "numeric", defaultW: 74,  defaultH: 74 },
+  light:          { group: "conditional", label: "Light",                  icon: "💡", kind: "output",  defaultW: 30,  defaultH: 30 },
+  gauge:          { group: "conditional", label: "Gauge",                  icon: "📊", kind: "output",  defaultW: 96,  defaultH: 96 },
+  digitalDisplay: { group: "conditional", label: "Digital Number Display", icon: "🔢", kind: "output",  defaultW: 96,  defaultH: 40 },
+  image:          { group: "static", label: "Image",          icon: "🖼️", kind: "static", defaultW: 120, defaultH: 90 },
+  gif:            { group: "static", label: "GIF",             icon: "🎞️", kind: "static", defaultW: 120, defaultH: 90 },
+  label:          { group: "static", label: "Editable Label",  icon: "🏷️", kind: "static", defaultW: 110, defaultH: 26 },
+  shape:          { group: "static", label: "Shape / Divider", icon: "▭",  kind: "static", defaultW: 120, defaultH: 8 }
+};
+var CTP_GROUP_LABELS = { interactive: "Interactive", conditional: "Conditional", static: "Static / Look & Feel" };
+var CTP_PUSHBUTTON_SKINS = { arcade: "Arcade (round)", toggle: "Toggle (square)", industrial: "Industrial (guarded)" };
+var CTP_LIGHT_STYLES = { round: "Round bulb", square: "Square LED", strip: "LED strip" };
+var CTP_OP_LABELS = { on: "Is ON", off: "Is OFF", equals: "Equals", atleast: "At least", atmost: "At most", between: "Between" };
+var CTP_BOARD_MIN_W = 320, CTP_BOARD_MAX_W = 1400, CTP_ZONE_MAX_H = 600;
+
+function ctpComponentKind(type) { return (CTP_COMPONENT_TYPES[type] || {}).kind || "static"; }
+function ctpKnobArc(type) { return type.indexOf("270") !== -1 ? 270 : (type === "knobFull" ? 360 : 180); }
+function ctpIsNamedKnob(type) { return type.indexOf("Named") !== -1; }
+
+// Operators a win/rule condition can offer, based on what kind of live
+// value the referenced component produces.
+function ctpOpsForKind(kind) {
+  if (kind === "boolean") return ["on", "off"];
+  if (kind === "index") return ["equals"];
+  if (kind === "numeric") return ["equals", "atleast", "atmost", "between"];
+  return ["on", "off", "equals", "atleast", "atmost", "between"];
+}
+
+function ctpDefaultComponentData(type) {
+  switch (type) {
+    case "vSwitch": case "hSwitch": return { on: false, onLabel: "ON", offLabel: "OFF" };
+    case "pushButton": return { on: false, skin: "arcade" };
+    case "vSlider": case "hSlider": return { min: 0, max: 10, step: 1, value: 0 };
+    case "knob180Num": case "knob270Num": return { points: 5, value: 0 };
+    case "knob180Named": case "knob270Named": return { points: 5, names: ["1", "2", "3", "4", "5"], value: 0 };
+    case "knobFull": return { value: 0, showIntervals: false, intervalCount: 12 };
+    case "light": return { style: "round", color: "#ff453a", rules: [], defaultOn: false };
+    case "gauge": return { min: 0, max: 100, rules: [], defaultValue: 0 };
+    case "digitalDisplay": return { digits: 4, rules: [], defaultText: "----" };
+    case "image": return { src: "", fit: "contain" };
+    case "gif": return { src: "" };
+    case "label": return { text: "Label", fontSize: 14, color: "#e8e8e8", align: "center" };
+    case "shape": return { shapeType: "rect", color: "#5a5f68", fill: "transparent", strokeWidth: 2 };
+    default: return {};
+  }
+}
+
+// A new placed instance of `type`, ready to push into content.components.
+function ctpNewComponent(type, zone, x, y) {
+  var meta = CTP_COMPONENT_TYPES[type] || { defaultW: 60, defaultH: 60, label: type };
+  return {
+    id: uid("ctpc"), type: type, name: meta.label, zone: zone || "upper",
+    x: Math.round(x || 0), y: Math.round(y || 0), w: meta.defaultW, h: meta.defaultH, rot: 0,
+    data: ctpDefaultComponentData(type)
+  };
+}
+
+// The player's *current* value for an interactive component — boolean
+// components as 0/1, indexed knobs as their point index, numeric
+// components (sliders, the full-rotation knob) as their raw number. `data`
+// is whatever live per-instance state is being tracked (either the
+// component's own saved `data` at design-time, or a session draft value at
+// player-time), always the same shape as ctpDefaultComponentData's output.
+function ctpLiveValue(type, data) {
+  var d = data || {};
+  switch (type) {
+    case "vSwitch": case "hSwitch": case "pushButton": return d.on ? 1 : 0;
+    default: return Number(d.value) || 0;
+  }
+}
+
+function ctpDefaultValuesById(content) {
+  var out = {};
+  (content.components || []).forEach(function (comp) {
+    var kind = ctpComponentKind(comp.type);
+    if (kind === "boolean" || kind === "index" || kind === "numeric") out[comp.id] = ctpLiveValue(comp.type, comp.data);
+  });
+  return out;
+}
+
+function ctpEvalSingleCondition(cond, valuesById) {
+  var v = valuesById ? valuesById[cond.componentId] : undefined;
+  if (v === undefined || v === null) return false;
+  switch (cond.op) {
+    case "on": return Number(v) === 1;
+    case "off": return Number(v) === 0;
+    case "equals": return Number(v) === Number(cond.value);
+    case "atleast": return Number(v) >= Number(cond.value);
+    case "atmost": return Number(v) <= Number(cond.value);
+    case "between": return Number(v) >= Number(cond.min) && Number(v) <= Number(cond.max);
+    default: return false;
+  }
+}
+function ctpConditionsAllMet(conditions, valuesById) {
+  return !!(conditions && conditions.length) && conditions.every(function (cond) { return ctpEvalSingleCondition(cond, valuesById); });
+}
+// First rule (in order) whose conditions are all met wins — returns that
+// rule's `output`, or null if nothing matched (caller falls back to the
+// component's own default* field).
+function ctpEvalRules(rules, valuesById) {
+  for (var i = 0; i < (rules || []).length; i++) {
+    if (ctpConditionsAllMet(rules[i].conditions, valuesById)) return rules[i].output;
+  }
+  return null;
+}
+function ctpWinConditionsMet(winConditions, valuesById) {
+  return !!(winConditions && winConditions.length) && winConditions.every(function (wc) { return ctpEvalSingleCondition(wc, valuesById); });
+}
+
+// Resolves what a light/gauge/digital-display component should currently
+// show — runs its rule list against the panel's live component values,
+// falling back to its own default* field when no rule matches.
+function ctpComputeOutputs(content, valuesById) {
+  var out = {};
+  (content.components || []).forEach(function (comp) {
+    if (ctpComponentKind(comp.type) !== "output") return;
+    out[comp.id] = ctpEvalRules(comp.data.rules, valuesById) || {};
+  });
+  return out;
+}
+
+// The single number/boolean/string that should currently be shown on a
+// component, whichever kind it is — interactive components read straight
+// from valuesById (their own live state), output components resolve
+// through their rules (outputsById, from ctpComputeOutputs), static
+// components have nothing to resolve.
+function ctpResolvedValue(comp, valuesById, outputsById) {
+  var kind = ctpComponentKind(comp.type);
+  if (kind === "boolean" || kind === "index" || kind === "numeric") {
+    var v = valuesById ? valuesById[comp.id] : undefined;
+    return v != null ? v : ctpLiveValue(comp.type, comp.data);
+  }
+  if (comp.type === "light") {
+    var lo = outputsById && outputsById[comp.id];
+    return lo && lo.on != null ? !!lo.on : !!comp.data.defaultOn;
+  }
+  if (comp.type === "gauge") {
+    var go = outputsById && outputsById[comp.id];
+    return go && go.value != null ? Number(go.value) : (Number(comp.data.defaultValue) || 0);
+  }
+  if (comp.type === "digitalDisplay") {
+    var dop = outputsById && outputsById[comp.id];
+    return dop && dop.text != null ? String(dop.text) : (comp.data.defaultText || "----");
+  }
+  return null;
+}
+
+// Small pie-slice of tick marks (or named labels) fanned out around a
+// knob's arc — shared by the numbered/named rotary knobs and the optional
+// interval marks on the full-rotation knob. Each tick is rotated into
+// place then its label counter-rotated back upright.
+function ctpKnobTicks(points, arc, names) {
+  var html = "";
+  for (var i = 0; i < points; i++) {
+    var a = points > 1 ? (-arc / 2 + (arc / (points - 1)) * i) : 0;
+    var text = names ? esc(String(names[i] || "")) : String(i + 1);
+    html += '<div class="ctp-knob-tick" style="transform:rotate(' + a + 'deg)"><span style="transform:rotate(' + (-a) + 'deg)">' + text + '</span></div>';
+  }
+  return html;
+}
+
+// The visual markup for one component, given the value it should currently
+// display (see ctpResolvedValue). Identical for the design-time board and
+// the real player screen — only the wrapping element (with its
+// drag/resize/rotate handles in the designer, or its click/drag input
+// handlers at player-time) differs; see ctpComponentWrapStyle below and
+// wireControlPanelDesigner (app.js) / wireControlPanelInteractions (below).
+function ctpComponentInnerHtml(comp, val) {
+  var d = comp.data || {};
+  switch (comp.type) {
+    case "vSwitch": case "hSwitch": {
+      var on1 = !!val;
+      return '<div class="ctp-switch ctp-switch-' + (comp.type === "vSwitch" ? "v" : "h") + (on1 ? " on" : "") + '">' +
+        '<div class="ctp-switch-track"><div class="ctp-switch-knob"></div></div>' +
+        '<span class="ctp-switch-poslabel ctp-switch-poslabel-on">' + esc(d.onLabel || "ON") + '</span>' +
+        '<span class="ctp-switch-poslabel ctp-switch-poslabel-off">' + esc(d.offLabel || "OFF") + '</span>' +
+      '</div>';
+    }
+    case "pushButton": {
+      var on2 = !!val;
+      return '<div class="ctp-pushbtn ctp-pushbtn-' + (d.skin || "arcade") + (on2 ? " on" : "") + '"><div class="ctp-pushbtn-cap"></div></div>';
+    }
+    case "vSlider": case "hSlider": {
+      var min = Number(d.min) || 0, max = Number(d.max) || 10;
+      var value = Number(val != null ? val : d.value) || 0;
+      var pct = max > min ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0;
+      var vertical = comp.type === "vSlider";
+      return '<div class="ctp-slider ctp-slider-' + (vertical ? "v" : "h") + '">' +
+        '<div class="ctp-slider-track">' +
+          '<div class="ctp-slider-fill" style="' + (vertical ? "height:" + pct + "%" : "width:" + pct + "%") + '"></div>' +
+          '<div class="ctp-slider-thumb" style="' + (vertical ? "bottom:" + pct + "%" : "left:" + pct + "%") + '"></div>' +
+        '</div>' +
+        '<div class="ctp-slider-val">' + value + '</div>' +
+      '</div>';
+    }
+    case "knob180Num": case "knob270Num": case "knob180Named": case "knob270Named": {
+      var arc = ctpKnobArc(comp.type), named = ctpIsNamedKnob(comp.type);
+      var points = Math.max(2, Number(d.points) || 5);
+      var idx = Math.max(0, Math.min(points - 1, Math.round(Number(val != null ? val : d.value) || 0)));
+      var angle = points > 1 ? (-arc / 2 + (arc / (points - 1)) * idx) : 0;
+      var label = named ? esc(String((d.names || [])[idx] || "")) : String(idx + 1);
+      return '<div class="ctp-knob ctp-knob-detent">' +
+        '<div class="ctp-knob-ticks">' + ctpKnobTicks(points, arc, named ? d.names : null) + '</div>' +
+        '<div class="ctp-knob-body"><div class="ctp-knob-pointer" style="transform:rotate(' + angle + 'deg)"></div></div>' +
+        '<div class="ctp-knob-label">' + label + '</div>' +
+      '</div>';
+    }
+    case "knobFull": {
+      var fval = Number(val != null ? val : d.value) || 0;
+      return '<div class="ctp-knob ctp-knob-full">' +
+        (d.showIntervals ? '<div class="ctp-knob-ticks">' + ctpKnobTicks(Math.max(2, Number(d.intervalCount) || 12), 360, null) + '</div>' : '') +
+        '<div class="ctp-knob-body"><div class="ctp-knob-pointer" style="transform:rotate(' + fval + 'deg)"></div></div>' +
+      '</div>';
+    }
+    case "light": {
+      var lon = !!val;
+      return '<div class="ctp-light ctp-light-' + (d.style || "round") + (lon ? " on" : "") + '" style="' + (lon ? "--ctp-light-color:" + (d.color || "#ff453a") + ";" : "") + '"></div>';
+    }
+    case "gauge": {
+      var gmin = Number(d.min) || 0, gmax = Number(d.max) || 100;
+      var gval = val != null ? Number(val) : (Number(d.defaultValue) || 0);
+      var gpct = gmax > gmin ? Math.max(0, Math.min(1, (gval - gmin) / (gmax - gmin))) : 0;
+      var gAngle = -120 + gpct * 240;
+      return '<div class="ctp-gauge"><div class="ctp-gauge-face"><div class="ctp-gauge-needle" style="transform:rotate(' + gAngle + 'deg)"></div><div class="ctp-gauge-hub"></div></div><div class="ctp-gauge-val">' + Math.round(gval) + '</div></div>';
+    }
+    case "digitalDisplay": {
+      var text = val != null ? String(val) : (d.defaultText || "----");
+      return '<div class="ctp-digital"><span class="ctp-digital-text">' + esc(text) + '</span></div>';
+    }
+    case "image": case "gif":
+      return d.src ? '<img class="ctp-media" src="' + esc(d.src) + '" style="object-fit:' + esc(d.fit || "contain") + '" draggable="false" alt="" />' : '<div class="ctp-media ctp-media-empty">' + (comp.type === "gif" ? "🎞" : "🖼") + '</div>';
+    case "label":
+      return '<div class="ctp-label-text" style="font-size:' + (Number(d.fontSize) || 14) + 'px;color:' + esc(d.color || "#e8e8e8") + ';text-align:' + esc(d.align || "center") + '">' + esc(d.text || "") + '</div>';
+    case "shape":
+      if (d.shapeType === "line") return '<div class="ctp-shape-line" style="background:' + esc(d.color || "#5a5f68") + '"></div>';
+      return '<div class="ctp-shape-rect" style="border-width:' + (Number(d.strokeWidth) || 2) + 'px;border-color:' + esc(d.color || "#5a5f68") + ';background:' + esc(d.fill || "transparent") + '"></div>';
+    default:
+      return "";
+  }
+}
+
+function ctpComponentWrapStyle(comp) {
+  return "left:" + comp.x + "px;top:" + comp.y + "px;width:" + comp.w + "px;height:" + comp.h + "px;" + (comp.rot ? "transform:rotate(" + comp.rot + "deg);" : "");
+}
+
+function ctpRenderZoneComponents(comps, valuesById, outputsById, interactiveClass) {
+  return comps.map(function (comp) {
+    var kind = ctpComponentKind(comp.type);
+    var isInteractive = interactiveClass && (kind === "boolean" || kind === "index" || kind === "numeric");
+    return '<div class="ctp-comp ctp-comp-' + comp.type + (isInteractive ? " ctp-comp-interactive" : "") + '" data-compid="' + esc(comp.id) + '" data-comptype="' + comp.type + '" data-zone="' + esc(comp.zone) + '" style="' + ctpComponentWrapStyle(comp) + '" title="' + esc(comp.name || "") + '">' +
+      ctpComponentInnerHtml(comp, ctpResolvedValue(comp, valuesById, outputsById)) +
+    '</div>';
+  }).join("");
+}
+
+// Renders the whole two-tier board — an upper "wall" zone and a lower
+// "desk" zone, either collapsible to 0 height for a single-section panel
+// (see content.board). `interactive` marks components as player-clickable
+// (adds ctp-comp-interactive) — true at player-time while the node is
+// still open, false once solved or when just previewing the design.
+function ctpRenderBoard(content, valuesById, outputsById, interactive) {
+  var board = content.board || {};
+  var comps = content.components || [];
+  var upperH = Math.max(0, Number(board.upperHeight) || 0);
+  var lowerH = Math.max(0, Number(board.lowerHeight) || 0);
+  var width = Math.max(CTP_BOARD_MIN_W, Math.min(CTP_BOARD_MAX_W, Number(board.width) || 640));
+  var html = '<div class="ctp-board" style="width:' + width + 'px">';
+  if (upperH > 0) {
+    html += '<div class="ctp-zone ctp-zone-upper" data-zone="upper" style="height:' + upperH + 'px">' +
+      ctpRenderZoneComponents(comps.filter(function (x) { return x.zone === "upper"; }), valuesById, outputsById, interactive) +
+    '</div>';
+  }
+  if (lowerH > 0) {
+    html += '<div class="ctp-zone ctp-zone-lower" data-zone="lower" style="height:' + lowerH + 'px">' +
+      ctpRenderZoneComponents(comps.filter(function (x) { return x.zone === "lower"; }), valuesById, outputsById, interactive) +
+    '</div>';
+  }
+  if (upperH <= 0 && lowerH <= 0) html += '<div class="ctp-zone-empty-note">This panel has no height yet — set the wall and/or desk section height in the builder below.</div>';
+  html += '</div>';
+  return html;
+}
+
+// Control Panel Builder — auto-validates after every interaction (same
+// "auto-validate, no submit button" family as Fuse Panel/Lumen Puzzle/Gear
+// & Pulley), driven by wireControlPanelInteractions below, which only calls
+// this once every entry in content.winConditions is simultaneously met.
+function pv_action_submitControlPanel(session, nodeId, valuesById) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var mechanicOk = ctpWinConditionsMet(n.content.winConditions, valuesById);
+  var ok = nodeCompletionOk(n, session, mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+
 // Lock and Key — unlike the other puzzle types above, correctness here
 // isn't derived from the submitted value (there's no free-text or grid
 // state to check) — the caller (wireLockAndKeyInteractions below) already
@@ -1986,7 +2349,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey"];
+  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey", "controlPanel"];
 
 // Node types offering a generic, opt-in "← Back" button — every
 // PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
@@ -2002,7 +2365,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // Studio inspector field.
 var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
-  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction", "lockAndKey"];
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction", "lockAndKey", "controlPanel"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -2737,6 +3100,16 @@ function renderPreviewNode(session, n, ctl) {
     html += renderGearPulleyTray(n, ctl);
     var fbGp = session.state.feedback[n.id];
     if (fbGp === "correct") html += '<div class="pv-feedback correct">✓ Drive connected — it turns freely.</div>';
+  } else if (n.type === "controlPanel") {
+    ctl.controlPanelDraft = ctl.controlPanelDraft || {};
+    if (!ctl.controlPanelDraft[n.id]) ctl.controlPanelDraft[n.id] = ctpDefaultValuesById(c);
+    var ctpValues = ctl.controlPanelDraft[n.id];
+    var ctpOutputs = ctpComputeOutputs(c, ctpValues);
+    var ctpLocked = !!session.state.completed[n.id];
+    if (c.prompt) html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += '<div class="pv-ctp-wrap' + (ctpLocked ? ' locked' : '') + '" data-node="' + esc(n.id) + '">' + ctpRenderBoard(c, ctpValues, ctpOutputs, !ctpLocked) + '</div>';
+    var fbCtp = session.state.feedback[n.id];
+    if (fbCtp === "correct") html += '<div class="pv-feedback correct">✓ Panel set correctly.</div>';
   } else if (n.type === "categoryGrid") {
     if (!ctl.categoryGridDraft[n.id]) {
       ctl.categoryGridDraft[n.id] = { cells: [null, null, null, null, null, null, null, null, null], gallery: (c.images || []).map(function (im) { return im.id; }), selected: null };
@@ -5325,6 +5698,110 @@ function lumenDrawReadOnly(ctl, n) {
   if (summaryEl) summaryEl.textContent = (level.targets || []).length + " of " + (level.targets || []).length + " target(s) solved";
 }
 
+// Control Panel Builder — player-side interaction wiring: click toggles a
+// switch/push button, drag sets a slider or rotates a knob. Every
+// interaction recomputes conditional components' outputs (lights/gauges/
+// digital displays) and re-renders just the affected `[data-compid]`
+// elements' inner markup in place (see redraw below) rather than a full
+// ctl.render(), the same "cheap live redraw, full re-render only on
+// completion" shape as wireLumenPuzzleInteractions' canvas redraw — a full
+// re-render mid-drag would tear down the very element capturing the
+// pointer. Only calls pv_action_submitControlPanel once every win
+// condition is simultaneously met (never with a false mechanicOk), same as
+// wireGearPulleyInteractions' `if (sv.solved)` gate.
+function wireControlPanelInteractions(root, ctl, session, n) {
+  var wrap = root.querySelector('.pv-ctp-wrap[data-node="' + n.id + '"]');
+  if (!wrap) return;
+  var c = n.content;
+  ctl.controlPanelDraft = ctl.controlPanelDraft || {};
+  var values = ctl.controlPanelDraft[n.id];
+  if (!values) return;
+  var locked = !!session.state.completed[n.id];
+  if (locked) return; // read-only — the markup rendered above already reflects final state
+
+  function compById(id) { return (c.components || []).find(function (x) { return x.id === id; }); }
+
+  function redraw() {
+    var outputs = ctpComputeOutputs(c, values);
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-compid]"), function (el) {
+      var comp = compById(el.dataset.compid);
+      if (!comp) return;
+      el.innerHTML = ctpComponentInnerHtml(comp, ctpResolvedValue(comp, values, outputs));
+    });
+    if (!locked && ctpWinConditionsMet(c.winConditions, values)) {
+      var ok = pv_action_submitControlPanel(session, n.id, values);
+      if (ok) {
+        locked = true;
+        setTimeout(function () { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; ctl.render(); }, 700);
+      }
+    }
+  }
+
+  Array.prototype.forEach.call(wrap.querySelectorAll(".ctp-comp-interactive"), function (el) {
+    var comp = compById(el.dataset.compid);
+    if (!comp) return;
+    var kind = ctpComponentKind(comp.type);
+
+    if (kind === "boolean") {
+      var toggle = function () { values[comp.id] = values[comp.id] ? 0 : 1; redraw(); };
+      el.tabIndex = 0;
+      el.setAttribute("role", "switch");
+      el.onclick = toggle;
+      el.onkeydown = function (e) { if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); toggle(); } };
+      return;
+    }
+
+    if (comp.type === "vSlider" || comp.type === "hSlider") {
+      var min = Number(comp.data.min) || 0, max = Number(comp.data.max) || 10, step = Number(comp.data.step) || 1;
+      var vertical = comp.type === "vSlider";
+      var dragging = false;
+      var setFromEvent = function (evt) {
+        var rect = el.getBoundingClientRect();
+        var pct = vertical ? 1 - (evt.clientY - rect.top) / rect.height : (evt.clientX - rect.left) / rect.width;
+        pct = Math.max(0, Math.min(1, pct));
+        var raw = min + pct * (max - min);
+        var stepped = step > 0 ? Math.round(raw / step) * step : raw;
+        values[comp.id] = Math.max(min, Math.min(max, stepped));
+        redraw();
+      };
+      el.onpointerdown = function (evt) { dragging = true; try { el.setPointerCapture(evt.pointerId); } catch (e) {} setFromEvent(evt); };
+      el.onpointermove = function (evt) { if (dragging) setFromEvent(evt); };
+      el.onpointerup = function () { dragging = false; };
+      el.onpointercancel = function () { dragging = false; };
+      return;
+    }
+
+    // Rotary knobs — indexed (snap to one of N points over the knob's arc)
+    // or continuous (the full-rotation knob, 0-359°).
+    var isFull = comp.type === "knobFull";
+    var arc = ctpKnobArc(comp.type);
+    var points = isFull ? null : Math.max(2, Number(comp.data.points) || 5);
+    var dragging2 = false;
+    var angleFromEvent = function (evt) {
+      var rect = el.getBoundingClientRect();
+      var cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+      return Math.atan2(evt.clientX - cx, -(evt.clientY - cy)) * 180 / Math.PI; // 0° = up, clockwise positive
+    };
+    var setFromEvent2 = function (evt) {
+      var a = angleFromEvent(evt);
+      if (isFull) {
+        values[comp.id] = ((a % 360) + 360) % 360;
+      } else {
+        a = Math.max(-arc / 2, Math.min(arc / 2, a));
+        var idx = points > 1 ? Math.round((a + arc / 2) / (arc / (points - 1))) : 0;
+        values[comp.id] = Math.max(0, Math.min(points - 1, idx));
+      }
+      redraw();
+    };
+    el.onpointerdown = function (evt) { dragging2 = true; try { el.setPointerCapture(evt.pointerId); } catch (e) {} setFromEvent2(evt); };
+    el.onpointermove = function (evt) { if (dragging2) setFromEvent2(evt); };
+    el.onpointerup = function () { dragging2 = false; };
+    el.onpointercancel = function () { dragging2 = false; };
+  });
+
+  redraw();
+}
+
 function wirePreviewNodeInteractions(session, n, ctl) {
   if (!n) return;
   var root = ctl.mainEl;
@@ -5407,6 +5884,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireRopeTyingInteractions(root, ctl, session, n);
   wireLumenPuzzleInteractions(root, ctl, session, n);
   wireGearPulleyInteractions(root, ctl, session, n);
+  wireControlPanelInteractions(root, ctl, session, n);
   wireCategoryGridInteractions(root, ctl, session, n);
   wireConstraintSatisfactionInteractions(root, ctl, session, n);
   wireCellPhoneInteractions(root, ctl, session, n);
@@ -5535,6 +6013,7 @@ function createPreviewController(mainEl, sideEl) {
     lumenDraft: {}, lumenGeom: {}, // lumenDraft: node id -> live {sources,pieces,targets,walls,cards} the player rotates; lumenGeom: node id -> memoized hex geometry (see wireLumenPuzzleInteractions)
     categoryGridDraft: {}, categoryGridReveal: {}, // categoryGridDraft: node id -> live {cells[9], gallery[], selected}; categoryGridReveal: node id -> {phase:"rows"|"cols", cellIds, names} while the completion graphic plays (see wireCategoryGridInteractions)
     gearDraft: {}, // node id -> live {tiles:[{id,teeth}], placements: axleId -> tileId, selectedTileId} (see gpInitDraft/wireGearPulleyInteractions)
+    controlPanelDraft: {}, // node id -> live componentId -> current value (boolean 0/1, knob point index, or numeric) for every interactive component (see ctpDefaultValuesById/wireControlPanelInteractions)
     cspDraft: {}, // node id -> live {mode:"info"|"answer", alloc: recipientId -> itemId -> count} (see renderPreviewNode's "constraintSatisfaction" branch / wireConstraintSatisfactionInteractions)
     pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
     phoneNav: {}, // node id -> Cell Phone screen-stack/dial/focus state (see cpNav above and wireCellPhoneInteractions below) — volatile like every other *Draft map here, never persisted to session.state
@@ -5775,6 +6254,7 @@ return {
   pv_action_submitRopeTying: pv_action_submitRopeTying,
   pv_action_submitLumenPuzzle: pv_action_submitLumenPuzzle,
   pv_action_submitGearPulley: pv_action_submitGearPulley,
+  pv_action_submitControlPanel: pv_action_submitControlPanel,
   pv_action_submitCategoryGrid: pv_action_submitCategoryGrid,
   pv_action_submitConstraintSatisfaction: pv_action_submitConstraintSatisfaction,
   pv_action_revealHint: pv_action_revealHint,
@@ -5832,6 +6312,37 @@ return {
   gpGearPathD: gpGearPathD,
   gpComputeMesh: gpComputeMesh,
   gpSolveState: gpSolveState,
+
+  // Control Panel Builder — component-type metadata, condition evaluation
+  // and shared widget-rendering math, used identically by the player
+  // runtime (above) and Studio's inspector-embedded board designer
+  // (buildTypeSpecificFields/wireNodeInspector's "controlPanel" case /
+  // wireControlPanelDesigner in app.js).
+  CTP_COMPONENT_TYPES: CTP_COMPONENT_TYPES,
+  CTP_GROUP_LABELS: CTP_GROUP_LABELS,
+  CTP_PUSHBUTTON_SKINS: CTP_PUSHBUTTON_SKINS,
+  CTP_LIGHT_STYLES: CTP_LIGHT_STYLES,
+  CTP_OP_LABELS: CTP_OP_LABELS,
+  CTP_BOARD_MIN_W: CTP_BOARD_MIN_W, CTP_BOARD_MAX_W: CTP_BOARD_MAX_W, CTP_ZONE_MAX_H: CTP_ZONE_MAX_H,
+  ctpComponentKind: ctpComponentKind,
+  ctpKnobArc: ctpKnobArc,
+  ctpIsNamedKnob: ctpIsNamedKnob,
+  ctpOpsForKind: ctpOpsForKind,
+  ctpDefaultComponentData: ctpDefaultComponentData,
+  ctpNewComponent: ctpNewComponent,
+  ctpLiveValue: ctpLiveValue,
+  ctpDefaultValuesById: ctpDefaultValuesById,
+  ctpEvalSingleCondition: ctpEvalSingleCondition,
+  ctpConditionsAllMet: ctpConditionsAllMet,
+  ctpEvalRules: ctpEvalRules,
+  ctpWinConditionsMet: ctpWinConditionsMet,
+  ctpComputeOutputs: ctpComputeOutputs,
+  ctpResolvedValue: ctpResolvedValue,
+  ctpKnobTicks: ctpKnobTicks,
+  ctpComponentInnerHtml: ctpComponentInnerHtml,
+  ctpComponentWrapStyle: ctpComponentWrapStyle,
+  ctpRenderZoneComponents: ctpRenderZoneComponents,
+  ctpRenderBoard: ctpRenderBoard,
 
   PLAYER_SCREEN_TYPES: PLAYER_SCREEN_TYPES,
   BACK_BUTTON_TYPES: BACK_BUTTON_TYPES,

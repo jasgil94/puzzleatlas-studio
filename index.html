@@ -287,6 +287,29 @@
       </div>
     </div>
 
+    <!-- Control Panel Builder overlay — the same board designer as the inline
+         inspector copy (prefix "ctpb" vs. "ctp", see wireControlPanelDesigner
+         in app.js), opened for room to work in from a Control Panel Builder
+         node's inspector ("⛶ Open in Larger Pane"), same idea as the Gear &
+         Pulley Builder above. Edits write straight into the node, same as
+         the inline copy — there's no separate save/discard step, just Done.
+         Unlike the other builder overlays, the palette/stage/props markup
+         itself is generated dynamically into #ctpbBody (buildCtpDesignerMarkup
+         builds both the inline and overlay copies from one function — see
+         renderControlPanelBuilderOverlay in app.js) rather than declared
+         statically here. -->
+    <div id="controlPanelBuilderOverlay" class="overlay hidden">
+      <div class="hb-window lb-window ctpb-window">
+        <div class="hb-header lb-header">
+          <div class="hb-title" id="ctpbTitle">Control Panel Builder</div>
+          <div>
+            <button class="btn small primary-btn" id="ctpbBtnDone">✓ Done</button>
+          </div>
+        </div>
+        <div class="ctpb-body" id="ctpbBody"></div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Style Builder screen: craft/edit a style pack, separate from the Hunt canvas -->
