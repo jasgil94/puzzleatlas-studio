@@ -1,0 +1,22 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "puzzleatlas-studio",
+	// Bump this only if you intentionally want to opt into newer Workers
+	// runtime behavior later — see https://developers.cloudflare.com/workers/configuration/compatibility-dates/
+	"compatibility_date": "2026-08-11",
+	"main": "worker/index.js",
+	"assets": {
+		"directory": ".",
+		"binding": "ASSETS"
+	},
+	"kv_namespaces": [
+		{
+			"binding": "HUNTS_KV",
+			"id": "c00fd6dcd5514512aa1d7b41383ecb3d"
+		}
+	]
+	// CLOUD_BACKUP_KEY is a secret, not a var — it must NOT be added here.
+	// Set it with `wrangler secret put CLOUD_BACKUP_KEY`, or via the
+	// Cloudflare dashboard: Workers & Pages -> puzzleatlas-studio ->
+	// Settings -> Variables and Secrets -> Add secret.
+}

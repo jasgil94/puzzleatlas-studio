@@ -1,0 +1,10 @@
+# Files Wrangler should NOT upload as static site assets, even though
+# assets.directory is "." (the whole repo) in wrangler.jsonc. These are
+# deploy plumbing, not site content the Worker should serve directly.
+wrangler.jsonc
+.assetsignore
+worker/
+.git/
+.gitignore
+publish.sh
+.DS_Store

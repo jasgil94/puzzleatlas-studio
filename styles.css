@@ -44,6 +44,8 @@ button{font-family:inherit;cursor:pointer;}
 .btn.primary-btn{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
 .btn.primary-btn:hover{background:#5a7cf0;}
 .btn.warn-btn{border-color:var(--warn);}
+.btn.backup-connected{border-color:var(--ok);color:var(--ok);}
+.btn.backup-needs-attention{border-color:var(--warn);color:var(--warn);}
 .btn:disabled{opacity:.4;cursor:default;}
 
 /* topbar */

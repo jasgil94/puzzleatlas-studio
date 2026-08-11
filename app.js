@@ -6131,8 +6131,9 @@ function focusOnNode(nodeId) {
 var LEGACY_STORAGE_KEY = "puzzleatlas_studio_hunt_v0";     // Phase 1 single-slot save
 var LEGACY_LIBRARY_KEY = "puzzleatlas_studio_library_v1";  // Phase 2 single-blob library, migrated below
 var IDB_NAME = "puzzleatlas_studio_db";
-var IDB_VERSION = 1;
+var IDB_VERSION = 2;
 var IDB_STORE = "hunts";
+var IDB_SETTINGS_STORE = "settings";  // small key/value store — currently just the backup folder handle
 var IDB_SUPPORTED = typeof indexedDB !== "undefined";
 
 var LibraryCache = [];  // in-memory mirror of every hunt in the library
@@ -6145,9 +6146,29 @@ function openIdb() {
     req.onupgradeneeded = function () {
       var db = req.result;
       if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(IDB_SETTINGS_STORE)) db.createObjectStore(IDB_SETTINGS_STORE);
     };
     req.onsuccess = function () { _idbHandle = req.result; resolve(_idbHandle); };
     req.onerror = function () { reject(req.error || new Error("Couldn't open IndexedDB.")); };
+  });
+}
+function idbSettingsGet(key) {
+  return openIdb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var req = db.transaction(IDB_SETTINGS_STORE, "readonly").objectStore(IDB_SETTINGS_STORE).get(key);
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error || new Error("Couldn't read settings.")); };
+    });
+  });
+}
+function idbSettingsSet(key, value) {
+  return openIdb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(IDB_SETTINGS_STORE, "readwrite");
+      tx.objectStore(IDB_SETTINGS_STORE).put(value, key);
+      tx.oncomplete = function () { resolve(); };
+      tx.onerror = function () { reject(tx.error || new Error("Couldn't save settings.")); };
+    });
   });
 }
 function idbGetAll() {
@@ -6256,6 +6277,8 @@ function upsertHuntInLibrary(hunt) {
   var idx = LibraryCache.findIndex(function (h) { return h.id === copy.id; });
   if (idx === -1) LibraryCache.push(copy); else LibraryCache[idx] = copy;
 
+  writeHuntToBackupFolder(copy);
+  writeHuntToCloud(copy);
   if (!IDB_SUPPORTED) return persistLibraryFallback();
   idbPut(copy).catch(function (err) {
     console.error(err);
@@ -6265,6 +6288,8 @@ function upsertHuntInLibrary(hunt) {
 }
 function deleteHuntFromLibrary(id) {
   LibraryCache = LibraryCache.filter(function (h) { return h.id !== id; });
+  removeHuntFromBackupFolder(id);
+  removeHuntFromCloud(id);
   if (!IDB_SUPPORTED) { persistLibraryFallback(); return; }
   idbDelete(id).catch(function (err) {
     console.error(err);
@@ -6275,6 +6300,316 @@ function saveCurrentHuntToLibrary(quiet) {
   var ok = upsertHuntInLibrary(Store.hunt);
   if (ok && !quiet) toast("Saved “" + Store.hunt.title + "” to your hunt library.");
   return ok;
+}
+
+/* ---------------------------------------------------------------------
+   Local backup folder (File System Access API)
+   -----------------------------------------------------------------------
+   Mirrors every hunt in the library to a JSON file in a folder on disk,
+   picked once via showDirectoryPicker(). This exists because IndexedDB
+   (and the localStorage blob before it) lives entirely inside one browser
+   profile — clearing cookies/site data, switching browsers, or a fresh
+   profile wipes it with no recovery path. A folder on disk survives all
+   of that.
+   The chosen FileSystemDirectoryHandle is structured-cloneable, so it's
+   stashed in the new IDB_SETTINGS_STORE to be remembered across reloads.
+   The browser still requires a user gesture to re-grant permission each
+   session; on load we silently reuse the handle only if permission is
+   still 'granted', otherwise the toolbar button asks the user to
+   reconnect with a click.
+   Chrome/Edge only — the API doesn't exist in Safari or Firefox, so the
+   whole feature no-ops and the button hides itself there.
+--------------------------------------------------------------------- */
+var BACKUP_HANDLE_KEY = "backupFolderHandle";
+var FS_ACCESS_SUPPORTED = typeof window.showDirectoryPicker === "function";
+// status: 'unsupported' | 'disconnected' | 'needs-permission' | 'connected'
+var BackupFolder = { handle: null, status: "unsupported" };
+
+function backupFolderFilename(hunt) { return hunt.id + ".json"; }
+
+// Opens the OS folder picker, remembers the chosen folder, and pulls in
+// anything already sitting in it (recovery path after a browser wipe).
+function connectBackupFolder() {
+  if (!FS_ACCESS_SUPPORTED) return Promise.resolve();
+  return window.showDirectoryPicker({ mode: "readwrite" }).then(function (handle) {
+    BackupFolder.handle = handle;
+    BackupFolder.status = "connected";
+    // Remembering the handle for next session is best-effort and shouldn't
+    // block reconciling the folder's contents into the library right now.
+    idbSettingsSet(BACKUP_HANDLE_KEY, handle).catch(function (err) {
+      console.error("Couldn't remember the backup folder for next time:", err);
+    });
+    return reconcileBackupFolder();
+  }).catch(function (err) {
+    if (err && err.name === "AbortError") return; // user closed the picker without choosing
+    console.error(err);
+    toast("Couldn't connect that folder: " + err.message, 5000);
+  }).then(function () { renderBackupFolderStatus(); });
+}
+
+// Re-requests permission on the already-remembered handle. Must be called
+// from a user gesture (e.g. the button's own click handler).
+function reconnectBackupFolder() {
+  if (!BackupFolder.handle) return connectBackupFolder();
+  return BackupFolder.handle.requestPermission({ mode: "readwrite" }).then(function (perm) {
+    if (perm === "granted") {
+      BackupFolder.status = "connected";
+      return reconcileBackupFolder();
+    }
+    BackupFolder.status = "needs-permission";
+    toast("Backup folder permission was not granted.", 4000);
+  }).then(function () { renderBackupFolderStatus(); });
+}
+
+// Called once at startup: loads the remembered handle (if any) and checks
+// whether it can still be used without prompting.
+function initBackupFolder() {
+  if (!FS_ACCESS_SUPPORTED) { BackupFolder.status = "unsupported"; return Promise.resolve(); }
+  return idbSettingsGet(BACKUP_HANDLE_KEY).then(function (handle) {
+    if (!handle) { BackupFolder.status = "disconnected"; return; }
+    BackupFolder.handle = handle;
+    return handle.queryPermission({ mode: "readwrite" }).then(function (perm) {
+      if (perm === "granted") { BackupFolder.status = "connected"; return reconcileBackupFolder(); }
+      BackupFolder.status = "needs-permission";
+    });
+  }).catch(function (err) {
+    console.error("Backup folder unavailable:", err);
+    BackupFolder.status = "disconnected";
+    BackupFolder.handle = null;
+  });
+}
+
+// Recovery path: reads every *.json file already in the folder and pulls in
+// anything missing from — or newer than — the in-memory library. This is
+// how hunts come back after e.g. an IndexedDB wipe: reconnect the folder
+// and whatever was last mirrored there gets restored into the library.
+function reconcileBackupFolder() {
+  if (!BackupFolder.handle) return Promise.resolve();
+  var restored = 0;
+  var iterator = BackupFolder.handle.values();
+  function next() {
+    return iterator.next().then(function (res) {
+      if (res.done) return;
+      var entry = res.value;
+      if (entry.kind !== "file" || !/\.json$/i.test(entry.name)) return next();
+      return entry.getFile().then(function (file) { return file.text(); }).then(function (text) {
+        var hunt;
+        try { hunt = JSON.parse(text); } catch (e) { return next(); }
+        if (!hunt || !hunt.id || !hunt.schemaVersion || !hunt.nodes) return next();
+        var existing = getHuntFromLibrary(hunt.id);
+        var folderUpdated = new Date((hunt.metadata || {}).updatedAt || 0);
+        var cacheUpdated = existing ? new Date((existing.metadata || {}).updatedAt || 0) : null;
+        if (!existing || folderUpdated > cacheUpdated) {
+          var idx = LibraryCache.findIndex(function (h) { return h.id === hunt.id; });
+          if (idx === -1) LibraryCache.push(hunt); else LibraryCache[idx] = hunt;
+          if (!existing) restored++;
+          return idbPut(hunt).then(next);
+        }
+        return next();
+      }).catch(function (e) { console.error("Skipping unreadable backup file " + entry.name, e); return next(); });
+    });
+  }
+  return next().then(function () {
+    if (restored > 0) {
+      toast("Restored " + restored + " hunt" + (restored === 1 ? "" : "s") + " from your backup folder.", 4500);
+      renderLibrary();
+    }
+  }).catch(function (err) { console.error("Backup folder reconcile failed:", err); });
+}
+
+// Best-effort mirror of one hunt to a file in the backup folder. Never
+// blocks or reverts the IndexedDB save on failure — same fire-and-forget
+// pattern as upsertHuntInLibrary's own idbPut() call.
+function writeHuntToBackupFolder(hunt) {
+  if (!BackupFolder.handle || BackupFolder.status !== "connected") return;
+  BackupFolder.handle.getFileHandle(backupFolderFilename(hunt), { create: true }).then(function (fileHandle) {
+    return fileHandle.createWritable();
+  }).then(function (writable) {
+    return writable.write(JSON.stringify(hunt, null, 2)).then(function () { return writable.close(); });
+  }).catch(function (err) {
+    console.error("Backup folder write failed:", err);
+    toast("Couldn't write a backup copy of “" + (hunt.title || "this hunt") + "” to your backup folder.", 5000);
+  });
+}
+function removeHuntFromBackupFolder(id) {
+  if (!BackupFolder.handle || BackupFolder.status !== "connected") return;
+  BackupFolder.handle.removeEntry(id + ".json").catch(function () { /* file may already be gone — fine */ });
+}
+
+function renderBackupFolderStatus() {
+  var btn = document.getElementById("btnBackupFolder");
+  if (!btn) return;
+  if (!FS_ACCESS_SUPPORTED) { btn.classList.add("hidden"); return; }
+  btn.classList.remove("hidden");
+  btn.classList.toggle("backup-connected", BackupFolder.status === "connected");
+  btn.classList.toggle("backup-needs-attention", BackupFolder.status === "needs-permission");
+  if (BackupFolder.status === "connected") {
+    btn.textContent = "📁 Backup folder connected";
+    btn.title = "Every save is also mirrored to a JSON file in this folder. Click to change it.";
+  } else if (BackupFolder.status === "needs-permission") {
+    btn.textContent = "📁 Reconnect backup folder";
+    btn.title = "Click to re-grant access to your backup folder.";
+  } else {
+    btn.textContent = "📁 Set backup folder";
+    btn.title = "Pick a folder on disk to mirror your hunts to, so clearing browser data can't wipe them.";
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Cloud backup (Cloudflare Pages Function + KV, see /functions/api/hunts)
+   -----------------------------------------------------------------------
+   A second, independent mirror of the hunt library — same idea as the
+   backup folder above (never lose a hunt to a browser data wipe again),
+   but it works in every browser, not just Chrome/Edge, since it's just
+   fetch() against this site's own /api/hunts endpoints. The two mirrors
+   can run at the same time; each is best-effort and doesn't know about
+   the other.
+   The shared backup key is remembered in IDB_SETTINGS_STORE (same store
+   as the backup folder handle) so it survives reloads but, like
+   everything else in IndexedDB, not a full site-data wipe — after a wipe
+   the user re-enters the key once via the toolbar button and everything
+   already saved to the cloud comes back.
+--------------------------------------------------------------------- */
+var CLOUD_KEY_SETTINGS_KEY = "cloudBackupKey";
+// status: 'disconnected' | 'connected' | 'error'
+var CloudSync = { key: null, status: "disconnected" };
+
+function cloudFetch(path, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers["X-Backup-Key"] = CloudSync.key || "";
+  return fetch(path, opts);
+}
+
+// Verifies a key against /api/hunts, remembers it if it works, and pulls in
+// anything already backed up. Prompts for a key if none was passed and
+// none is already set — this is what the toolbar button calls directly.
+function connectCloudSync(explicitKey) {
+  var keyToUse = explicitKey || CloudSync.key;
+  if (!keyToUse) {
+    keyToUse = window.prompt("Paste your ClueAtlas cloud backup key (matches CLOUD_BACKUP_KEY set on the Cloudflare Pages project):");
+    if (keyToUse === null) return Promise.resolve();
+    keyToUse = keyToUse.trim();
+    if (!keyToUse) return Promise.resolve();
+  }
+  CloudSync.key = keyToUse;
+  return cloudFetch("/api/hunts").then(function (res) {
+    if (res.status === 401) { var e = new Error("Cloud backup key was rejected."); e.code = "unauthorized"; throw e; }
+    if (!res.ok) throw new Error("Cloud backup responded with " + res.status);
+    return res.json();
+  }).then(function (index) {
+    CloudSync.status = "connected";
+    // Remembering the key for next session is best-effort and shouldn't
+    // block reconciling what's already backed up right now.
+    idbSettingsSet(CLOUD_KEY_SETTINGS_KEY, keyToUse).catch(function (err) {
+      console.error("Couldn't remember the cloud backup key:", err);
+    });
+    return reconcileCloudSync(index);
+  }).catch(function (err) {
+    console.error(err);
+    CloudSync.status = "error";
+    toast(err.code === "unauthorized"
+      ? "Cloud backup key was rejected — check it matches CLOUD_BACKUP_KEY in your Cloudflare Pages project settings."
+      : "Couldn't reach cloud backup: " + err.message, 6000);
+  }).then(function () { renderCloudSyncStatus(); });
+}
+
+// Called once at startup: silently reconnects with a remembered key so the
+// user doesn't have to re-paste it every session. Network hiccups here stay
+// quiet (status just falls back to 'disconnected') rather than nagging on
+// every page load — the toolbar button is always there if they want to retry.
+function initCloudSync() {
+  return idbSettingsGet(CLOUD_KEY_SETTINGS_KEY).then(function (key) {
+    if (!key) { CloudSync.status = "disconnected"; return; }
+    CloudSync.key = key;
+    return cloudFetch("/api/hunts").then(function (res) {
+      if (!res.ok) { CloudSync.status = res.status === 401 ? "error" : "disconnected"; return; }
+      return res.json().then(function (index) {
+        CloudSync.status = "connected";
+        return reconcileCloudSync(index);
+      });
+    }).catch(function (err) {
+      console.error("Cloud backup unreachable at startup:", err);
+      CloudSync.status = "disconnected";
+    });
+  });
+}
+
+// Recovery path: given the lightweight {id, title, updatedAt} index from
+// GET /api/hunts, fetches the full JSON for anything missing from — or
+// newer than — the in-memory library, and merges it in. This is how hunts
+// come back after an IndexedDB wipe: reconnect with the same key.
+function reconcileCloudSync(index) {
+  var restored = 0;
+  var toFetch = (index || []).filter(function (item) {
+    var existing = getHuntFromLibrary(item.id);
+    if (!existing) return true;
+    var remoteUpdated = new Date(item.updatedAt || 0);
+    var localUpdated = new Date((existing.metadata || {}).updatedAt || 0);
+    return remoteUpdated > localUpdated;
+  });
+  function next(i) {
+    if (i >= toFetch.length) return Promise.resolve();
+    var item = toFetch[i];
+    var existedBefore = !!getHuntFromLibrary(item.id);
+    return cloudFetch("/api/hunts/" + encodeURIComponent(item.id)).then(function (res) {
+      if (!res.ok) return null;
+      return res.json();
+    }).then(function (hunt) {
+      if (!hunt || !hunt.id || !hunt.schemaVersion || !hunt.nodes) return;
+      var idx = LibraryCache.findIndex(function (h) { return h.id === hunt.id; });
+      if (idx === -1) LibraryCache.push(hunt); else LibraryCache[idx] = hunt;
+      if (!existedBefore) restored++;
+      return idbPut(hunt);
+    }).catch(function (e) { console.error("Skipping cloud hunt " + item.id, e); })
+      .then(function () { return next(i + 1); });
+  }
+  return next(0).then(function () {
+    if (restored > 0) {
+      toast("Restored " + restored + " hunt" + (restored === 1 ? "" : "s") + " from cloud backup.", 4500);
+      renderLibrary();
+    }
+  });
+}
+
+// Best-effort mirror of one hunt to cloud storage. Never blocks or reverts
+// the IndexedDB save on failure, same fire-and-forget pattern as the
+// backup folder's writeHuntToBackupFolder().
+function writeHuntToCloud(hunt) {
+  if (CloudSync.status !== "connected") return;
+  cloudFetch("/api/hunts/" + encodeURIComponent(hunt.id), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(hunt)
+  }).then(function (res) {
+    if (!res.ok) throw new Error("status " + res.status);
+  }).catch(function (err) {
+    console.error("Cloud backup write failed:", err);
+    toast("Couldn't back up “" + (hunt.title || "this hunt") + "” to the cloud: " + err.message, 5000);
+  });
+}
+function removeHuntFromCloud(id) {
+  if (CloudSync.status !== "connected") return;
+  cloudFetch("/api/hunts/" + encodeURIComponent(id), { method: "DELETE" }).catch(function (err) {
+    console.error("Cloud backup delete failed:", err);
+  });
+}
+
+function renderCloudSyncStatus() {
+  var btn = document.getElementById("btnCloudSync");
+  if (!btn) return;
+  btn.classList.toggle("backup-connected", CloudSync.status === "connected");
+  btn.classList.toggle("backup-needs-attention", CloudSync.status === "error");
+  if (CloudSync.status === "connected") {
+    btn.textContent = "☁ Cloud backup connected";
+    btn.title = "Every save is also mirrored to your Cloudflare backup store. Click to re-sync now.";
+  } else if (CloudSync.status === "error") {
+    btn.textContent = "☁ Cloud backup error — click to retry";
+    btn.title = "Couldn't connect. Click to re-enter your backup key.";
+  } else {
+    btn.textContent = "☁ Set up cloud backup";
+    btn.title = "Paste a backup key to mirror your hunts to the cloud, so clearing browser data can't wipe them.";
+  }
 }
 
 function exportHuntObj(hunt) {
@@ -7749,6 +8084,18 @@ function init() {
   document.getElementById("nhwBtnBack").onclick = nhwBack;
   document.getElementById("nhwBtnNext").onclick = nhwNext;
   document.getElementById("nhwBtnCreate").onclick = nhwCreate;
+  document.getElementById("btnBackupFolder").onclick = function () {
+    if (BackupFolder.status === "needs-permission") reconnectBackupFolder(); else connectBackupFolder();
+  };
+  document.getElementById("btnCloudSync").onclick = function () {
+    if (CloudSync.status === "connected") {
+      cloudFetch("/api/hunts").then(function (res) { return res.ok ? res.json() : []; })
+        .then(function (index) { return reconcileCloudSync(index); })
+        .then(function () { toast("Cloud backup re-synced."); });
+    } else {
+      connectCloudSync(null);
+    }
+  };
   document.getElementById("btnLibImport").onclick = function () { document.getElementById("fileLibImport").click(); };
   document.getElementById("fileLibImport").onchange = function (e) {
     if (e.target.files[0]) importHuntFileToLibrary(e.target.files[0]);
@@ -7798,8 +8145,16 @@ function init() {
 
   syncLiveMock();
   // Library must be loaded from IndexedDB (async) before the Library screen
-  // reads it via getLibraryHunts(); see initLibraryStorage() above.
+  // reads it via getLibraryHunts(); see initLibraryStorage() above. Both
+  // backup mirrors reconnect after, since their reconcile steps read and
+  // write into the now-populated LibraryCache.
   initLibraryStorage().then(function () {
+    return initBackupFolder();
+  }).then(function () {
+    return initCloudSync();
+  }).then(function () {
+    renderBackupFolderStatus();
+    renderCloudSyncStatus();
     showLibraryScreen();
     toast("Welcome to ClueAtlas Studio. Open a hunt from your library, or start a new one.", 4000);
   });
