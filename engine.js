@@ -919,11 +919,18 @@ var LOCK_CENTER_COPY = 2;  // which copy (0-based) each drag gesture re-centers 
    the key art box and the padlock are all fixed dimensions regardless of
    the uploaded photo's own resolution/aspect ratio (object-fit: cover) —
    that fixed geometry is what lets this be worked out arithmetically
-   instead of measuring the live DOM. */
-var LK_STAGE_H = 340;         // px height of the whole stage
-var LK_KEY_H = 170;           // px height of the key-art box, bottom-anchored in the stage (so it appears to hang from the ring)
-var LK_PADLOCK_BODY_H = 62;   // px height of the padlock's body (not counting the shackle, which sits above it)
-var LK_PADLOCK_IDLE_TOP = 46; // px top offset of the padlock's resting position, before any attempt
+   instead of measuring the live DOM.
+   LK_PADLOCK_BODY_H must equal .pv-lk-padlock/.pv-lk-body's own CSS
+   height exactly (the shackle overflows above the box on a negative
+   `top` offset — see .pv-lk-shackle in styles.css — so it never adds to
+   this box's own height). The padlock itself is 3x its original width
+   and 5x its original height (84x62 -> 252x310, matching the CSS); the
+   stage grew to LK_STAGE_H below to give that much taller lock room to
+   travel down to the key without going negative. */
+var LK_STAGE_H = 760;          // px height of the whole stage
+var LK_KEY_H = 170;            // px height of the key-art box, bottom-anchored in the stage (so it appears to hang from the ring)
+var LK_PADLOCK_BODY_H = 310;   // px height of the padlock's body box (not counting the shackle, which overflows above it) — must match .pv-lk-padlock/.pv-lk-body height in styles.css
+var LK_PADLOCK_IDLE_TOP = 230; // px top offset of the padlock's resting position, before any attempt — leaves room above for the shackle's overhang (see .pv-lk-shackle's `top` offset in styles.css)
 
 // Resolves the padlock's `top` (px, within .pv-lk-stage) for a given
 // state: "idle" is its resting position; "wrong" stops it the instant its
