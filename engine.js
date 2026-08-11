@@ -923,23 +923,33 @@ var LOCK_CENTER_COPY = 2;  // which copy (0-based) each drag gesture re-centers 
    LK_PADLOCK_BODY_H must equal .pv-lk-padlock/.pv-lk-body's own CSS
    height exactly (the shackle overflows above the box on a negative
    `top` offset — see .pv-lk-shackle in styles.css — so it never adds to
-   this box's own height). The padlock itself is 3x its original width
-   and 5x its original height (84x62 -> 252x310, matching the CSS); the
-   stage grew to LK_STAGE_H below to give that much taller lock room to
-   travel down to the key without going negative. */
-var LK_STAGE_H = 760;          // px height of the whole stage
-var LK_KEY_H = 170;            // px height of the key-art box, bottom-anchored in the stage (so it appears to hang from the ring)
-var LK_PADLOCK_BODY_H = 310;   // px height of the padlock's body box (not counting the shackle, which overflows above it) — must match .pv-lk-padlock/.pv-lk-body height in styles.css
-var LK_PADLOCK_IDLE_TOP = 230; // px top offset of the padlock's resting position, before any attempt — leaves room above for the shackle's overhang (see .pv-lk-shackle's `top` offset in styles.css)
+   this box's own height). Two constraints size this stage: it all has to
+   fit inside a real player screen without scrolling (a taller-than-tall
+   version of this stage was clipping/scrolling badly), and
+   LK_PADLOCK_BODY_H has to stay >= LK_KEY_H so the padlock's body is
+   always at least as tall as the key art itself — that's what guarantees
+   the body fully covers the blade (everything from the key's top down to
+   its own threshold line) the instant it reaches the "correct" position,
+   for *any* threshold value a creator sets, not just typical ones (see
+   the correctness argument in lkPadlockTop's own comment below). */
+var LK_STAGE_H = 380;          // px height of the whole stage
+var LK_KEY_H = 110;            // px height of the key-art box, bottom-anchored in the stage (so it appears to hang from the ring)
+var LK_PADLOCK_BODY_H = 140;   // px height of the padlock's body box (not counting the shackle, which overflows above it) — must match .pv-lk-padlock/.pv-lk-body height in styles.css; kept > LK_KEY_H so the body always fully covers the blade once seated (see comment above)
+var LK_PADLOCK_IDLE_TOP = 76;  // px top offset of the padlock's resting position, before any attempt — leaves room above for the shackle's overhang (see .pv-lk-shackle's `top` offset in styles.css)
 
 // Resolves the padlock's `top` (px, within .pv-lk-stage) for a given
 // state: "idle" is its resting position; "wrong" stops it the instant its
 // body would touch the top of the key art (it can't go any further in);
 // "correct" (thresholdPct = the attempted key's own content.threshold)
-// seats it exactly on that key's blade/bow line. Shared by the initial
-// render (renderPreviewNode's "lockAndKey" branch, for the idle/solved
-// resting states) and the tap handler's animation (wireLockAndKeyInteractions,
-// for the interactive wrong/correct states).
+// seats the body's *bottom* edge exactly on that key's blade/bow line —
+// since the body is LK_PADLOCK_BODY_H tall and that's >= LK_KEY_H, its
+// top edge always lands at or above the key's own top edge, so the body
+// fully covers the blade (the whole span from the key's top down to the
+// threshold line) no matter how high or low a creator sets that
+// threshold. Shared by the initial render (renderPreviewNode's
+// "lockAndKey" branch, for the idle/solved resting states) and the tap
+// handler's animation (wireLockAndKeyInteractions, for the interactive
+// wrong/correct states).
 function lkPadlockTop(state, thresholdPct) {
   var keyTop = LK_STAGE_H - LK_KEY_H;
   if (state === "wrong") return keyTop - LK_PADLOCK_BODY_H;

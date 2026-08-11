@@ -507,25 +507,27 @@ button{font-family:inherit;cursor:pointer;}
    engine.js); this stylesheet only owns its fixed geometry, the transition
    that animates `top` changes, and the shackle-pop-open look on success
    (same idea as .pv-lock-open above, just renamed for this node type). */
-.pv-lk-stage{position:relative;width:100%;max-width:300px;height:760px;margin:12px auto 6px;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;}
+.pv-lk-stage{position:relative;width:100%;max-width:260px;height:380px;margin:12px auto 6px;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;}
 .pv-lk-ring{position:absolute;left:50%;bottom:-52px;width:150px;height:82px;transform:translateX(-50%);border-radius:50%;border:14px solid #9a9a9a;background:linear-gradient(160deg,rgba(255,255,255,.15),transparent 60%);box-shadow:inset 0 3px 5px rgba(255,255,255,.35), inset 0 -4px 8px rgba(0,0,0,.4), 0 4px 10px rgba(0,0,0,.35);}
-.pv-lk-key-layer{position:absolute;left:50%;bottom:0;width:70px;height:170px;transform:translateX(-50%);z-index:1;}
-.pv-lk-key{width:100%;height:100%;border-radius:6px;background-size:cover;background-position:center;background-color:#3a3a3a;box-shadow:0 6px 14px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;}
-.pv-lk-key-noimg{font-size:11px;line-height:1.4;text-align:center;color:rgba(255,255,255,.75);padding:6px;}
-/* The padlock — 3x the original width, 5x the original height (84x62 ->
-   252x310). Box width/height double as .pv-lk-body's own size (the body
-   simply fills the box, inset:0 below) so LK_PADLOCK_BODY_H in engine.js
-   can treat this box's own height as exactly where the body's bottom
-   edge is — the shackle overflows above the box on a negative `top`
-   offset instead of padding the box out, so it never has to factor into
-   that math. */
-.pv-lk-padlock{position:absolute;left:50%;top:230px;transform:translateX(-50%);width:252px;height:310px;padding:0;margin:0;border:none;background:none;cursor:pointer;z-index:2;}
+.pv-lk-key-layer{position:absolute;left:50%;bottom:0;width:46px;height:110px;transform:translateX(-50%);z-index:1;}
+.pv-lk-key{width:100%;height:100%;border-radius:5px;background-size:cover;background-position:center;background-color:#3a3a3a;box-shadow:0 6px 14px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;}
+.pv-lk-key-noimg{font-size:9px;line-height:1.3;text-align:center;color:rgba(255,255,255,.75);padding:4px;}
+/* The padlock — sized so its body (.pv-lk-body, which simply fills this
+   box via inset:0) is a little taller than the key art box
+   (.pv-lk-key-layer, LK_PADLOCK_BODY_H >= LK_KEY_H in engine.js): that's
+   what guarantees the body fully covers the blade the instant it reaches
+   the "correct" position, for any threshold a creator sets, while the
+   whole stage still comfortably fits a real player screen without
+   scrolling. The shackle overflows above this box on a negative `top`
+   offset instead of padding the box out, so it never factors into that
+   height match. */
+.pv-lk-padlock{position:absolute;left:50%;top:76px;transform:translateX(-50%);width:118px;height:140px;padding:0;margin:0;border:none;background:none;cursor:pointer;z-index:2;}
 .pv-lk-padlock:disabled{cursor:default;}
-.pv-lk-shackle{position:absolute;top:-208px;left:50%;transform:translateX(-50%);width:156px;height:190px;border-width:33px;border-style:solid;border-color:#c3cbd1;border-bottom:none;border-radius:90px 90px 0 0;background:linear-gradient(160deg,#eef1f3,#aab0b6 55%,#6f7579);box-shadow:inset 0 5px 8px rgba(255,255,255,.5), inset 0 -5px 8px rgba(0,0,0,.25);transform-origin:left bottom;transition:transform .4s cubic-bezier(.34,1.56,.64,1), top .4s cubic-bezier(.34,1.56,.64,1);}
-.pv-lk-body{position:absolute;inset:0;border-radius:28px;background:linear-gradient(180deg,#d7dee3 0%,#8b96a0 55%,#4f5860 100%);border:4px solid #454c52;box-shadow:0 16px 30px rgba(0,0,0,.4), inset 0 4px 6px rgba(255,255,255,.2), inset 0 -6px 12px rgba(0,0,0,.3);}
-.pv-lk-body::after{content:"";position:absolute;left:50%;top:100px;width:16px;height:16px;transform:translateX(-50%);border-radius:50%;background:#2a2e33;box-shadow:0 8px 0 -3px #2a2e33;}
-.pv-lk-padlock.pv-lk-unlocked .pv-lk-shackle{transform:translateX(calc(-50% - 27px)) rotate(-30deg);top:-218px;}
-.pv-lk-feedback{position:absolute;left:0;right:0;top:44%;text-align:center;font-weight:700;font-size:20px;letter-spacing:.03em;color:var(--pv-danger, #ff5c5c);text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none;z-index:3;}
+.pv-lk-shackle{position:absolute;top:-63px;left:50%;transform:translateX(-50%);width:72px;height:56px;border-width:15px;border-style:solid;border-color:#c3cbd1;border-bottom:none;border-radius:40px 40px 0 0;background:linear-gradient(160deg,#eef1f3,#aab0b6 55%,#6f7579);box-shadow:inset 0 3px 4px rgba(255,255,255,.5), inset 0 -3px 4px rgba(0,0,0,.25);transform-origin:left bottom;transition:transform .4s cubic-bezier(.34,1.56,.64,1), top .4s cubic-bezier(.34,1.56,.64,1);}
+.pv-lk-body{position:absolute;inset:0;border-radius:14px;background:linear-gradient(180deg,#d7dee3 0%,#8b96a0 55%,#4f5860 100%);border:2px solid #454c52;box-shadow:0 8px 16px rgba(0,0,0,.4), inset 0 2px 3px rgba(255,255,255,.2), inset 0 -3px 6px rgba(0,0,0,.3);}
+.pv-lk-body::after{content:"";position:absolute;left:50%;top:45px;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:#2a2e33;box-shadow:0 4px 0 -1px #2a2e33;}
+.pv-lk-padlock.pv-lk-unlocked .pv-lk-shackle{transform:translateX(calc(-50% - 13px)) rotate(-30deg);top:-74px;}
+.pv-lk-feedback{position:absolute;left:0;right:0;top:44%;text-align:center;font-weight:700;font-size:15px;letter-spacing:.03em;color:var(--pv-danger, #ff5c5c);text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none;z-index:3;}
 .pv-lk-hint-row{text-align:center;font-size:11.5px;color:var(--pv-text-dim);margin-top:2px;}
 
 /* Cryptex Dial Lock (3 Letter) — three concentric letter rings rendered as
