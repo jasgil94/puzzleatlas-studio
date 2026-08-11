@@ -83,27 +83,10 @@ async function handleHuntById(request, env, id) {
   return json({ error: "Method not allowed" }, 405);
 }
 
-// TEMPORARY diagnostic route for tracking down a "key rejected" report —
-// reveals only whether CLOUD_BACKUP_KEY is bound and its length, never the
-// value itself, so it's safe to leave reachable without auth while
-// debugging. Remove this route (and the /api/debug-env check below) once
-// cloud backup is confirmed working.
-function handleDebugEnv(request, env) {
-  var expected = env.CLOUD_BACKUP_KEY;
-  return json({
-    hasKey: typeof expected === "string" && expected.length > 0,
-    keyLength: typeof expected === "string" ? expected.length : null,
-    hasKvBinding: !!env.HUNTS_KV
-  });
-}
-
 export default {
   async fetch(request, env, ctx) {
     var url = new URL(request.url);
 
-    if (url.pathname === "/api/debug-env") {
-      return handleDebugEnv(request, env);
-    }
     if (url.pathname === "/api/hunts" && request.method === "GET") {
       return handleHuntsIndex(request, env);
     }
