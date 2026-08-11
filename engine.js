@@ -216,7 +216,7 @@ var NODE_TYPES = {
   physicalLockCode: {
     family: "puzzle", label: "Physical Lock Code Entry", icon: "🔒",
     defaultTitle: "New Lock Code Entry",
-    defaultContent: function () { return { codeLength: 4, codeFormat: "numeric", acceptedCode: "1234", lockStyle: "classicBrass", showBackButton: false }; },
+    defaultContent: function () { return { codeLength: 4, codeFormat: "numeric", acceptedCode: "1234", lockStyle: "classicBrass", appearance: "classic", showBackButton: false }; },
     summary: function (c) {
       var style = LOCK_STYLES[c.lockStyle] || LOCK_STYLES.classicBrass;
       return style.label + " lock — " + c.codeFormat + " code, length " + c.codeLength;
@@ -231,7 +231,7 @@ var NODE_TYPES = {
     // (checkTextAnswer/pv_action_submitAnswer) — see renderCryptexSvg/
     // wireCryptexInteractions below. acceptedAnswers holds one or more
     // 3-letter combinations, same shape as Answer Entry.
-    defaultContent: function () { return { acceptedAnswers: ["CAT"], showBackButton: false }; },
+    defaultContent: function () { return { acceptedAnswers: ["CAT"], appearance: "classic", showBackButton: false }; },
     summary: function (c) { return "Combination: " + (c.acceptedAnswers || []).join(", "); }
   },
   crossReferenceLookup: {
@@ -258,7 +258,7 @@ var NODE_TYPES = {
       for (var i = 0; i < 12; i++) {
         switches.push({ id: uid("sw"), label: "CKT " + (i + 1 < 10 ? "0" : "") + (i + 1), onLabel: "A", offLabel: "B", requiredOn: false });
       }
-      return { prompt: "Set each switch to the position that matches the code.", switches: switches, showBackButton: false };
+      return { prompt: "Set each switch to the position that matches the code.", switches: switches, appearance: "classic", showBackButton: false };
     },
     summary: function (c) {
       var switches = c.switches || [];
@@ -294,6 +294,7 @@ var NODE_TYPES = {
         sides: { left: 2, top: 2, right: 2, bottom: 2 },
         ends: ends,
         correctPairs: [],
+        appearance: "classic",
         showBackButton: false
       };
     },
@@ -347,6 +348,7 @@ var NODE_TYPES = {
         targets: [{ id: uid("ltg"), q: 4, r: 4, kind: "center", idx: 0, mode: "atleast", min: 0.8, max: 3, value: 1.5, tolerance: 0.15 }],
         walls: [],
         cards: [],
+        appearance: "classic",
         showBackButton: false
       };
     },
@@ -403,6 +405,7 @@ var NODE_TYPES = {
           { id: uid("gpax"), x: 359.6, y: 310, teeth: 14 }
         ],
         decoyTeeth: [10, 20],
+        appearance: "classic",
         showBackButton: false
       };
     },
@@ -448,6 +451,7 @@ var NODE_TYPES = {
           { id: uid("wsit"), kind: "shape", shape: "star", color: "#9c4368", weight: 12, imageAsset: "" },
           { id: uid("wsit"), kind: "shape", shape: "pentagon", color: "#4a5a91", weight: 14, imageAsset: "" }
         ],
+        appearance: "classic",
         showBackButton: false
       };
     },
@@ -579,7 +583,7 @@ var NODE_TYPES = {
     // down to that key's own blade/bow threshold (content.threshold on the
     // Key node), at which point the shackle pops open.
     defaultContent: function () {
-      return { prompt: "Find the right key on the ring and unlock the padlock.", correctKeyNodeId: "", showBackButton: false };
+      return { prompt: "Find the right key on the ring and unlock the padlock.", correctKeyNodeId: "", appearance: "classic", showBackButton: false };
     },
     summary: function (c, hunt) {
       if (!c.correctKeyNodeId) return "No correct key chosen yet";
@@ -961,6 +965,7 @@ var NODE_TYPES = {
         board: { width: 640, upperHeight: 220, lowerHeight: 260 },
         components: [],
         winConditions: [],
+        appearance: "classic",
         showBackButton: false
       };
     },
@@ -1008,6 +1013,72 @@ var IMAGE_FRAME_STYLES = {
   polaroid: { label: "Polaroid" },
   gallery:  { label: "Gallery frame" }
 };
+
+/* ---------------------------------------------------------------------
+   Appearance — a per-node cosmetic skin choice offered on every physical-
+   prop puzzle type (Physical Lock Code, Cryptex, Fuse Panel, Rope Tying,
+   Lumen Beam, Gear & Pulley, Weight Scale, Lock and Key, Control Panel).
+   "classic" reproduces each node's original look untouched. "darkMaritime"
+   re-renders the same prop as a two-colour engraved scratchboard print —
+   19th-century adventure-book illustration plate — strictly pale-aqua ink
+   on near-black-green, no gradients/shadows/opacity shading; depth comes
+   only from line density, cross-hatching and solid shape. Purely
+   presentational, same as LOCK_STYLES below — never affects what counts as
+   a correct answer. See dmDefs/dmClass and the DM_* helpers just below for
+   the shared engraving toolkit every puzzle's darkMaritime branch draws
+   from, so the nine illustrations read as one consistent art style rather
+   than nine separate ones. */
+var APPEARANCES = {
+  classic:      { label: "Classic" },
+  darkMaritime: { label: "Dark Maritime" }
+};
+function nodeAppearance(c) { return c && c.appearance === "darkMaritime" ? "darkMaritime" : "classic"; }
+function isDarkMaritime(c) { return nodeAppearance(c) === "darkMaritime"; }
+
+var DM_INK = "#BEE9E8";   // pale aqua — every line, hatch stroke and light shape
+var DM_VOID = "#001514";  // near-black green — every ground/solid shape
+
+// Shared <defs> pattern library for the engraved look — diagonal single-
+// direction hatch (mid tone), crosshatch (dark tone) and a wavy wood-grain
+// hatch, all drawn as plain strokes in DM_INK over a DM_VOID ground so no
+// gradient/opacity trick is ever needed to fake shading. idp namespaces the
+// pattern ids per node instance (same convention as every other *idp*
+// prefix in this file — see renderCryptexSvg etc.) so several different
+// darkMaritime illustrations never clash if more than one is ever on
+// screen at once (e.g. Back-peek behind a live node).
+function dmDefs(idp) {
+  return (
+    '<pattern id="' + idp + 'dmH1" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
+      '<rect width="7" height="7" fill="' + DM_VOID + '"/><line x1="0" y1="0" x2="0" y2="7" stroke="' + DM_INK + '" stroke-width="1.2"/>' +
+    '</pattern>' +
+    '<pattern id="' + idp + 'dmH2" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">' +
+      '<rect width="5" height="5" fill="' + DM_VOID + '"/><line x1="0" y1="0" x2="0" y2="5" stroke="' + DM_INK + '" stroke-width="1.2"/>' +
+    '</pattern>' +
+    '<pattern id="' + idp + 'dmX" width="6" height="6" patternUnits="userSpaceOnUse">' +
+      '<rect width="6" height="6" fill="' + DM_VOID + '"/><path d="M0 0L6 6M6 0L0 6" stroke="' + DM_INK + '" stroke-width="1.1"/>' +
+    '</pattern>' +
+    '<pattern id="' + idp + 'dmWood" width="13" height="9" patternUnits="userSpaceOnUse">' +
+      '<rect width="13" height="9" fill="' + DM_VOID + '"/>' +
+      '<path d="M-1 2 Q4 0.5 7 2 T15 2 M-1 5 Q4 3.3 7 5 T15 5 M-1 8 Q4 6.6 7 8 T15 8" stroke="' + DM_INK + '" stroke-width="0.9" fill="none"/>' +
+    '</pattern>' +
+    '<pattern id="' + idp + 'dmRope" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(28)">' +
+      '<rect width="9" height="9" fill="' + DM_VOID + '"/>' +
+      '<line x1="0" y1="0" x2="0" y2="9" stroke="' + DM_INK + '" stroke-width="1.4"/><line x1="4.5" y1="0" x2="4.5" y2="9" stroke="' + DM_INK + '" stroke-width="0.8"/>' +
+    '</pattern>' +
+    '<pattern id="' + idp + 'dmDot" width="6" height="6" patternUnits="userSpaceOnUse">' +
+      '<rect width="6" height="6" fill="' + DM_VOID + '"/><circle cx="1.2" cy="1.2" r="1" fill="' + DM_INK + '"/>' +
+    '</pattern>'
+  );
+}
+// Convenience fill refs into the pattern library above — void (flat solid
+// ground), ink (flat solid line colour), hatch1/hatch2/cross (three
+// densities of shading, light to dark), wood, rope, dot (stipple, lightest
+// texture — distant/background tone).
+function dmFill(idp, which) {
+  if (which === "ink") return DM_INK;
+  if (which === "void") return DM_VOID;
+  return 'url(#' + idp + 'dm' + { hatch1: "H1", hatch2: "H2", cross: "X", wood: "Wood", rope: "Rope", dot: "Dot" }[which] + ')';
+}
 
 /* Physical Lock Code Entry — cosmetic appearance options for the real-world
    prop the player is holding. Purely presentational (label shown to the
@@ -2183,9 +2254,15 @@ function ctpDefaultComponentData(type) {
     case "knob180Num": case "knob270Num": return { points: 5, value: 0 };
     case "knob180Named": case "knob270Named": return { points: 5, names: ["1", "2", "3", "4", "5"], value: 0 };
     case "knobFull": return { value: 0, showIntervals: false, intervalCount: 12 };
-    case "light": return { style: "round", color: "#ff453a", rules: [], defaultOn: false };
-    case "gauge": return { min: 0, max: 100, rules: [], defaultValue: 0 };
-    case "digitalDisplay": return { digits: 4, rules: [], defaultText: "----" };
+    // mode: "rules" (default — if/then conditions, see ctpEvalRules) or
+    // "formula" (a math expression over other components' live values,
+    // assigned to variables x/y/z/... — see CTP_FORMULA_VAR_LETTERS/
+    // ctpEvalFormula below). Both modes fall back to the same default*
+    // field when nothing matches / the formula errors, so switching modes
+    // never loses that fallback.
+    case "light": return { style: "round", color: "#ff453a", rules: [], defaultOn: false, mode: "rules", formula: { vars: [], expression: "" } };
+    case "gauge": return { min: 0, max: 100, rules: [], defaultValue: 0, mode: "rules", formula: { vars: [], expression: "" } };
+    case "digitalDisplay": return { digits: 4, rules: [], defaultText: "----", mode: "rules", formula: { vars: [], expression: "", decimals: 0, prefix: "", suffix: "" } };
     case "image": return { src: "", fit: "contain" };
     case "gif": return { src: "" };
     case "label": return { text: "Label", fontSize: 14, color: "#e8e8e8", align: "center" };
@@ -2256,14 +2333,263 @@ function ctpWinConditionsMet(winConditions, valuesById) {
   return !!(winConditions && winConditions.length) && winConditions.every(function (wc) { return ctpEvalSingleCondition(wc, valuesById); });
 }
 
+/* -------------------------------------------------------------------------
+   Control Panel Builder — formula engine. An alternative to the if/then
+   rules above for a light/gauge/digital-display component: instead of a
+   fixed output per matched condition, the component's value is computed
+   live from a math expression over other components' current values,
+   assigned to short variable names (x, y, z, ... — see
+   CTP_FORMULA_VAR_LETTERS) the creator picks in the Studio inspector (e.g.
+   "this digital display shows this slider plus that slider" becomes
+   expression "x + y" with x/y each assigned to a slider). Deliberately a
+   hand-rolled tokenizer/recursive-descent parser/evaluator rather than
+   `eval`/`new Function` — hunts are plain JSON that can be imported from
+   anywhere, so a creator-authored expression must never be able to run
+   arbitrary JS. ctpEvalFormula never throws; parse/eval errors are caught
+   and reported back as { ok:false, error } so the caller (ctpComputeOutputs
+   below, and the Studio formula editor's live preview in app.js) can fall
+   back to the component's own default* field exactly like an unmatched
+   rule, rather than breaking the whole panel over one bad expression.
+------------------------------------------------------------------------- */
+var CTP_FORMULA_VAR_LETTERS = ["x", "y", "z", "w", "v", "u", "t", "s"];
+var CTP_FORMULA_FUNCS = {
+  abs: function (a) { return Math.abs(a); },
+  round: function (a) { return Math.round(a); },
+  floor: function (a) { return Math.floor(a); },
+  ceil: function (a) { return Math.ceil(a); },
+  sqrt: function (a) { return Math.sqrt(a); },
+  min: function () { return Math.min.apply(Math, arguments); },
+  max: function () { return Math.max.apply(Math, arguments); },
+  clamp: function (v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+};
+
+function ctpFormulaTokenize(expr) {
+  var s = String(expr || "");
+  var i = 0, n = s.length, tokens = [];
+  function isDigit(c) { return c >= "0" && c <= "9"; }
+  function isAlpha(c) { return /[A-Za-z_]/.test(c); }
+  while (i < n) {
+    var c = s[i];
+    if (c === " " || c === "\t" || c === "\n" || c === "\r") { i++; continue; }
+    if (isDigit(c) || (c === "." && isDigit(s[i + 1]))) {
+      var startN = i;
+      while (i < n && (isDigit(s[i]) || s[i] === ".")) i++;
+      tokens.push({ type: "num", value: parseFloat(s.slice(startN, i)) });
+      continue;
+    }
+    if (isAlpha(c)) {
+      var startI = i;
+      while (i < n && /[A-Za-z0-9_]/.test(s[i])) i++;
+      var word = s.slice(startI, i);
+      if (word === "and") tokens.push({ type: "op", value: "&&" });
+      else if (word === "or") tokens.push({ type: "op", value: "||" });
+      else if (word === "not") tokens.push({ type: "op", value: "!" });
+      else tokens.push({ type: "ident", value: word });
+      continue;
+    }
+    if (c === "<" || c === ">" || c === "=" || c === "!") {
+      if (s[i + 1] === "=") { tokens.push({ type: "op", value: c + "=" }); i += 2; }
+      else { tokens.push({ type: "op", value: c }); i++; }
+      continue;
+    }
+    if (c === "&" && s[i + 1] === "&") { tokens.push({ type: "op", value: "&&" }); i += 2; continue; }
+    if (c === "|" && s[i + 1] === "|") { tokens.push({ type: "op", value: "||" }); i += 2; continue; }
+    if ("+-*/%^(),".indexOf(c) !== -1) { tokens.push({ type: "op", value: c }); i++; continue; }
+    throw new Error("Unexpected character '" + c + "'");
+  }
+  return tokens;
+}
+
+// Recursive-descent parser — standard precedence, low to high:
+// || / or  <  && / and  <  == !=  <  < <= > >=  <  + -  <  * / %  <  ^ (right-assoc)  <  unary - !  <  primary
+function ctpFormulaPeek(tokens, pos) { return tokens[pos.i]; }
+function ctpFormulaParseExpr(tokens, pos) { return ctpFormulaParseOr(tokens, pos); }
+function ctpFormulaParseOr(tokens, pos) {
+  var left = ctpFormulaParseAnd(tokens, pos);
+  while (ctpFormulaPeek(tokens, pos) && ctpFormulaPeek(tokens, pos).value === "||") {
+    pos.i++;
+    left = { type: "logic", op: "||", left: left, right: ctpFormulaParseAnd(tokens, pos) };
+  }
+  return left;
+}
+function ctpFormulaParseAnd(tokens, pos) {
+  var left = ctpFormulaParseEquality(tokens, pos);
+  while (ctpFormulaPeek(tokens, pos) && ctpFormulaPeek(tokens, pos).value === "&&") {
+    pos.i++;
+    left = { type: "logic", op: "&&", left: left, right: ctpFormulaParseEquality(tokens, pos) };
+  }
+  return left;
+}
+function ctpFormulaParseEquality(tokens, pos) {
+  var left = ctpFormulaParseComparison(tokens, pos);
+  while (ctpFormulaPeek(tokens, pos) && (ctpFormulaPeek(tokens, pos).value === "==" || ctpFormulaPeek(tokens, pos).value === "!=")) {
+    var op = tokens[pos.i].value; pos.i++;
+    left = { type: "cmp", op: op, left: left, right: ctpFormulaParseComparison(tokens, pos) };
+  }
+  return left;
+}
+function ctpFormulaParseComparison(tokens, pos) {
+  var left = ctpFormulaParseAdditive(tokens, pos);
+  while (ctpFormulaPeek(tokens, pos) && ["<", "<=", ">", ">="].indexOf(ctpFormulaPeek(tokens, pos).value) !== -1) {
+    var op = tokens[pos.i].value; pos.i++;
+    left = { type: "cmp", op: op, left: left, right: ctpFormulaParseAdditive(tokens, pos) };
+  }
+  return left;
+}
+function ctpFormulaParseAdditive(tokens, pos) {
+  var left = ctpFormulaParseMultiplicative(tokens, pos);
+  while (ctpFormulaPeek(tokens, pos) && (ctpFormulaPeek(tokens, pos).value === "+" || ctpFormulaPeek(tokens, pos).value === "-")) {
+    var op = tokens[pos.i].value; pos.i++;
+    left = { type: "bin", op: op, left: left, right: ctpFormulaParseMultiplicative(tokens, pos) };
+  }
+  return left;
+}
+function ctpFormulaParseMultiplicative(tokens, pos) {
+  var left = ctpFormulaParsePower(tokens, pos);
+  while (ctpFormulaPeek(tokens, pos) && ["*", "/", "%"].indexOf(ctpFormulaPeek(tokens, pos).value) !== -1) {
+    var op = tokens[pos.i].value; pos.i++;
+    left = { type: "bin", op: op, left: left, right: ctpFormulaParsePower(tokens, pos) };
+  }
+  return left;
+}
+function ctpFormulaParsePower(tokens, pos) {
+  var left = ctpFormulaParseUnary(tokens, pos);
+  if (ctpFormulaPeek(tokens, pos) && ctpFormulaPeek(tokens, pos).value === "^") {
+    pos.i++;
+    return { type: "bin", op: "^", left: left, right: ctpFormulaParsePower(tokens, pos) }; // right-assoc
+  }
+  return left;
+}
+function ctpFormulaParseUnary(tokens, pos) {
+  var t = ctpFormulaPeek(tokens, pos);
+  if (t && t.type === "op" && (t.value === "-" || t.value === "!")) {
+    pos.i++;
+    return { type: "unary", op: t.value, operand: ctpFormulaParseUnary(tokens, pos) };
+  }
+  return ctpFormulaParsePrimary(tokens, pos);
+}
+function ctpFormulaParsePrimary(tokens, pos) {
+  var t = ctpFormulaPeek(tokens, pos);
+  if (!t) throw new Error("Unexpected end of formula");
+  if (t.type === "num") { pos.i++; return { type: "num", value: t.value }; }
+  if (t.type === "op" && t.value === "(") {
+    pos.i++;
+    var e = ctpFormulaParseExpr(tokens, pos);
+    if (!(ctpFormulaPeek(tokens, pos) && ctpFormulaPeek(tokens, pos).value === ")")) throw new Error("Missing closing parenthesis");
+    pos.i++;
+    return e;
+  }
+  if (t.type === "ident") {
+    pos.i++;
+    if (ctpFormulaPeek(tokens, pos) && ctpFormulaPeek(tokens, pos).value === "(") {
+      pos.i++;
+      var args = [];
+      if (!(ctpFormulaPeek(tokens, pos) && ctpFormulaPeek(tokens, pos).value === ")")) {
+        args.push(ctpFormulaParseExpr(tokens, pos));
+        while (ctpFormulaPeek(tokens, pos) && ctpFormulaPeek(tokens, pos).value === ",") { pos.i++; args.push(ctpFormulaParseExpr(tokens, pos)); }
+      }
+      if (!(ctpFormulaPeek(tokens, pos) && ctpFormulaPeek(tokens, pos).value === ")")) throw new Error("Missing closing parenthesis in " + t.value + "(...)");
+      pos.i++;
+      return { type: "call", name: t.value, args: args };
+    }
+    return { type: "var", name: t.value };
+  }
+  throw new Error("Unexpected '" + (t.value != null ? t.value : t.type) + "'");
+}
+function ctpFormulaEval(node, varsMap) {
+  switch (node.type) {
+    case "num": return node.value;
+    case "var":
+      if (!(node.name in varsMap)) throw new Error("'" + node.name + "' isn't assigned to a component");
+      return Number(varsMap[node.name]) || 0;
+    case "call":
+      var fn = CTP_FORMULA_FUNCS[node.name];
+      if (!fn) throw new Error("Unknown function '" + node.name + "()'");
+      return fn.apply(null, node.args.map(function (a) { return ctpFormulaEval(a, varsMap); }));
+    case "unary":
+      var v = ctpFormulaEval(node.operand, varsMap);
+      return node.op === "-" ? -v : (v ? 0 : 1);
+    case "bin": {
+      var l = ctpFormulaEval(node.left, varsMap), r = ctpFormulaEval(node.right, varsMap);
+      if (node.op === "+") return l + r;
+      if (node.op === "-") return l - r;
+      if (node.op === "*") return l * r;
+      if (node.op === "/") return r === 0 ? 0 : l / r;
+      if (node.op === "%") return r === 0 ? 0 : l % r;
+      if (node.op === "^") return Math.pow(l, r);
+      break;
+    }
+    case "cmp": {
+      var lc = ctpFormulaEval(node.left, varsMap), rc = ctpFormulaEval(node.right, varsMap);
+      if (node.op === "<") return lc < rc ? 1 : 0;
+      if (node.op === "<=") return lc <= rc ? 1 : 0;
+      if (node.op === ">") return lc > rc ? 1 : 0;
+      if (node.op === ">=") return lc >= rc ? 1 : 0;
+      if (node.op === "==") return lc === rc ? 1 : 0;
+      if (node.op === "!=") return lc !== rc ? 1 : 0;
+      break;
+    }
+    case "logic": {
+      var ll = ctpFormulaEval(node.left, varsMap);
+      if (node.op === "&&") return (!ll) ? 0 : (ctpFormulaEval(node.right, varsMap) ? 1 : 0);
+      if (node.op === "||") return ll ? 1 : (ctpFormulaEval(node.right, varsMap) ? 1 : 0);
+      break;
+    }
+  }
+  throw new Error("Malformed formula");
+}
+// Parses and evaluates `expr` against varsMap ({ x: 3, y: 4, ... }) in one
+// shot — never throws; returns { ok:true, value } or { ok:false, error }.
+function ctpEvalFormula(expr, varsMap) {
+  try {
+    var tokens = ctpFormulaTokenize(expr);
+    if (!tokens.length) return { ok: false, error: "Empty formula" };
+    var pos = { i: 0 };
+    var ast = ctpFormulaParseExpr(tokens, pos);
+    if (pos.i < tokens.length) throw new Error("Unexpected '" + tokens[pos.i].value + "'");
+    var val = ctpFormulaEval(ast, varsMap || {});
+    if (typeof val !== "number" || isNaN(val) || !isFinite(val)) throw new Error("Doesn't evaluate to a number");
+    return { ok: true, value: val };
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || "Invalid formula" };
+  }
+}
+// Evaluates one light/gauge/digitalDisplay component's own formula
+// (component.data.formula = { vars:[{letter,componentId}], expression,
+// decimals?, prefix?, suffix? }) against the panel's live component
+// values, shaping the result the same way a matched rule's `output` would
+// (see ctpEvalRules) so ctpComputeOutputs can treat both modes uniformly.
+// Returns {} (meaning "use the component's own default*") on any error.
+function ctpEvalComponentFormula(comp, valuesById) {
+  var f = comp.data.formula || {};
+  var varsMap = {};
+  (f.vars || []).forEach(function (v) {
+    var raw = valuesById ? valuesById[v.componentId] : undefined;
+    varsMap[v.letter] = raw != null ? Number(raw) : 0;
+  });
+  var res = ctpEvalFormula(f.expression || "", varsMap);
+  if (!res.ok) return {};
+  if (comp.type === "light") return { on: !!res.value };
+  if (comp.type === "gauge") return { value: res.value };
+  if (comp.type === "digitalDisplay") {
+    var decimals = Math.max(0, Math.min(6, Number(f.decimals) || 0));
+    return { text: (f.prefix || "") + res.value.toFixed(decimals) + (f.suffix || "") };
+  }
+  return {};
+}
+
 // Resolves what a light/gauge/digital-display component should currently
-// show — runs its rule list against the panel's live component values,
-// falling back to its own default* field when no rule matches.
+// show — either runs its rule list (ctpEvalRules) or its formula
+// (ctpEvalComponentFormula), per its own data.mode, against the panel's
+// live component values, falling back to its own default* field when
+// nothing matches / the formula errors.
 function ctpComputeOutputs(content, valuesById) {
   var out = {};
   (content.components || []).forEach(function (comp) {
     if (ctpComponentKind(comp.type) !== "output") return;
-    out[comp.id] = ctpEvalRules(comp.data.rules, valuesById) || {};
+    out[comp.id] = (comp.data.mode === "formula")
+      ? ctpEvalComponentFormula(comp, valuesById)
+      : (ctpEvalRules(comp.data.rules, valuesById) || {});
   });
   return out;
 }
@@ -3349,8 +3675,9 @@ function renderPreviewNode(session, n, ctl) {
     var fbMp = session.state.feedback[n.id];
     if (fbMp) html += '<div class="pv-feedback ' + fbMp + '">' + (fbMp === "correct" ? "✓ All parts correct." : "✗ One or more parts are wrong — try again.") + '</div>';
   } else if (n.type === "physicalLockCode") {
+    var lockDm = isDarkMaritime(c);
     var lockStyleKey = LOCK_STYLES[c.lockStyle] ? c.lockStyle : "classicBrass";
-    var lockStyle = LOCK_STYLES[lockStyleKey];
+    var lockStyle = lockDm ? { playerLabel: "engraved iron ship's lock", brand: "Harrow & Sons, Chandlers" } : LOCK_STYLES[lockStyleKey];
     var isAlphaLock = c.codeFormat === "alpha";
     var wheelValues = isAlphaLock ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") : "0123456789".split("");
     var wheelN = wheelValues.length;
@@ -3374,9 +3701,10 @@ function renderPreviewNode(session, n, ctl) {
 
     html += '<div class="pv-scene-body">Drag a wheel, scroll it, or use the arrow buttons to line up the ' + (isAlphaLock ? "letter" : "number") + ' from the ' + esc(lockStyle.playerLabel) + ', then try the combination.</div>';
 
-    html += '<div class="pv-lock-wrap pv-lock-style-' + lockStyleKey + (isAlphaLock ? ' pv-lock-alpha' : '') + (fbLo === "correct" ? ' pv-lock-open' : '') + '">';
+    html += '<div class="pv-lock-wrap' + (lockDm ? ' pv-dm' : ' pv-lock-style-' + lockStyleKey) + (isAlphaLock ? ' pv-lock-alpha' : '') + (fbLo === "correct" ? ' pv-lock-open' : '') + '">';
     html += '<div class="pv-lock-shackle"></div>';
     html += '<div class="pv-lock-body">';
+    if (lockDm) html += '<svg class="pv-dm-hatch-bg" viewBox="0 0 100 100" preserveAspectRatio="none"><defs>' + dmDefs("lk" + n.id.replace(/[^a-zA-Z0-9]/g, "") + "_") + '</defs><rect width="100" height="100" fill="url(#lk' + n.id.replace(/[^a-zA-Z0-9]/g, "") + '_dmH1)"/></svg>';
     html += '<div class="pv-lock-brand">' + esc(lockStyle.brand) + '</div>';
     html += '<div class="pv-lock-dials">';
     for (var wi = 0; wi < dialCount; wi++) {
@@ -3400,7 +3728,7 @@ function renderPreviewNode(session, n, ctl) {
   } else if (n.type === "cryptexLock") {
     if (!ctl.cryptexDraft[n.id]) ctl.cryptexDraft[n.id] = { outer: 0, middle: 0, inner: 0 };
     html += '<div class="pv-scene-body">Drag each ring to line up a letter against the pointer at the top, then press the centre stud to try that combination.</div>';
-    html += renderCryptexSvg(n.id, ctl.cryptexDraft[n.id]);
+    html += renderCryptexSvg(n.id, ctl.cryptexDraft[n.id], isDarkMaritime(c));
     var fbCx = session.state.feedback[n.id];
     if (fbCx) html += '<div class="pv-feedback ' + fbCx + '">' + (fbCx === "correct" ? "✓ Correct." : "✗ Not quite — try again.") + '</div>';
   } else if (n.type === "crossReferenceLookup") {
@@ -3417,8 +3745,9 @@ function renderPreviewNode(session, n, ctl) {
       (c.switches || []).forEach(function (s) { ctl.fuseDraft[n.id][s.id] = false; });
     }
     var fuseState = ctl.fuseDraft[n.id];
+    var fuseDm = isDarkMaritime(c);
     html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
-    html += '<div class="pv-fuse-panel">';
+    html += '<div class="pv-fuse-panel' + (fuseDm ? ' pv-dm' : '') + '">';
     (c.switches || []).forEach(function (s) {
       var swOn = !!fuseState[s.id];
       html += '<div class="pv-fuse-switch' + (swOn ? ' on' : '') + '" data-swid="' + esc(s.id) + '" tabindex="0" role="switch" aria-checked="' + (swOn ? "true" : "false") + '" aria-label="' + esc(s.label || "Switch") + '">' +
@@ -3446,7 +3775,7 @@ function renderPreviewNode(session, n, ctl) {
     if (fbRt === "correct") html += '<div class="pv-feedback correct">✓ Hoisted!</div>';
   } else if (n.type === "lumenPuzzle") {
     if (c.prompt) html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
-    html += '<div class="pv-lumen-wrap" data-node="' + esc(n.id) + '">' +
+    html += '<div class="pv-lumen-wrap' + (isDarkMaritime(c) ? ' pv-dm' : '') + '" data-node="' + esc(n.id) + '">' +
       '<canvas class="pv-lumen-canvas" data-node="' + esc(n.id) + '"></canvas>' +
       '<div class="pv-lumen-toast" data-node="' + esc(n.id) + '">All targets solved ✨</div>' +
       '</div>' +
@@ -3477,7 +3806,7 @@ function renderPreviewNode(session, n, ctl) {
     var ctpOutputs = ctpComputeOutputs(c, ctpValues);
     var ctpLocked = !!session.state.completed[n.id];
     if (c.prompt) html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
-    html += '<div class="pv-ctp-wrap' + (ctpLocked ? ' locked' : '') + '" data-node="' + esc(n.id) + '">' + ctpRenderBoard(c, ctpValues, ctpOutputs, !ctpLocked) + '</div>';
+    html += '<div class="pv-ctp-wrap' + (ctpLocked ? ' locked' : '') + (isDarkMaritime(c) ? ' pv-dm' : '') + '" data-node="' + esc(n.id) + '">' + ctpRenderBoard(c, ctpValues, ctpOutputs, !ctpLocked) + '</div>';
     var fbCtp = session.state.feedback[n.id];
     if (fbCtp === "correct") html += '<div class="pv-feedback correct">✓ Panel set correctly.</div>';
   } else if (n.type === "categoryGrid") {
@@ -3774,7 +4103,8 @@ function renderPreviewNode(session, n, ctl) {
       var lkThreshold = lkCur ? Number(lkCur.content.threshold) : 50;
       if (!isFinite(lkThreshold)) lkThreshold = 50;
       var lkTop = lkPadlockTop(lkSolved ? "correct" : "idle", lkThreshold);
-      html += '<div class="pv-lk-stage" id="pvLkStage">';
+      var lkDm = isDarkMaritime(c);
+      html += '<div class="pv-lk-stage' + (lkDm ? ' pv-dm' : '') + '" id="pvLkStage">';
       html += '<div class="pv-lk-ring"></div>';
       html += '<div class="pv-lk-key-layer"><div class="pv-lk-key"' +
         (lkCur && lkCur.content.imageAsset ? ' style="background-image:url(&quot;' + esc(lkCur.content.imageAsset) + '&quot;)"' : '') + '>' +
@@ -4180,32 +4510,48 @@ function cryptexPointerLetter(rotationDeg) {
 // Wrapped in .pv-cryptex-wrap (rather than shaking/transforming the <svg>
 // root directly) so the wrong-answer shake — a plain CSS animation toggled
 // in wireCryptexInteractions — has a reliable box to apply translateX to.
-function renderCryptexSvg(nodeId, rot) {
+function renderCryptexSvg(nodeId, rot, dm) {
   var cx = CRYPTEX_CX, cy = CRYPTEX_CY, idp = "cx" + nodeId.replace(/[^a-zA-Z0-9]/g, "") + "_";
-  return '<div class="pv-cryptex-wrap"><svg class="cryptex-svg" data-node="' + nodeId + '" width="320" viewBox="0 0 500 600" style="display:block;margin:10px auto 0;max-width:100%;">' +
-    '<defs>' +
-      '<radialGradient id="' + idp + 'plate" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#e4e1d6"/><stop offset="55%" stop-color="#a9a598"/><stop offset="100%" stop-color="#69665c"/></radialGradient>' +
-      '<linearGradient id="' + idp + 'shackle" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#8c8c8c"/><stop offset="50%" stop-color="#e8e8e8"/><stop offset="100%" stop-color="#6b6b6b"/></linearGradient>' +
-      '<radialGradient id="' + idp + 'ro" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#c79a52"/><stop offset="100%" stop-color="#7a5a28"/></radialGradient>' +
-      '<radialGradient id="' + idp + 'rm" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#d4b06a"/><stop offset="100%" stop-color="#8c6c34"/></radialGradient>' +
-      '<radialGradient id="' + idp + 'ri" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#e0c17e"/><stop offset="100%" stop-color="#9c7c40"/></radialGradient>' +
-    '</defs>' +
-    '<g class="cryptex-shackle"><path d="M 200 400 L 200 150 A 50 50 0 0 1 300 150 L 300 400" fill="none" stroke="url(#' + idp + 'shackle)" stroke-width="24" stroke-linecap="round"/></g>' +
-    '<circle cx="250" cy="340" r="192" fill="url(#' + idp + 'plate)" stroke="#4a473e" stroke-width="3"/>' +
-    '<polygon points="250,132 240,150 260,150" fill="#d8483f" stroke="#5a1a15" stroke-width="1"/>' +
-    '<g class="cryptex-ring" data-ring="outer" transform="rotate(' + rot.outer + ' 250 340)"><circle class="cryptex-ring-track" cx="250" cy="340" r="165" fill="url(#' + idp + 'ro)" stroke="#3d2f14" stroke-width="46"/>' + cryptexLetterMarkup(cx, cy, 165, cryptexPointerIndex(rot.outer)) + '</g>' +
-    '<circle cx="250" cy="340" r="188" fill="none" stroke="#3d3a32" stroke-width="1.5"/><circle cx="250" cy="340" r="142" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
+  // Dark Maritime: same ring/shackle/plate geometry as Classic, but every
+  // gradient swapped for a flat DM_VOID fill and a cross-hatched DM_INK
+  // stroke (the pattern library from dmDefs, drawn at each ring's own huge
+  // stroke-width so the hatch reads as the ring's material, not a hairline
+  // outline) — see the doc comment on dmDefs/APPEARANCES above.
+  var defs = dm ? dmDefs(idp) :
+    '<radialGradient id="' + idp + 'plate" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#e4e1d6"/><stop offset="55%" stop-color="#a9a598"/><stop offset="100%" stop-color="#69665c"/></radialGradient>' +
+    '<linearGradient id="' + idp + 'shackle" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#8c8c8c"/><stop offset="50%" stop-color="#e8e8e8"/><stop offset="100%" stop-color="#6b6b6b"/></linearGradient>' +
+    '<radialGradient id="' + idp + 'ro" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#c79a52"/><stop offset="100%" stop-color="#7a5a28"/></radialGradient>' +
+    '<radialGradient id="' + idp + 'rm" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#d4b06a"/><stop offset="100%" stop-color="#8c6c34"/></radialGradient>' +
+    '<radialGradient id="' + idp + 'ri" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#e0c17e"/><stop offset="100%" stop-color="#9c7c40"/></radialGradient>';
+  var shackleStroke = dm ? DM_INK : 'url(#' + idp + 'shackle)';
+  var plateFill = dm ? dmFill(idp, "hatch1") : 'url(#' + idp + 'plate)';
+  var plateStroke = dm ? DM_INK : "#4a473e";
+  var pointerFill = dm ? DM_INK : "#d8483f";
+  var pointerStroke = dm ? DM_VOID : "#5a1a15";
+  var ringFillO = dm ? DM_VOID : 'url(#' + idp + 'ro)', ringStrokeO = dm ? 'url(#' + idp + 'dmX)' : "#3d2f14";
+  var ringFillM = dm ? DM_VOID : 'url(#' + idp + 'rm)', ringStrokeM = dm ? 'url(#' + idp + 'dmX)' : "#4a3a18";
+  var ringFillI = dm ? DM_VOID : 'url(#' + idp + 'ri)', ringStrokeI = dm ? 'url(#' + idp + 'dmX)' : "#5a4622";
+  var rimStroke = dm ? DM_INK : "#3d3a32";
+  var btnFill = dm ? DM_VOID : "#caa15a", btnStroke = dm ? DM_INK : "#6b4a20";
+  var keyholeFill = dm ? DM_INK : "#4a3a1c";
+  return '<div class="pv-cryptex-wrap' + (dm ? ' pv-dm' : '') + '"><svg class="cryptex-svg' + (dm ? ' cryptex-svg-dm' : '') + '" data-node="' + nodeId + '" width="320" viewBox="0 0 500 600" style="display:block;margin:10px auto 0;max-width:100%;">' +
+    '<defs>' + defs + '</defs>' +
+    '<g class="cryptex-shackle"><path d="M 200 400 L 200 150 A 50 50 0 0 1 300 150 L 300 400" fill="none" stroke="' + shackleStroke + '" stroke-width="24" stroke-linecap="round"/></g>' +
+    '<circle cx="250" cy="340" r="192" fill="' + plateFill + '" stroke="' + plateStroke + '" stroke-width="3"/>' +
+    '<polygon points="250,132 240,150 260,150" fill="' + pointerFill + '" stroke="' + pointerStroke + '" stroke-width="1"/>' +
+    '<g class="cryptex-ring" data-ring="outer" transform="rotate(' + rot.outer + ' 250 340)"><circle class="cryptex-ring-track" cx="250" cy="340" r="165" fill="' + ringFillO + '" stroke="' + ringStrokeO + '" stroke-width="46"/>' + cryptexLetterMarkup(cx, cy, 165, cryptexPointerIndex(rot.outer)) + '</g>' +
+    '<circle cx="250" cy="340" r="188" fill="none" stroke="' + rimStroke + '" stroke-width="1.5"/><circle cx="250" cy="340" r="142" fill="none" stroke="' + rimStroke + '" stroke-width="1.5"/>' +
     '<circle class="cryptex-hit" data-ring="outer" cx="250" cy="340" r="165" fill="#000" opacity="0" stroke="#000" stroke-width="46"/>' +
-    '<g class="cryptex-ring" data-ring="middle" transform="rotate(' + rot.middle + ' 250 340)"><circle class="cryptex-ring-track" cx="250" cy="340" r="117" fill="url(#' + idp + 'rm)" stroke="#4a3a18" stroke-width="42"/>' + cryptexLetterMarkup(cx, cy, 117, cryptexPointerIndex(rot.middle)) + '</g>' +
-    '<circle cx="250" cy="340" r="138" fill="none" stroke="#3d3a32" stroke-width="1.5"/><circle cx="250" cy="340" r="96" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
+    '<g class="cryptex-ring" data-ring="middle" transform="rotate(' + rot.middle + ' 250 340)"><circle class="cryptex-ring-track" cx="250" cy="340" r="117" fill="' + ringFillM + '" stroke="' + ringStrokeM + '" stroke-width="42"/>' + cryptexLetterMarkup(cx, cy, 117, cryptexPointerIndex(rot.middle)) + '</g>' +
+    '<circle cx="250" cy="340" r="138" fill="none" stroke="' + rimStroke + '" stroke-width="1.5"/><circle cx="250" cy="340" r="96" fill="none" stroke="' + rimStroke + '" stroke-width="1.5"/>' +
     '<circle class="cryptex-hit" data-ring="middle" cx="250" cy="340" r="117" fill="#000" opacity="0" stroke="#000" stroke-width="42"/>' +
-    '<g class="cryptex-ring" data-ring="inner" transform="rotate(' + rot.inner + ' 250 340)"><circle class="cryptex-ring-track" cx="250" cy="340" r="73" fill="url(#' + idp + 'ri)" stroke="#5a4622" stroke-width="38"/>' + cryptexLetterMarkup(cx, cy, 73, cryptexPointerIndex(rot.inner)) + '</g>' +
-    '<circle cx="250" cy="340" r="92" fill="none" stroke="#3d3a32" stroke-width="1.5"/><circle cx="250" cy="340" r="54" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
+    '<g class="cryptex-ring" data-ring="inner" transform="rotate(' + rot.inner + ' 250 340)"><circle class="cryptex-ring-track" cx="250" cy="340" r="73" fill="' + ringFillI + '" stroke="' + ringStrokeI + '" stroke-width="38"/>' + cryptexLetterMarkup(cx, cy, 73, cryptexPointerIndex(rot.inner)) + '</g>' +
+    '<circle cx="250" cy="340" r="92" fill="none" stroke="' + rimStroke + '" stroke-width="1.5"/><circle cx="250" cy="340" r="54" fill="none" stroke="' + rimStroke + '" stroke-width="1.5"/>' +
     '<circle class="cryptex-hit" data-ring="inner" cx="250" cy="340" r="73" fill="#000" opacity="0" stroke="#000" stroke-width="38"/>' +
     '<g class="cryptex-center">' +
-      '<circle class="cryptex-btn-face" cx="250" cy="340" r="46" fill="#caa15a" stroke="#6b4a20" stroke-width="2"/>' +
-      '<circle cx="250" cy="340" r="46" fill="none" stroke="#3d3a32" stroke-width="1.5"/>' +
-      '<circle cx="250" cy="330" r="9" fill="#4a3a1c"/><polygon points="244,336 256,336 251,354 249,354" fill="#4a3a1c"/>' +
+      '<circle class="cryptex-btn-face" cx="250" cy="340" r="46" fill="' + btnFill + '" stroke="' + btnStroke + '" stroke-width="2"/>' +
+      '<circle cx="250" cy="340" r="46" fill="none" stroke="' + rimStroke + '" stroke-width="1.5"/>' +
+      '<circle cx="250" cy="330" r="9" fill="' + keyholeFill + '"/><polygon points="244,336 256,336 251,354 249,354" fill="' + keyholeFill + '"/>' +
     '</g>' +
   '</svg></div>';
 }
@@ -4394,7 +4740,7 @@ var ROPE_FRAY_ANGLES = [-30, -18, -7, 7, 18, 30];
 var ROPE_FRAY_TONES = ["light", "fiber", "light", "core", "fiber", "light"];
 var ROPE_HEX = "#8a5a34", ROPE_LIGHT = "#c9a876";
 
-function ropeFrayMarkup(seedBase, tip, dir) {
+function ropeFrayMarkup(seedBase, tip, dir, dm) {
   var s = "";
   ROPE_FRAY_ANGLES.forEach(function (deg, i) {
     var rad = deg * Math.PI / 180;
@@ -4409,8 +4755,8 @@ function ropeFrayMarkup(seedBase, tip, dir) {
     var ctrl = { x: (start.x + end.x) / 2 + perp.x * bow, y: (start.y + end.y) / 2 + perp.y * bow };
     var d = "M " + start.x.toFixed(1) + " " + start.y.toFixed(1) + " Q " + ctrl.x.toFixed(1) + " " + ctrl.y.toFixed(1) + " " + end.x.toFixed(1) + " " + end.y.toFixed(1);
     var tone = ROPE_FRAY_TONES[i];
-    var stroke = tone === "fiber" ? "#e8d5b5" : (tone === "core" ? ROPE_HEX : ROPE_LIGHT);
-    s += '<path d="' + d + '" fill="none" stroke="' + stroke + '" stroke-width="1.7" stroke-linecap="round" opacity="0.9"/>';
+    var stroke = dm ? DM_INK : (tone === "fiber" ? "#e8d5b5" : (tone === "core" ? ROPE_HEX : ROPE_LIGHT));
+    s += '<path d="' + d + '" fill="none" stroke="' + stroke + '" stroke-width="1.7" stroke-linecap="round"' + (dm ? '' : ' opacity="0.9"') + '/>';
   });
   return s;
 }
@@ -4418,17 +4764,25 @@ function ropeFrayMarkup(seedBase, tip, dir) {
 // A free (untied) rope end — shaft + frayed tip + an invisible larger hit
 // circle at the tip (.rope-end-cap) that wireRopeTyingInteractions listens
 // for taps on.
-function ropeStubMarkup(endId, info, selectedId) {
+function ropeStubMarkup(endId, info, selectedId, dm) {
   var edge = info.geom.edge, dir = info.geom.dir, tip = info.tip;
   var shaftEnd = { x: tip.x - dir.x * 7, y: tip.y - dir.y * 7 };
   var seedBase = ropeHash(endId);
   var s = '<g class="rope-stub">';
-  s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="#241b13" stroke-width="13" stroke-linecap="round"/>';
-  s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="' + ROPE_HEX + '" stroke-width="10" stroke-linecap="round"/>';
-  s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="' + ROPE_LIGHT + '" stroke-width="2" stroke-dasharray="3 7" stroke-linecap="round" opacity="0.8"/>';
-  s += ropeFrayMarkup(seedBase, tip, dir);
+  if (dm) {
+    // A solid ink strand with a dashed void "twist" line down the centre —
+    // the engraved-scratchboard equivalent of the fibre highlight the
+    // Classic version draws with a light-brown dash (see the else branch).
+    s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="' + DM_INK + '" stroke-width="10" stroke-linecap="round"/>';
+    s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="' + DM_VOID + '" stroke-width="2.2" stroke-dasharray="3 6" stroke-linecap="round"/>';
+  } else {
+    s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="#241b13" stroke-width="13" stroke-linecap="round"/>';
+    s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="' + ROPE_HEX + '" stroke-width="10" stroke-linecap="round"/>';
+    s += '<line x1="' + edge.x + '" y1="' + edge.y + '" x2="' + shaftEnd.x + '" y2="' + shaftEnd.y + '" stroke="' + ROPE_LIGHT + '" stroke-width="2" stroke-dasharray="3 7" stroke-linecap="round" opacity="0.8"/>';
+  }
+  s += ropeFrayMarkup(seedBase, tip, dir, dm);
   if (selectedId === endId) {
-    s += '<circle class="rope-selected-ring" cx="' + tip.x + '" cy="' + tip.y + '" r="19" fill="none" stroke="#fff8e0" stroke-width="3" opacity="0.9"/>';
+    s += '<circle class="rope-selected-ring" cx="' + tip.x + '" cy="' + tip.y + '" r="19" fill="none" stroke="' + (dm ? DM_INK : "#fff8e0") + '" stroke-width="3"' + (dm ? '' : ' opacity="0.9"') + '/>';
   }
   s += '<circle class="rope-end-cap" data-endid="' + esc(endId) + '" cx="' + tip.x + '" cy="' + tip.y + '" r="16" fill="transparent"/>';
   s += '</g>';
@@ -4486,7 +4840,7 @@ function ropeKnotWrapPath(cx, cy, r, seed) {
 // flushed into the board's shared <defs> — ids are prefixed with idp so
 // several instances of this node type never clash if more than one is ever
 // on screen at once (e.g. Back-peek behind a live node).
-function ropeConnectionMarkup(idp, conn, geomMap, defsArr) {
+function ropeConnectionMarkup(idp, conn, geomMap, defsArr, dm) {
   var infoA = geomMap[conn.a], infoB = geomMap[conn.b];
   if (!infoA || !infoB) return "";
   var pts = ropeCurveControlPoints(infoA.geom.edge, infoB.geom.edge, conn.seed);
@@ -4494,9 +4848,14 @@ function ropeConnectionMarkup(idp, conn, geomMap, defsArr) {
   var d = "M " + p0.x + " " + p0.y + " C " + p1.x + " " + p1.y + ", " + p2.x + " " + p2.y + ", " + p3.x + " " + p3.y;
   var s = '<g class="rope-connection' + (conn.animated ? "" : " rope-knot-pop") + '">';
   conn.animated = true;
-  s += '<path d="' + d + '" fill="none" stroke="#241b13" stroke-width="13" stroke-linecap="round"/>';
-  s += '<path d="' + d + '" fill="none" stroke="' + ROPE_HEX + '" stroke-width="10" stroke-linecap="round"/>';
-  s += '<path d="' + d + '" fill="none" stroke="' + ROPE_LIGHT + '" stroke-width="2" stroke-dasharray="3 7" stroke-linecap="round" opacity="0.8"/>';
+  if (dm) {
+    s += '<path d="' + d + '" fill="none" stroke="' + DM_INK + '" stroke-width="10" stroke-linecap="round"/>';
+    s += '<path d="' + d + '" fill="none" stroke="' + DM_VOID + '" stroke-width="2.2" stroke-dasharray="3 6" stroke-linecap="round"/>';
+  } else {
+    s += '<path d="' + d + '" fill="none" stroke="#241b13" stroke-width="13" stroke-linecap="round"/>';
+    s += '<path d="' + d + '" fill="none" stroke="' + ROPE_HEX + '" stroke-width="10" stroke-linecap="round"/>';
+    s += '<path d="' + d + '" fill="none" stroke="' + ROPE_LIGHT + '" stroke-width="2" stroke-dasharray="3 7" stroke-linecap="round" opacity="0.8"/>';
+  }
 
   var lenA = infoA.stubLen, lenB = infoB.stubLen;
   var t = lenA / (lenA + lenB);
@@ -4513,13 +4872,23 @@ function ropeConnectionMarkup(idp, conn, geomMap, defsArr) {
     var dirx = dx / len, diry = dy / len;
     var x1 = mid.x - dirx * (R + 10), y1 = mid.y - diry * (R + 10);
     var x2 = mid.x - dirx * (R - 5), y2 = mid.y - diry * (R - 5);
-    s += '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + ROPE_HEX + '" stroke-width="9" stroke-linecap="round"/>';
+    s += '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + (dm ? DM_INK : ROPE_HEX) + '" stroke-width="9" stroke-linecap="round"/>';
   });
-  var bodyGradId = idp + "kg" + ropeHash(conn.a + "|" + conn.b);
-  defsArr.push('<radialGradient id="' + bodyGradId + '" cx="32%" cy="28%" r="75%"><stop offset="0%" stop-color="#ad8a5a"/><stop offset="100%" stop-color="#6b5333"/></radialGradient>');
-  s += '<path d="' + ropeBlobPath(mid.x, mid.y, R, knotSeed) + '" fill="url(#' + bodyGradId + ')" stroke="#241b13" stroke-width="3" stroke-linejoin="round"/>';
-  s += '<path d="' + ropeKnotWrapPath(mid.x, mid.y, R * 0.8, knotSeed + 1) + '" fill="none" stroke="#3c2c1a" stroke-width="2.2" opacity="0.6" stroke-linecap="round"/>';
-  s += '<path d="' + ropeKnotWrapPath(mid.x, mid.y, R * 0.7, knotSeed + 11) + '" fill="none" stroke="#3c2c1a" stroke-width="2" opacity="0.45" stroke-linecap="round"/>';
+  if (dm) {
+    // A solid-ink knot body (the brief's "balanced areas of solid ink"),
+    // outlined in void so it stays a crisp readable silhouette against the
+    // ink rope strands feeding into it, with void wrap-lines standing in
+    // for the Classic version's two soft highlight loops.
+    s += '<path d="' + ropeBlobPath(mid.x, mid.y, R, knotSeed) + '" fill="' + DM_INK + '" stroke="' + DM_VOID + '" stroke-width="2" stroke-linejoin="round"/>';
+    s += '<path d="' + ropeKnotWrapPath(mid.x, mid.y, R * 0.8, knotSeed + 1) + '" fill="none" stroke="' + DM_VOID + '" stroke-width="2" stroke-linecap="round"/>';
+    s += '<path d="' + ropeKnotWrapPath(mid.x, mid.y, R * 0.7, knotSeed + 11) + '" fill="none" stroke="' + DM_VOID + '" stroke-width="1.6" stroke-linecap="round"/>';
+  } else {
+    var bodyGradId = idp + "kg" + ropeHash(conn.a + "|" + conn.b);
+    defsArr.push('<radialGradient id="' + bodyGradId + '" cx="32%" cy="28%" r="75%"><stop offset="0%" stop-color="#ad8a5a"/><stop offset="100%" stop-color="#6b5333"/></radialGradient>');
+    s += '<path d="' + ropeBlobPath(mid.x, mid.y, R, knotSeed) + '" fill="url(#' + bodyGradId + ')" stroke="#241b13" stroke-width="3" stroke-linejoin="round"/>';
+    s += '<path d="' + ropeKnotWrapPath(mid.x, mid.y, R * 0.8, knotSeed + 1) + '" fill="none" stroke="#3c2c1a" stroke-width="2.2" opacity="0.6" stroke-linecap="round"/>';
+    s += '<path d="' + ropeKnotWrapPath(mid.x, mid.y, R * 0.7, knotSeed + 11) + '" fill="none" stroke="#3c2c1a" stroke-width="2" opacity="0.45" stroke-linecap="round"/>';
+  }
   s += '<circle class="rope-knot-hit" data-a="' + esc(conn.a) + '" data-b="' + esc(conn.b) + '" cx="' + mid.x + '" cy="' + mid.y + '" r="' + (R + 9) + '" fill="transparent"/>';
   s += '</g></g>';
   return s;
@@ -4529,7 +4898,7 @@ function ropeConnectionMarkup(idp, conn, geomMap, defsArr) {
 // the player reads is content.ends[].label, set in the Studio inspector.
 // Top/bottom plaques sit upright; left/right ones rotate 90° to read along
 // their side.
-function ropePlaqueMarkup(idp, info, label) {
+function ropePlaqueMarkup(idp, info, label, dm) {
   var edge = info.geom.edge, dir = info.geom.dir;
   var cx = edge.x + dir.x * 14, cy = edge.y + dir.y * 14;
   var rotation = dir.y === 0 ? 90 : 0;
@@ -4537,32 +4906,39 @@ function ropePlaqueMarkup(idp, info, label) {
   var text = esc(String(label || "").slice(0, 8));
   var fontSize = text.length > 5 ? 9 : 11;
   var s = '<g transform="translate(' + cx.toFixed(1) + ',' + cy.toFixed(1) + ') rotate(' + rotation + ')" pointer-events="none">';
-  s += '<rect x="' + (-w / 2) + '" y="' + (-h / 2) + '" width="' + w + '" height="' + h + '" rx="2.5" ry="2.5" fill="url(#' + idp + 'brass)" stroke="#4a3510" stroke-width="1.3"/>';
-  s += '<rect x="' + (-w / 2 + 2) + '" y="' + (-h / 2 + 2) + '" width="' + (w - 4) + '" height="' + (h - 4) + '" rx="1.5" ry="1.5" fill="none" stroke="#fceec2" stroke-width="0.6" opacity="0.55"/>';
-  s += '<text x="0" y="4" text-anchor="middle" font-size="' + fontSize + '" font-family="Georgia, \'Times New Roman\', serif" font-weight="700" fill="#4a3510">' + text + '</text>';
+  if (dm) {
+    s += '<rect x="' + (-w / 2) + '" y="' + (-h / 2) + '" width="' + w + '" height="' + h + '" rx="2.5" ry="2.5" fill="' + DM_VOID + '" stroke="' + DM_INK + '" stroke-width="1.3"/>';
+    s += '<rect x="' + (-w / 2 + 2) + '" y="' + (-h / 2 + 2) + '" width="' + (w - 4) + '" height="' + (h - 4) + '" rx="1.5" ry="1.5" fill="none" stroke="' + DM_INK + '" stroke-width="0.6"/>';
+    s += '<text x="0" y="4" text-anchor="middle" font-size="' + fontSize + '" font-family="Georgia, \'Times New Roman\', serif" font-weight="700" fill="' + DM_INK + '">' + text + '</text>';
+  } else {
+    s += '<rect x="' + (-w / 2) + '" y="' + (-h / 2) + '" width="' + w + '" height="' + h + '" rx="2.5" ry="2.5" fill="url(#' + idp + 'brass)" stroke="#4a3510" stroke-width="1.3"/>';
+    s += '<rect x="' + (-w / 2 + 2) + '" y="' + (-h / 2 + 2) + '" width="' + (w - 4) + '" height="' + (h - 4) + '" rx="1.5" ry="1.5" fill="none" stroke="#fceec2" stroke-width="0.6" opacity="0.55"/>';
+    s += '<text x="0" y="4" text-anchor="middle" font-size="' + fontSize + '" font-family="Georgia, \'Times New Roman\', serif" font-weight="700" fill="#4a3510">' + text + '</text>';
+  }
   s += '</g>';
   return s;
 }
 
 function renderRopeBoardSvg(n, ctl) {
   var c = n.content;
+  var dm = isDarkMaritime(c);
   var draft = ctl.ropeDraft[n.id];
   var geomMap = ropeGeometryMap(c);
   var idp = "rt" + n.id.replace(/[^a-zA-Z0-9]/g, "") + "_";
   var defsArr = [];
   var body = "";
-  draft.connections.forEach(function (conn) { body += ropeConnectionMarkup(idp, conn, geomMap, defsArr); });
+  draft.connections.forEach(function (conn) { body += ropeConnectionMarkup(idp, conn, geomMap, defsArr, dm); });
   (c.ends || []).forEach(function (e) {
     var tied = draft.connections.some(function (cc) { return cc.a === e.id || cc.b === e.id; });
-    if (!tied && geomMap[e.id]) body += ropeStubMarkup(e.id, geomMap[e.id], draft.selected);
+    if (!tied && geomMap[e.id]) body += ropeStubMarkup(e.id, geomMap[e.id], draft.selected, dm);
   });
-  (c.ends || []).forEach(function (e) { if (geomMap[e.id]) body += ropePlaqueMarkup(idp, geomMap[e.id], e.label); });
-  return '<div class="pv-rope-wrap" data-node="' + esc(n.id) + '">' +
+  (c.ends || []).forEach(function (e) { if (geomMap[e.id]) body += ropePlaqueMarkup(idp, geomMap[e.id], e.label, dm); });
+  return '<div class="pv-rope-wrap' + (dm ? ' pv-dm' : '') + '" data-node="' + esc(n.id) + '">' +
     '<svg class="rope-svg" data-node="' + esc(n.id) + '" viewBox="0 0 ' + ROPE_BOARD + ' ' + ROPE_BOARD + '" style="display:block;margin:10px auto 0;max-width:100%;width:340px;">' +
-      '<defs><linearGradient id="' + idp + 'brass" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f6dfa0"/><stop offset="50%" stop-color="#caa54c"/><stop offset="100%" stop-color="#8a6a2c"/></linearGradient>' +
+      '<defs>' + (dm ? dmDefs(idp) : '<linearGradient id="' + idp + 'brass" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f6dfa0"/><stop offset="50%" stop-color="#caa54c"/><stop offset="100%" stop-color="#8a6a2c"/></linearGradient>') +
         defsArr.join("") +
       '</defs>' +
-      '<rect x="4" y="4" width="' + (ROPE_BOARD - 8) + '" height="' + (ROPE_BOARD - 8) + '" rx="10" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="2"/>' +
+      '<rect x="4" y="4" width="' + (ROPE_BOARD - 8) + '" height="' + (ROPE_BOARD - 8) + '" rx="10" fill="none" stroke="' + (dm ? DM_INK : "rgba(255,255,255,0.08)") + '" stroke-width="2"/>' +
       body +
     '</svg>' +
   '</div>';
@@ -4775,7 +5151,8 @@ function gpLiveNodes(c, draft) {
   return nodes;
 }
 
-function gpDefsMarkup(idp) {
+function gpDefsMarkup(idp, dm) {
+  if (dm) return "<defs>" + dmDefs(idp) + "</defs>";
   return "<defs>" +
     '<linearGradient id="' + idp + 'steel" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#e2e5e8"/><stop offset="45%" stop-color="#9aa0a6"/><stop offset="100%" stop-color="#54585d"/></linearGradient>' +
     '<radialGradient id="' + idp + 'hub" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#f0d9a0"/><stop offset="100%" stop-color="#8a6a2c"/></radialGradient>' +
@@ -4791,7 +5168,7 @@ function gpDefsMarkup(idp) {
 // reachable from the handle (sv.depth), same alternating-direction-by-depth
 // trick as the prototype so adjacent meshed gears visibly turn opposite
 // ways.
-function gpNodeMarkup(node, sv, idp, clickableRemovable) {
+function gpNodeMarkup(node, sv, idp, clickableRemovable, dm) {
   var r = gpRadiusOf(node.teeth);
   var key = gpNodeKey(node.kind, node.id);
   var driven = sv.ready && (key in sv.depth);
@@ -4804,29 +5181,33 @@ function gpNodeMarkup(node, sv, idp, clickableRemovable) {
     var toAngle = (depth % 2 === 0) ? "360" : "-360";
     s += '<animateTransform attributeName="transform" type="rotate" from="0 0 0" to="' + toAngle + ' 0 0" dur="' + dur.toFixed(2) + 's" repeatCount="indefinite"/>';
   }
+  var steelFill = dm ? DM_VOID : 'url(#' + idp + 'steel)', steelStroke = dm ? DM_INK : "#0a0e1a";
+  var hubFill = dm ? dmFill(idp, "hatch1") : 'url(#' + idp + 'hub)';
+  var brassFill = dm ? DM_VOID : 'url(#' + idp + 'brass)', brassStroke = dm ? DM_INK : "#4a3510";
+  var spokeStroke = dm ? DM_INK : "#4b4f54";
   if (node.kind === "handle") {
-    s += '<circle cx="0" cy="0" r="' + r + '" fill="url(#' + idp + 'steel)" stroke="#0a0e1a" stroke-width="1.6"/>';
+    s += '<circle cx="0" cy="0" r="' + r + '" fill="' + steelFill + '" stroke="' + steelStroke + '" stroke-width="1.6"/>';
     for (var sp = 0; sp < 5; sp++) {
       var ang = sp * (Math.PI * 2 / 5);
-      s += '<line x1="0" y1="0" x2="' + (Math.cos(ang) * r * 0.72).toFixed(1) + '" y2="' + (Math.sin(ang) * r * 0.72).toFixed(1) + '" stroke="#4b4f54" stroke-width="' + Math.max(3, r * 0.09).toFixed(1) + '" stroke-linecap="round"/>';
+      s += '<line x1="0" y1="0" x2="' + (Math.cos(ang) * r * 0.72).toFixed(1) + '" y2="' + (Math.sin(ang) * r * 0.72).toFixed(1) + '" stroke="' + spokeStroke + '" stroke-width="' + Math.max(3, r * 0.09).toFixed(1) + '" stroke-linecap="round"/>';
     }
-    s += '<line x1="0" y1="0" x2="' + (r + 16) + '" y2="0" stroke="#3a3530" stroke-width="6" stroke-linecap="round"/>';
-    s += '<circle cx="' + (r + 16) + '" cy="0" r="8" fill="url(#' + idp + 'brass)" stroke="#4a3510" stroke-width="1.2"/>';
-    s += '<circle cx="0" cy="0" r="' + (r * 0.22).toFixed(1) + '" fill="url(#' + idp + 'hub)" stroke="#0a0e1a" stroke-width="1"/>';
+    s += '<line x1="0" y1="0" x2="' + (r + 16) + '" y2="0" stroke="' + (dm ? DM_INK : "#3a3530") + '" stroke-width="6" stroke-linecap="round"/>';
+    s += '<circle cx="' + (r + 16) + '" cy="0" r="8" fill="' + brassFill + '" stroke="' + brassStroke + '" stroke-width="1.2"/>';
+    s += '<circle cx="0" cy="0" r="' + (r * 0.22).toFixed(1) + '" fill="' + hubFill + '" stroke="' + steelStroke + '" stroke-width="1"/>';
   } else if (node.kind === "hoist") {
-    s += '<circle cx="0" cy="0" r="' + r + '" fill="url(#' + idp + 'steel)" stroke="#0a0e1a" stroke-width="1.6"/>';
-    s += '<circle cx="0" cy="0" r="' + (r * 0.82).toFixed(1) + '" fill="none" stroke="#4b4f54" stroke-width="' + (r * 0.14).toFixed(1) + '"/>';
-    s += '<circle cx="0" cy="0" r="' + (r * 0.22).toFixed(1) + '" fill="url(#' + idp + 'hub)" stroke="#0a0e1a" stroke-width="1"/>';
+    s += '<circle cx="0" cy="0" r="' + r + '" fill="' + steelFill + '" stroke="' + steelStroke + '" stroke-width="1.6"/>';
+    s += '<circle cx="0" cy="0" r="' + (r * 0.82).toFixed(1) + '" fill="none" stroke="' + spokeStroke + '" stroke-width="' + (r * 0.14).toFixed(1) + '"/>';
+    s += '<circle cx="0" cy="0" r="' + (r * 0.22).toFixed(1) + '" fill="' + hubFill + '" stroke="' + steelStroke + '" stroke-width="1"/>';
   } else {
-    s += '<path d="' + gpGearPathD(r, node.teeth) + '" fill="url(#' + idp + 'steel)" stroke="#0a0e1a" stroke-width="1.4" stroke-linejoin="round"/>';
-    s += '<circle cx="0" cy="0" r="' + (r * 0.24).toFixed(1) + '" fill="url(#' + idp + 'hub)" stroke="#0a0e1a" stroke-width="1"/>';
+    s += '<path d="' + gpGearPathD(r, node.teeth) + '" fill="' + steelFill + '" stroke="' + steelStroke + '" stroke-width="1.4" stroke-linejoin="round"/>';
+    s += '<circle cx="0" cy="0" r="' + (r * 0.24).toFixed(1) + '" fill="' + hubFill + '" stroke="' + steelStroke + '" stroke-width="1"/>';
   }
   s += "</g>"; // spin group
 
   var tag = node.kind === "handle" ? "HANDLE" : node.kind === "hoist" ? "HOIST" : "AXLE";
   s += '<text class="gp-node-label" x="0" y="' + (r + 16) + '">' + tag + "</text>";
-  s += '<circle cx="0" cy="0" r="11" fill="#ffe6a0" opacity="0.92" pointer-events="none"/>';
-  s += '<text class="gp-node-teeth" x="0" y="4">' + node.teeth + "</text>";
+  s += '<circle cx="0" cy="0" r="11" fill="' + (dm ? DM_INK : "#ffe6a0") + '"' + (dm ? '' : ' opacity="0.92"') + ' pointer-events="none"/>';
+  s += '<text class="gp-node-teeth" x="0" y="4"' + (dm ? ' fill="' + DM_VOID + '"' : '') + '>' + node.teeth + "</text>";
 
   if (clickableRemovable) {
     s += '<circle class="gp-node-hit" data-axleid="' + esc(String(node.id)) + '" cx="0" cy="0" r="' + (r + 10) + '" fill="transparent" pointer-events="all"/>';
@@ -4839,11 +5220,11 @@ function gpNodeMarkup(node, sv, idp, clickableRemovable) {
 // sized to the correct tooth count, or the radius alone would give the
 // answer away) with an invisible larger hit circle (.gp-socket-hit) for
 // wireGearPulleyInteractions to drop the currently-selected tray cog onto.
-function gpSocketMarkup(axle, idp, armed) {
+function gpSocketMarkup(axle, idp, armed, dm) {
   var r = 34;
   var s = '<g class="gp-socket' + (armed ? " gp-socket-armed" : "") + '" transform="translate(' + axle.x.toFixed(1) + "," + axle.y.toFixed(1) + ')">';
-  s += '<circle r="' + r + '" fill="rgba(255,255,255,0.03)" stroke="#4a5578" stroke-width="2" stroke-dasharray="5 5"/>';
-  s += '<circle r="4" fill="#4a5578"/>';
+  s += '<circle r="' + r + '" fill="' + (dm ? DM_VOID : "rgba(255,255,255,0.03)") + '" stroke="' + (dm ? DM_INK : "#4a5578") + '" stroke-width="2" stroke-dasharray="5 5"/>';
+  s += '<circle r="4" fill="' + (dm ? DM_INK : "#4a5578") + '"/>';
   s += '<circle class="gp-socket-hit" data-axleid="' + esc(String(axle.id)) + '" r="' + (r + 8) + '" fill="transparent" pointer-events="all"/>';
   s += "</g>";
   return s;
@@ -4853,6 +5234,7 @@ function gpSocketMarkup(axle, idp, armed) {
 // and every axle (a real gear if a cog is placed, an empty socket if not).
 function renderGearPulleyBoardSvg(n, ctl) {
   var c = n.content;
+  var dm = isDarkMaritime(c);
   var draft = ctl.gearDraft[n.id];
   var idp = "gp" + n.id.replace(/[^a-zA-Z0-9]/g, "") + "_";
   var nodes = gpLiveNodes(c, draft);
@@ -4862,17 +5244,17 @@ function renderGearPulleyBoardSvg(n, ctl) {
     if (p.state === "none") return;
     body += '<line class="gp-mesh-line ' + p.state + '" x1="' + p.a.x + '" y1="' + p.a.y + '" x2="' + p.b.x + '" y2="' + p.b.y + '"/>';
   });
-  if (c.handle) body += gpNodeMarkup({ kind: "handle", id: null, x: c.handle.x, y: c.handle.y, teeth: c.handle.teeth }, sv, idp, false);
-  if (c.hoist) body += gpNodeMarkup({ kind: "hoist", id: null, x: c.hoist.x, y: c.hoist.y, teeth: c.hoist.teeth }, sv, idp, false);
+  if (c.handle) body += gpNodeMarkup({ kind: "handle", id: null, x: c.handle.x, y: c.handle.y, teeth: c.handle.teeth }, sv, idp, false, dm);
+  if (c.hoist) body += gpNodeMarkup({ kind: "hoist", id: null, x: c.hoist.x, y: c.hoist.y, teeth: c.hoist.teeth }, sv, idp, false, dm);
   (c.axles || []).forEach(function (a) {
     var tileId = draft.placements[a.id];
     var tile = tileId ? draft.tiles.find(function (t) { return t.id === tileId; }) : null;
-    if (tile) body += gpNodeMarkup({ kind: "axle", id: a.id, x: a.x, y: a.y, teeth: tile.teeth }, sv, idp, true);
-    else body += gpSocketMarkup(a, idp, draft.selectedTileId != null);
+    if (tile) body += gpNodeMarkup({ kind: "axle", id: a.id, x: a.x, y: a.y, teeth: tile.teeth }, sv, idp, true, dm);
+    else body += gpSocketMarkup(a, idp, draft.selectedTileId != null, dm);
   });
-  return '<div class="pv-gear-wrap" data-node="' + esc(n.id) + '">' +
+  return '<div class="pv-gear-wrap' + (dm ? ' pv-dm' : '') + '" data-node="' + esc(n.id) + '">' +
     '<svg class="pv-gear-svg" data-node="' + esc(n.id) + '" viewBox="0 0 ' + GP_VB_W + " " + GP_VB_H + '" preserveAspectRatio="xMidYMid meet">' +
-      gpDefsMarkup(idp) + body +
+      gpDefsMarkup(idp, dm) + body +
     "</svg></div>";
 }
 
@@ -4884,6 +5266,7 @@ function renderGearPulleyBoardSvg(n, ctl) {
 // tile selects it (highlighted gold, matching the teeth-number halo used on
 // the board); tapping it again deselects it.
 function renderGearPulleyTray(n, ctl) {
+  var dm = isDarkMaritime(n.content);
   var draft = ctl.gearDraft[n.id];
   var placedTileIds = {};
   Object.keys(draft.placements).forEach(function (axId) { placedTileIds[draft.placements[axId]] = true; });
@@ -4895,7 +5278,7 @@ function renderGearPulleyTray(n, ctl) {
       '<span class="pv-gear-tile-teeth">' + t.teeth + "</span>" +
     "</div>";
   }).join("");
-  return '<div class="pv-gear-tray-wrap">' +
+  return '<div class="pv-gear-tray-wrap' + (dm ? ' pv-dm' : '') + '">' +
     '<div class="pv-gear-tray-label">Cogs — drag to see them all, tap one, then tap an axle post</div>' +
     '<div class="pv-gear-tray" data-node="' + esc(n.id) + '">' +
       (tilesHtml || '<div class="pv-gear-tray-empty">All cogs placed</div>') +
@@ -5130,7 +5513,7 @@ function renderWeightScaleStage(n, ctl, solved) {
     statusText = "Level for now — the tray isn't empty yet."; statusClass = "";
   }
 
-  var html = '<div class="pv-ws-wrap" data-node="' + esc(n.id) + '">';
+  var html = '<div class="pv-ws-wrap' + (isDarkMaritime(c) ? ' pv-dm' : '') + '" data-node="' + esc(n.id) + '">';
   html += '<div class="pv-ws-stage">';
   html += '<div class="pv-ws-base"></div><div class="pv-ws-post"></div>';
   html += '<div class="pv-ws-beam" style="transform:translate(-50%,-50%) rotate(' + theta.toFixed(4) + 'rad)"></div>';
@@ -5163,7 +5546,7 @@ function renderWeightScaleTray(n, ctl, solved) {
     .filter(function (id) { return draft.placements[id] === "tray"; })
     .map(function (id) { var it = itemById[id]; return it ? wsTokenMarkup(it, (draft.selectedId === id ? "selected" : "") + (solved ? " solved" : "")) : ""; })
     .join("");
-  return '<div class="pv-ws-tray-wrap">' +
+  return '<div class="pv-ws-tray-wrap' + (isDarkMaritime(c) ? ' pv-dm' : '') + '">' +
     '<div class="pv-ws-tray-label">Tray — tap a token, then tap the tray or a pan to move it there</div>' +
     '<div class="pv-ws-tray" data-node="' + esc(n.id) + '" data-wszone="tray">' +
     (tokensHtml || '<div class="pv-ws-tray-empty">All tokens placed on the scale</div>') +
@@ -5927,76 +6310,164 @@ function lumenSetPieceTargetAngle(p, snapped) {
 }
 
 // ---- canvas drawing (shared by player + Studio design-time preview) ----
-function lumenDrawGrid(ctx, geom) {
+// Fills whatever path is currently on ctx (caller must ctx.beginPath()+
+// trace it first) with a hard-edged diagonal ink hatch on a void ground —
+// the canvas equivalent of dmDefs' SVG hatch patterns, using the exact
+// clip-then-stroke-lines technique lumenDrawWalls already used for its
+// (now-removed) coloured brick hatch, generalized so every Dark Maritime
+// Lumen shape can share it instead of each re-deriving its own loop.
+function lumenDmHatchFill(ctx, cx, cy, radius, spacing) {
   ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.clip();
+  ctx.fillStyle = DM_VOID;
+  ctx.fillRect(cx - radius * 2, cy - radius * 2, radius * 4, radius * 4);
+  ctx.strokeStyle = DM_INK;
+  ctx.lineWidth = 1.2;
+  for (var i = -radius * 2; i < radius * 3; i += spacing) {
+    ctx.beginPath();
+    ctx.moveTo(cx + i - radius, cy + radius);
+    ctx.lineTo(cx + i + radius, cy - radius);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function lumenDrawGrid(ctx, geom, dm) {
+  ctx.save();
+  ctx.strokeStyle = dm ? DM_INK : "rgba(255,255,255,0.06)";
   ctx.lineWidth = 1;
   geom.hexList.forEach(function (h) { lumenHexPathCtx(ctx, h.x, h.y, geom.hexR * 0.96); ctx.stroke(); });
   ctx.restore();
 }
-function lumenDrawWalls(ctx, geom, level) {
+function lumenDrawWalls(ctx, geom, level, dm) {
   (level.walls || []).forEach(function (w) {
     var p = lumenHexPx(geom, w.q, w.r);
     ctx.save();
     lumenHexPathCtx(ctx, p.x, p.y, geom.hexR * 0.92);
-    ctx.fillStyle = "#241c1c";
-    ctx.fill();
-    ctx.clip();
-    ctx.strokeStyle = "rgba(120,70,70,0.5)";
-    ctx.lineWidth = 3 * geom.k;
-    for (var i = -geom.hexR * 2; i < geom.hexR * 3; i += 10 * geom.k) {
-      ctx.beginPath();
-      ctx.moveTo(p.x + i - geom.hexR, p.y + geom.hexR);
-      ctx.lineTo(p.x + i + geom.hexR, p.y - geom.hexR);
-      ctx.stroke();
+    if (dm) {
+      lumenDmHatchFill(ctx, p.x, p.y, geom.hexR, 8 * geom.k);
+      ctx.lineWidth = 1.4; ctx.strokeStyle = DM_INK; lumenHexPathCtx(ctx, p.x, p.y, geom.hexR * 0.92); ctx.stroke();
+    } else {
+      ctx.fillStyle = "#241c1c";
+      ctx.fill();
+      ctx.clip();
+      ctx.strokeStyle = "rgba(120,70,70,0.5)";
+      ctx.lineWidth = 3 * geom.k;
+      for (var i = -geom.hexR * 2; i < geom.hexR * 3; i += 10 * geom.k) {
+        ctx.beginPath();
+        ctx.moveTo(p.x + i - geom.hexR, p.y + geom.hexR);
+        ctx.lineTo(p.x + i + geom.hexR, p.y - geom.hexR);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   });
 }
-function lumenDrawCards(ctx, geom, level) {
+function lumenDrawCards(ctx, geom, level, dm) {
   (level.cards || []).forEach(function (cd) {
     var seg = lumenCardSegment(geom, cd);
     var A = seg[0], B = seg[1];
     ctx.save();
     ctx.lineCap = "round";
-    ctx.strokeStyle = "#2a1e1e";
-    ctx.lineWidth = 9 * geom.k;
-    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
-    ctx.strokeStyle = "rgba(168,106,106,0.75)";
-    ctx.lineWidth = 3 * geom.k;
-    ctx.setLineDash([6 * geom.k, 4 * geom.k]);
-    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    if (dm) {
+      ctx.strokeStyle = DM_INK;
+      ctx.lineWidth = 6 * geom.k;
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+      ctx.strokeStyle = DM_VOID;
+      ctx.lineWidth = 2 * geom.k;
+      ctx.setLineDash([5 * geom.k, 4 * geom.k]);
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    } else {
+      ctx.strokeStyle = "#2a1e1e";
+      ctx.lineWidth = 9 * geom.k;
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+      ctx.strokeStyle = "rgba(168,106,106,0.75)";
+      ctx.lineWidth = 3 * geom.k;
+      ctx.setLineDash([6 * geom.k, 4 * geom.k]);
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    }
     ctx.restore();
   });
 }
-function lumenDrawBeam(ctx, segments) {
+function lumenDrawBeam(ctx, segments, dm) {
   ctx.save();
   ctx.lineCap = "round";
-  segments.forEach(function (s) {
-    var w = Math.min(4 + s.intensity * 4, 20);
-    ctx.strokeStyle = lumenBeamColor(s.intensity);
-    ctx.globalAlpha = 0.25;
-    ctx.lineWidth = w * 2.4;
-    ctx.shadowColor = lumenBeamColor(s.intensity);
-    ctx.shadowBlur = 18 + s.intensity * 8;
-    ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
-  });
-  segments.forEach(function (s) {
-    var w = Math.min(3 + s.intensity * 3, 12);
-    ctx.strokeStyle = lumenBeamColor(s.intensity);
-    ctx.globalAlpha = 0.95;
-    ctx.lineWidth = w;
-    ctx.shadowBlur = 6;
-    ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
-  });
+  if (dm) {
+    // No glow/shadow — a solid ink beam, its width still carrying the
+    // intensity signal, with a thin void centre-line rather than a
+    // colour-coded halo.
+    segments.forEach(function (s) {
+      var w = Math.min(4 + s.intensity * 4, 18);
+      ctx.strokeStyle = DM_INK;
+      ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+    });
+    segments.forEach(function (s) {
+      ctx.strokeStyle = DM_VOID;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+    });
+  } else {
+    segments.forEach(function (s) {
+      var w = Math.min(4 + s.intensity * 4, 20);
+      ctx.strokeStyle = lumenBeamColor(s.intensity);
+      ctx.globalAlpha = 0.25;
+      ctx.lineWidth = w * 2.4;
+      ctx.shadowColor = lumenBeamColor(s.intensity);
+      ctx.shadowBlur = 18 + s.intensity * 8;
+      ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+    });
+    segments.forEach(function (s) {
+      var w = Math.min(3 + s.intensity * 3, 12);
+      ctx.strokeStyle = lumenBeamColor(s.intensity);
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = w;
+      ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+    });
+  }
   ctx.restore();
 }
-function lumenDrawSourceCylinder(ctx, geom, src, emitting, selected) {
+function lumenDrawSourceCylinder(ctx, geom, src, emitting, selected, dm) {
   var pos = lumenAnchorPx(geom, src);
   var x = pos.x, y = pos.y;
   var pulse = 1 + Math.sin(Date.now() / 260) * 0.08;
   ctx.save();
   ctx.translate(x, y);
+  if (dm) {
+    ctx.fillStyle = emitting ? DM_INK : DM_VOID;
+    ctx.strokeStyle = DM_INK; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = DM_VOID;
+    ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
+
+    var adm = lumenRad(src.angle);
+    var gapStartDm = adm - lumenRad(LUMEN_SLIT_HALF_DEG);
+    var gapEndDm = adm + lumenRad(LUMEN_SLIT_HALF_DEG);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, geom.cylOuter, gapEndDm, gapStartDm + Math.PI * 2);
+    ctx.arc(0, 0, geom.cylInner, gapStartDm + Math.PI * 2, gapEndDm, true);
+    ctx.closePath();
+    lumenDmHatchFill(ctx, 0, 0, geom.cylOuter, 7 * geom.k);
+    ctx.lineWidth = 1.4; ctx.strokeStyle = DM_INK; ctx.stroke();
+    ctx.restore();
+
+    if (emitting) {
+      ctx.save();
+      ctx.rotate(adm);
+      ctx.strokeStyle = DM_INK; ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(-lumenRad(LUMEN_SLIT_HALF_DEG)) * (geom.cylOuter + 8), Math.sin(-lumenRad(LUMEN_SLIT_HALF_DEG)) * (geom.cylOuter + 8));
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(lumenRad(LUMEN_SLIT_HALF_DEG)) * (geom.cylOuter + 8), Math.sin(lumenRad(LUMEN_SLIT_HALF_DEG)) * (geom.cylOuter + 8));
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+    if (selected) lumenDrawSelectionRing(ctx, geom, x, y, dm);
+    return;
+  }
   ctx.shadowColor = "#ffd27f";
   ctx.shadowBlur = 20;
   var grad = ctx.createRadialGradient(0, 0, 2, 0, 0, 11 * pulse);
@@ -6037,12 +6508,34 @@ function lumenDrawSourceCylinder(ctx, geom, src, emitting, selected) {
     ctx.restore();
   }
   ctx.restore();
-  if (selected) lumenDrawSelectionRing(ctx, geom, x, y);
+  if (selected) lumenDrawSelectionRing(ctx, geom, x, y, dm);
 }
-function lumenDrawTarget(ctx, geom, t, hit, intensity, selected) {
+function lumenDrawTarget(ctx, geom, t, hit, intensity, selected, dm) {
   var pos = lumenAnchorPx(geom, t);
   var x = pos.x, y = pos.y;
   var solved = lumenEvaluateTarget(t, hit, intensity);
+  if (dm) {
+    // No colour-coded glow — state reads from fill density instead: an
+    // empty hairline hex (unhit), a hatched hex (hit but not yet solved),
+    // a solid ink hex (solved) — same "depth via line density, not colour"
+    // rule as every other Dark Maritime illustration.
+    ctx.save();
+    lumenHexPathCtx(ctx, x, y, geom.targetR * 1.25);
+    if (solved) { ctx.fillStyle = DM_INK; ctx.fill(); }
+    else if (hit) { lumenDmHatchFill(ctx, x, y, geom.targetR * 1.25, 6 * geom.k); }
+    ctx.lineWidth = 1.4; ctx.strokeStyle = DM_INK;
+    lumenHexPathCtx(ctx, x, y, geom.targetR * 1.25); ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = DM_INK;
+    ctx.font = (9 * geom.k) + "px Georgia, 'Times New Roman', serif";
+    ctx.textAlign = "center";
+    ctx.fillText(lumenConditionLabel(t), x, y + geom.hexR * 0.9);
+    ctx.restore();
+    if (selected) lumenDrawSelectionRing(ctx, geom, x, y, dm);
+    return;
+  }
   var color, glow;
   if (solved) { color = "#6bffb0"; glow = "#6bffb0"; }
   else if (hit) { color = "#ff9f4a"; glow = "#ff9f4a"; }
@@ -6063,15 +6556,25 @@ function lumenDrawTarget(ctx, geom, t, hit, intensity, selected) {
   ctx.textAlign = "center";
   ctx.fillText(lumenConditionLabel(t), x, y + geom.hexR * 0.9);
   ctx.restore();
-  if (selected) lumenDrawSelectionRing(ctx, geom, x, y);
+  if (selected) lumenDrawSelectionRing(ctx, geom, x, y, dm);
 }
-function lumenDrawMirror(ctx, geom, p, active, selected) {
+function lumenDrawMirror(ctx, geom, p, active, selected, dm) {
   var pos = lumenAnchorPx(geom, p);
   var x = pos.x, y = pos.y;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(lumenRad(p.angle));
   var len = geom.mirrorHalf * 2, w = 8 * geom.k;
+  if (dm) {
+    lumenRoundRectPath(ctx, -len / 2, -w / 2, len, w, 4 * geom.k);
+    ctx.fillStyle = active ? DM_INK : DM_VOID;
+    ctx.fill();
+    ctx.lineWidth = 1.4; ctx.strokeStyle = DM_INK;
+    lumenRoundRectPath(ctx, -len / 2, -w / 2, len, w, 4 * geom.k); ctx.stroke();
+    ctx.restore();
+    if (selected) lumenDrawSelectionRing(ctx, geom, x, y, dm);
+    return;
+  }
   ctx.shadowColor = active ? "#bfeaff" : "transparent";
   ctx.shadowBlur = active ? 22 : 0;
   var grad = ctx.createLinearGradient(-len / 2, 0, len / 2, 0);
@@ -6080,15 +6583,31 @@ function lumenDrawMirror(ctx, geom, p, active, selected) {
   lumenRoundRectPath(ctx, -len / 2, -w / 2, len, w, 4 * geom.k);
   ctx.fill();
   ctx.restore();
-  if (selected) lumenDrawSelectionRing(ctx, geom, x, y);
+  if (selected) lumenDrawSelectionRing(ctx, geom, x, y, dm);
 }
-function lumenDrawLens(ctx, geom, p, active, close, selected) {
+function lumenDrawLens(ctx, geom, p, active, close, selected, dm) {
   var pos = lumenAnchorPx(geom, p);
   var x = pos.x, y = pos.y;
   var t = active ? close : 0;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(lumenRad(p.angle));
+  if (dm) {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, geom.hexR * 0.22, geom.hexR * 0.42, 0, 0, Math.PI * 2);
+    // Canvas paths can't reference the SVG pattern library, so "how close
+    // to a correct fit" is signalled by solid-ink-or-not instead of a
+    // hatch density step — same "density/solidity signals state" idiom as
+    // the target hexes above, just binary rather than three-way.
+    ctx.fillStyle = (active && close > 0.6) ? DM_INK : DM_VOID;
+    ctx.fill();
+    ctx.lineWidth = 1.4; ctx.strokeStyle = DM_INK;
+    ctx.beginPath(); ctx.ellipse(0, 0, geom.hexR * 0.22, geom.hexR * 0.42, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -geom.hexR * 0.42); ctx.lineTo(0, geom.hexR * 0.42); ctx.stroke();
+    ctx.restore();
+    if (selected) lumenDrawSelectionRing(ctx, geom, x, y, dm);
+    return;
+  }
   ctx.shadowColor = active ? lumenLerpColor("#4a90c2", "#ffbf5c", t) : "transparent";
   ctx.shadowBlur = active ? (8 + t * 26) : 0;
   var grad = ctx.createLinearGradient(0, -geom.hexR * 0.42, 0, geom.hexR * 0.42);
@@ -6104,11 +6623,11 @@ function lumenDrawLens(ctx, geom, p, active, close, selected) {
   ctx.lineWidth = 2 * geom.k;
   ctx.beginPath(); ctx.moveTo(0, -geom.hexR * 0.42); ctx.lineTo(0, geom.hexR * 0.42); ctx.stroke();
   ctx.restore();
-  if (selected) lumenDrawSelectionRing(ctx, geom, x, y);
+  if (selected) lumenDrawSelectionRing(ctx, geom, x, y, dm);
 }
-function lumenDrawSelectionRing(ctx, geom, x, y) {
+function lumenDrawSelectionRing(ctx, geom, x, y, dm) {
   ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.strokeStyle = dm ? DM_INK : "rgba(255,255,255,0.55)";
   ctx.lineWidth = 1.5 * geom.k;
   ctx.setLineDash([3 * geom.k, 3 * geom.k]);
   ctx.beginPath(); ctx.arc(x, y, geom.hexR * 0.7, 0, Math.PI * 2); ctx.stroke();
@@ -6120,25 +6639,25 @@ function lumenDrawSelectionRing(ctx, geom, x, y) {
 // drive a target-status readout off the same pass). `selectedId`, if given,
 // draws a dashed selection ring on whichever source/piece/target has that
 // id (used by Studio's design-time builder; the player screen passes null).
-function lumenRenderScene(ctx, geom, level, selectedId) {
+function lumenRenderScene(ctx, geom, level, selectedId, dm) {
   ctx.clearRect(0, 0, geom.width, geom.height);
-  lumenDrawGrid(ctx, geom);
-  lumenDrawWalls(ctx, geom, level);
-  lumenDrawCards(ctx, geom, level);
+  lumenDrawGrid(ctx, geom, dm);
+  lumenDrawWalls(ctx, geom, level, dm);
+  lumenDrawCards(ctx, geom, level, dm);
   var trace = lumenTraceAllBeams(geom, level);
-  lumenDrawBeam(ctx, trace.segments);
+  lumenDrawBeam(ctx, trace.segments, dm);
   (level.pieces || []).forEach(function (p) {
     var active = !!trace.activated[p.id];
-    if (p.type === "mirror") lumenDrawMirror(ctx, geom, p, active, selectedId === p.id);
-    else lumenDrawLens(ctx, geom, p, active, trace.closeness[p.id] || 0, selectedId === p.id);
+    if (p.type === "mirror") lumenDrawMirror(ctx, geom, p, active, selectedId === p.id, dm);
+    else lumenDrawLens(ctx, geom, p, active, trace.closeness[p.id] || 0, selectedId === p.id, dm);
   });
   (level.sources || []).forEach(function (s) {
-    lumenDrawSourceCylinder(ctx, geom, s, !!trace.emittingSources[s.id], selectedId === s.id);
+    lumenDrawSourceCylinder(ctx, geom, s, !!trace.emittingSources[s.id], selectedId === s.id, dm);
   });
   (level.targets || []).forEach(function (t) {
     var hit = !!trace.targetHitAtAll[t.id];
     var intensity = trace.targetIntensity[t.id] || 0;
-    lumenDrawTarget(ctx, geom, t, hit, intensity, selectedId === t.id);
+    lumenDrawTarget(ctx, geom, t, hit, intensity, selectedId === t.id, dm);
   });
   return trace;
 }
@@ -6202,7 +6721,7 @@ function wireLumenPuzzleInteractions(root, ctl, session, n) {
   }
 
   function redraw() {
-    var trace = lumenRenderScene(ctx, geom, level, null);
+    var trace = lumenRenderScene(ctx, geom, level, null, isDarkMaritime(c));
     var allSolved = updateSummary(trace);
     if (toastEl) toastEl.classList.toggle("show", !!allSolved);
     if (allSolved && !lastSolved && !locked) {
@@ -6286,7 +6805,7 @@ function lumenDrawReadOnly(ctl, n) {
   var geom = ctl.lumenGeom[n.id];
   var level = (ctl.lumenDraft && ctl.lumenDraft[n.id]) || { sources: c.sources || [], pieces: c.pieces || [], targets: c.targets || [], walls: c.walls || [], cards: c.cards || [] };
   canvas.width = geom.width; canvas.height = geom.height;
-  lumenRenderScene(canvas.getContext("2d"), geom, level, null);
+  lumenRenderScene(canvas.getContext("2d"), geom, level, null, isDarkMaritime(c));
   var summaryEl = root.querySelector('.pv-lumen-summary[data-node="' + n.id + '"]');
   if (summaryEl) summaryEl.textContent = (level.targets || []).length + " of " + (level.targets || []).length + " target(s) solved";
 }
@@ -6804,6 +7323,9 @@ return {
   IMAGE_ASPECT_RATIOS: IMAGE_ASPECT_RATIOS,
   IMAGE_FRAME_STYLES: IMAGE_FRAME_STYLES,
   LOCK_STYLES: LOCK_STYLES,
+  APPEARANCES: APPEARANCES,
+  nodeAppearance: nodeAppearance,
+  isDarkMaritime: isDarkMaritime,
   lockAndKeySupplyConnection: lockAndKeySupplyConnection,
   lockAndKeyOptions: lockAndKeyOptions,
 
@@ -6954,6 +7476,10 @@ return {
   ctpComponentWrapStyle: ctpComponentWrapStyle,
   ctpRenderZoneComponents: ctpRenderZoneComponents,
   ctpRenderBoard: ctpRenderBoard,
+  CTP_FORMULA_VAR_LETTERS: CTP_FORMULA_VAR_LETTERS,
+  CTP_FORMULA_FUNCS: CTP_FORMULA_FUNCS,
+  ctpEvalFormula: ctpEvalFormula,
+  ctpEvalComponentFormula: ctpEvalComponentFormula,
 
   PLAYER_SCREEN_TYPES: PLAYER_SCREEN_TYPES,
   BACK_BUTTON_TYPES: BACK_BUTTON_TYPES,

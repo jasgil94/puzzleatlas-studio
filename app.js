@@ -25,6 +25,7 @@ var EFFECT_TYPES = PAEngine.EFFECT_TYPES;
 var IMAGE_ASPECT_RATIOS = PAEngine.IMAGE_ASPECT_RATIOS;
 var IMAGE_FRAME_STYLES = PAEngine.IMAGE_FRAME_STYLES;
 var LOCK_STYLES = PAEngine.LOCK_STYLES;
+var APPEARANCES = PAEngine.APPEARANCES;
 var renderImageRevealBlock = PAEngine.renderImageRevealBlock;
 var renderVideoRevealBlock = PAEngine.renderVideoRevealBlock;
 var renderVideoStoryBlock = PAEngine.renderVideoStoryBlock;
@@ -145,6 +146,9 @@ var ctpComputeOutputs = PAEngine.ctpComputeOutputs;
 var ctpResolvedValue = PAEngine.ctpResolvedValue;
 var ctpComponentInnerHtml = PAEngine.ctpComponentInnerHtml;
 var ctpComponentWrapStyle = PAEngine.ctpComponentWrapStyle;
+var CTP_FORMULA_VAR_LETTERS = PAEngine.CTP_FORMULA_VAR_LETTERS;
+var CTP_FORMULA_FUNCS = PAEngine.CTP_FORMULA_FUNCS;
+var ctpEvalFormula = PAEngine.ctpEvalFormula;
 
 // Lock and Key — the "which keys does this puzzle's supplying keychain
 // offer" lookup, shared with engine.js's player runtime (see the comment
@@ -1917,6 +1921,23 @@ function fieldWrap(labelText, innerHtml) {
   return '<div class="field"><label>' + esc(labelText) + '</label>' + innerHtml + '</div>';
 }
 
+/* Appearance — the "Classic vs. Dark Maritime" prop-skin selector offered
+   on every physical-prop puzzle type (Physical Lock Code, Cryptex, Fuse
+   Panel, Rope Tying, Lumen Beam, Gear & Pulley, Weight Scale, Lock and Key,
+   Control Panel — see PAEngine.APPEARANCES/renderPreviewNode's per-type
+   darkMaritime branches for the player-facing half). Purely cosmetic, same
+   footing as Physical Lock Code's own pre-existing "Lock appearance" style
+   picker (LOCK_STYLES) — never affects what counts as solving the puzzle.
+   One shared field builder + one shared bindChange call (see every
+   "case" below in wireNodeInspector) so all nine stay in lockstep. */
+function appearanceFieldHtml(c) {
+  return fieldWrap("Appearance", '<select id="fAppearance">' +
+    Object.keys(APPEARANCES).map(function (key) {
+      return '<option value="' + key + '"' + ((c.appearance || "classic") === key ? " selected" : "") + '>' + esc(APPEARANCES[key].label) + '</option>';
+    }).join("") + '</select>') +
+    '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Cosmetic only — swaps the illustrated prop style. "Dark Maritime" renders it as a two-colour engraved scratchboard plate; doesn\'t change how the puzzle is solved.</p>';
+}
+
 /* Player-visible text fields (text the player will actually see on the
    real player screen, per engine.js's renderPreviewNode) get a +/- font-
    size control next to the label and auto-grow instead of a fixed-height
@@ -2207,16 +2228,20 @@ function buildTypeSpecificFields(n) {
       }).join("") + '</div>';
       break;
     case "physicalLockCode":
-      html += fieldWrap("Lock appearance", '<select id="fLockStyle">' +
-        Object.keys(LOCK_STYLES).map(function (key) {
-          return '<option value="' + key + '"' + ((c.lockStyle || "classicBrass") === key ? " selected" : "") + '>' + LOCK_STYLES[key].icon + ' ' + esc(LOCK_STYLES[key].label) + '</option>';
-        }).join("") + '</select>');
-      html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Cosmetic only — describes the real-world prop to the player. Doesn\'t affect the accepted code.</p>';
+      html += appearanceFieldHtml(c);
+      if ((c.appearance || "classic") !== "darkMaritime") {
+        html += fieldWrap("Lock appearance", '<select id="fLockStyle">' +
+          Object.keys(LOCK_STYLES).map(function (key) {
+            return '<option value="' + key + '"' + ((c.lockStyle || "classicBrass") === key ? " selected" : "") + '>' + LOCK_STYLES[key].icon + ' ' + esc(LOCK_STYLES[key].label) + '</option>';
+          }).join("") + '</select>');
+        html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Cosmetic only — describes the real-world prop to the player. Doesn\'t affect the accepted code. (Only shown for the Classic appearance — Dark Maritime renders its own single engraved lock.)</p>';
+      }
       html += fieldWrap("Code format", '<select id="fCodeFormat"><option value="numeric"' + (c.codeFormat !== "alpha" ? " selected" : "") + '>Numeric</option><option value="alpha"' + (c.codeFormat === "alpha" ? " selected" : "") + '>Letters</option></select>');
       html += fieldWrap("Code length", '<input type="number" id="fCodeLength" min="1" value="' + (c.codeLength || 4) + '" />');
       html += fieldWrap("Accepted code", '<input type="text" id="fAcceptedCode" value="' + esc(c.acceptedCode || "") + '" />');
       break;
     case "cryptexLock":
+      html += appearanceFieldHtml(c);
       html += '<p style="font-size:12px;color:var(--text-dim)">Player drags three letter rings and presses the centre stud to try a combination. Letters are always A–Z, matched case-insensitively.</p>';
       html += '<div class="field"><label>Accepted combinations (3 letters)</label><div id="ansList">' +
         (c.acceptedAnswers || []).map(function (a, i) {
@@ -2225,6 +2250,7 @@ function buildTypeSpecificFields(n) {
       break;
     case "fusePanel":
       html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+      html += appearanceFieldHtml(c);
       html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Each switch has its own ON/OFF labels (what the player reads at each throw position) and its own required end position. The panel completes the instant every switch is set correctly — there\'s no per-switch feedback, so a wrong guess can\'t be narrowed down switch by switch.</p>';
       html += '<div class="field"><label>Switches</label><div id="fuseSwitchList">' +
         (c.switches || []).map(function (s, i) {
@@ -2239,6 +2265,7 @@ function buildTypeSpecificFields(n) {
       break;
     case "ropeTying":
       html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+      html += appearanceFieldHtml(c);
       html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Set how many rope ends sit on each side of the frame (0-4), give each end its own brass label text, then drag one end onto another below to mark them as a correct pair. The player ties ends together in the Player view and presses Hoist to check their work — it only counts as complete when the tied set exactly matches the pairs set here.</p>';
       html += '<div class="field"><label>Ropes per side</label><div class="rope-side-counts">' +
         ["left", "top", "right", "bottom"].map(function (side) {
@@ -2271,6 +2298,7 @@ function buildTypeSpecificFields(n) {
       break;
     case "lumenPuzzle":
       html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+      html += appearanceFieldHtml(c);
       html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Design the level below: place a light source, then mirrors/lenses/targets on the hex grid. Walls block light entirely; opaque cards block it along one hex edge only. At player-time only mirrors and lenses can be rotated — sources, targets, walls and cards are fixed by this design.</p>';
       html += '<div class="field"><label>Grid size (zoom) — hexes per side: <span id="lumenGridSizeVal">' + (c.gridSize || 8) + '</span></label><input type="range" id="lumenGridSize" min="3" max="15" step="1" value="' + (c.gridSize || 8) + '" /></div>';
       html += fieldWrap("Field shape", '<select id="lumenFieldShape"><option value="square"' + (c.fieldShape !== "circle" ? " selected" : "") + '>Square</option><option value="circle"' + (c.fieldShape === "circle" ? " selected" : "") + '>Circle</option></select>');
@@ -2286,6 +2314,7 @@ function buildTypeSpecificFields(n) {
       break;
     case "gearPulley":
       html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+      html += appearanceFieldHtml(c);
       var gpExpanded = gpUiState(n).expanded !== false; // expanded by default; collapsed state persists across inspector re-renders (see the "toggle" listener in wireNodeInspector)
       html += '<details class="gp-builder-details"' + (gpExpanded ? " open" : "") + ' id="gpBuilderDetails">' +
         '<summary class="gp-builder-summary"><span class="gp-builder-chevron">▸</span>⚙️ Board Designer — handle, hoist &amp; axles</summary>' +
@@ -3176,6 +3205,7 @@ function buildWeightScaleFields(n) {
   var items = c.items;
 
   var html = playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+  html += appearanceFieldHtml(c);
 
   var wsExpanded = wsUiState(n).expanded !== false; // expanded by default; collapsed state persists across inspector re-renders (see the "toggle" listener in wireNodeInspector)
   html += '<details class="ws-builder-details"' + (wsExpanded ? " open" : "") + ' id="wsBuilderDetails">' +
@@ -3299,6 +3329,7 @@ function wireWeightScaleFields(n) {
 function buildLockAndKeyFields(n) {
   var c = n.content, hunt = Store.hunt;
   var html = playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+  html += appearanceFieldHtml(c);
 
   var supply = lockAndKeySupplyConnection(hunt, n.id);
   var keychainNode = supply ? Store.getNode(supply.sourceId) : null;
@@ -4306,6 +4337,7 @@ function buildControlPanelFields(n) {
   c.components = c.components || [];
   c.winConditions = c.winConditions || [];
   var html = playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+  html += appearanceFieldHtml(c);
 
   html += '<div class="section-title">Board size</div>';
   html += '<div style="display:flex;gap:6px">' +
@@ -4437,6 +4469,161 @@ function buildCtpRulesEditor(comp, eid, outputField, allComponents) {
   return html;
 }
 
+// Lets a light/gauge/digitalDisplay component switch between the if/then
+// Rules editor above and the Formula editor below (buildCtpFormulaEditor)
+// — two different ways of driving the same "what should this show right
+// now" output (see ctpComputeOutputs in engine.js).
+function buildCtpModeSelector(d, eid) {
+  return fieldWrap("How this is driven", '<select id="' + eid("DMode") + '">' +
+    '<option value="rules"' + ((d.mode || "rules") === "rules" ? " selected" : "") + '>Rules — if this, then that</option>' +
+    '<option value="formula"' + (d.mode === "formula" ? " selected" : "") + '>Formula — a math equation</option>' +
+    '</select>');
+}
+
+// Formula editor — assign any number of the panel's own interactive
+// components to short variable names (x, y, z, ... — CTP_FORMULA_VAR_LETTERS
+// in engine.js), then write a math expression using those names, e.g. two
+// sliders assigned to x/y with expression "x + y" (or "(x + y) / 2",
+// "round(x) > y", etc. — see ctpEvalFormula's supported operators/
+// functions). Shows a live preview computed from each assigned component's
+// own current Starting value/position, or the parse/eval error if the
+// expression isn't valid yet, so a creator gets instant feedback while
+// typing rather than only discovering a typo at player-time.
+function buildCtpFormulaEditor(comp, eid, allComponents, outputField) {
+  var d = comp.data;
+  d.formula = d.formula || { vars: [], expression: "" };
+  var f = d.formula;
+  f.vars = f.vars || [];
+  var interactiveComps = allComponents.filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; });
+  var html = '<div class="section-title" style="margin-top:10px">Formula</div>';
+  if (!interactiveComps.length) {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Add an interactive component to the board first, then assign it to a variable here.</p>';
+    return html;
+  }
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Assign components to letters, then write an expression using those letters — e.g. two sliders assigned to x and y, expression <code>x + y</code>. Switches/buttons count as 0 or 1; numbered/named knobs count as their point index (0, 1, 2…); sliders and the full-rotation knob use their raw number.</p>';
+  html += '<div id="' + eid("VarList") + '">' + f.vars.map(function (v, vi) {
+    return '<div class="list-item ctp-formula-var-row">' +
+      '<span class="chip ctp-formula-var-letter">' + esc(v.letter) + '</span>' +
+      '<select class="' + eid("VarSelect") + '" data-idx="' + vi + '" style="flex:1;min-width:0">' +
+        '<option value="">— choose component —</option>' +
+        interactiveComps.map(function (ic) { return '<option value="' + esc(ic.id) + '"' + (v.componentId === ic.id ? " selected" : "") + '>' + esc(ic.name || ic.type) + '</option>'; }).join("") +
+      '</select>' +
+      '<button type="button" class="small-btn ' + eid("VarRemoveBtn") + '" data-idx="' + vi + '">✕</button>' +
+    '</div>';
+  }).join("") + '</div>';
+  if (f.vars.length < CTP_FORMULA_VAR_LETTERS.length) {
+    html += '<button type="button" class="small-btn" id="' + eid("VarAddBtn") + '" style="margin-bottom:8px">+ Add variable</button>';
+  }
+  html += fieldWrap("Expression", '<input type="text" id="' + eid("FormulaExpr") + '" class="ctp-formula-input" placeholder="e.g. x + y" value="' + esc(f.expression || "") + '" />');
+  if (outputField === "text") {
+    html += '<div style="display:flex;gap:6px">' +
+      fieldWrap("Decimal places", '<input type="number" id="' + eid("FormulaDecimals") + '" min="0" max="6" value="' + (f.decimals != null ? f.decimals : 0) + '" />') +
+      fieldWrap("Prefix", '<input type="text" id="' + eid("FormulaPrefix") + '" value="' + esc(f.prefix || "") + '" />') +
+      fieldWrap("Suffix", '<input type="text" id="' + eid("FormulaSuffix") + '" value="' + esc(f.suffix || "") + '" />') +
+    '</div>';
+  }
+  html += '<div id="' + eid("FormulaPreview") + '">' + buildCtpFormulaPreviewHtml(comp, allComponents, outputField) + '</div>';
+  html += '<p style="font-size:10px;color:var(--text-dim);margin:-4px 0 4px">Operators: <code>+ − * / % ^</code> (power). Functions: <code>abs() round() floor() ceil() sqrt() min() max() clamp(v,lo,hi)</code>. Comparisons: <code>&gt; &lt; &gt;= &lt;= == !=</code>. Logic: <code>&amp;&amp;</code>/and, <code>||</code>/or, <code>!</code>/not.</p>';
+  return html;
+}
+
+// Just the live preview/error line inside the Formula editor — pulled out
+// of buildCtpFormulaEditor so wireCtpFormulaEditor can refresh it on every
+// keystroke by touching only this one <div> (id eid("FormulaPreview"))
+// instead of rebuilding the whole props panel, which would blow away
+// focus/cursor position in the expression input mid-typing.
+function buildCtpFormulaPreviewHtml(comp, allComponents, outputField) {
+  var d = comp.data;
+  var f = d.formula || { vars: [], expression: "" };
+  var interactiveComps = allComponents.filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; });
+  var varsMap = {};
+  (f.vars || []).forEach(function (v) {
+    var ic = interactiveComps.find(function (x) { return x.id === v.componentId; });
+    varsMap[v.letter] = ic ? ctpLiveValue(ic.type, ic.data) : 0;
+  });
+  var result = ctpEvalFormula(f.expression || "", varsMap);
+  if (result.ok) {
+    var preview = result.value;
+    if (outputField === "text") preview = (f.prefix || "") + preview.toFixed(Math.max(0, Math.min(6, Number(f.decimals) || 0))) + (f.suffix || "");
+    else if (outputField === "on") preview = preview ? "ON" : "OFF";
+    return '<p style="font-size:11px;color:#3ddc7a;margin:-4px 0 8px">✓ Preview using each variable\'s current Starting value/position: <b>' + esc(String(preview)) + '</b></p>';
+  }
+  return '<p style="font-size:11px;color:var(--danger);margin:-4px 0 8px">⚠ ' + esc(result.error) + '</p>';
+}
+
+// Wires the Formula editor built by buildCtpFormulaEditor: variable rows
+// (assign a component to a letter, add/remove variables), the expression
+// input, and (for digitalDisplay) decimals/prefix/suffix. Mirrors
+// wireCtpRulesEditor's afterEdit/renderProps conventions, except the
+// expression/decimals/prefix/suffix inputs update only the preview <div>
+// on every keystroke (see buildCtpFormulaPreviewHtml) and only trigger a
+// full afterEdit(false) save on blur — typing a formula must not cause
+// the props panel to re-render out from under the cursor.
+function wireCtpFormulaEditor(comp, eid, outputField, c) {
+  var d = comp.data;
+  d.formula = d.formula || { vars: [], expression: "" };
+  var f = d.formula;
+  f.vars = f.vars || [];
+
+  function refreshPreview() {
+    var el = document.getElementById(eid("FormulaPreview"));
+    if (el) el.innerHTML = buildCtpFormulaPreviewHtml(comp, c.components || [], outputField);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("." + eid("VarSelect")), function (sel) {
+    sel.onchange = function () {
+      var v = f.vars[+sel.dataset.idx];
+      if (v) v.componentId = sel.value;
+      afterEdit(false);
+      renderProps();
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("." + eid("VarRemoveBtn")), function (btn) {
+    btn.onclick = function () {
+      f.vars.splice(+btn.dataset.idx, 1);
+      afterEdit(false);
+      renderProps();
+    };
+  });
+  var addBtn = document.getElementById(eid("VarAddBtn"));
+  if (addBtn) addBtn.onclick = function () {
+    var used = f.vars.map(function (v) { return v.letter; });
+    var letter = CTP_FORMULA_VAR_LETTERS.filter(function (l) { return used.indexOf(l) === -1; })[0];
+    if (!letter) return;
+    var interactiveComps = (c.components || []).filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; });
+    var assignedIds = f.vars.map(function (v) { return v.componentId; });
+    var firstUnused = interactiveComps.filter(function (ic) { return assignedIds.indexOf(ic.id) === -1; })[0] || interactiveComps[0];
+    f.vars.push({ letter: letter, componentId: firstUnused ? firstUnused.id : "" });
+    afterEdit(false);
+    renderProps();
+  };
+
+  var exprEl = document.getElementById(eid("FormulaExpr"));
+  if (exprEl) {
+    exprEl.oninput = function (e) { f.expression = e.target.value; refreshPreview(); };
+    exprEl.onblur = function () { afterEdit(false); };
+  }
+  var decEl = document.getElementById(eid("FormulaDecimals"));
+  if (decEl) {
+    decEl.oninput = function (e) {
+      var v = parseInt(e.target.value, 10);
+      f.decimals = isFinite(v) ? Math.max(0, Math.min(6, v)) : 0;
+      refreshPreview();
+    };
+    decEl.onblur = function () { afterEdit(false); };
+  }
+  var preEl = document.getElementById(eid("FormulaPrefix"));
+  if (preEl) {
+    preEl.oninput = function (e) { f.prefix = e.target.value; refreshPreview(); };
+    preEl.onblur = function () { afterEdit(false); };
+  }
+  var sufEl = document.getElementById(eid("FormulaSuffix"));
+  if (sufEl) {
+    sufEl.oninput = function (e) { f.suffix = e.target.value; refreshPreview(); };
+    sufEl.onblur = function () { afterEdit(false); };
+  }
+}
+
 // Component-type-specific fields for the selected component's props panel
 // (placement/size/rotation are generic, handled by renderProps itself —
 // see wireControlPanelDesigner). Conditional types (light/gauge/
@@ -4481,17 +4668,20 @@ function buildCtpTypeFields(comp, eid, allComponents) {
     case "light":
       html += fieldWrap("Visual style", '<select id="' + eid("DStyle") + '">' + Object.keys(CTP_LIGHT_STYLES).map(function (k) { return '<option value="' + k + '"' + ((d.style || "round") === k ? " selected" : "") + '>' + esc(CTP_LIGHT_STYLES[k]) + '</option>'; }).join("") + '</select>');
       html += fieldWrap("Color (when on)", '<input type="color" id="' + eid("DColor") + '" value="' + (d.color || "#ff453a") + '" />');
-      html += fieldWrap("Default (when no rule matches)", '<select id="' + eid("DDefaultOn") + '"><option value="0"' + (!d.defaultOn ? " selected" : "") + '>Off</option><option value="1"' + (d.defaultOn ? " selected" : "") + '>On</option></select>');
-      html += buildCtpRulesEditor(comp, eid, "on", allComponents);
+      html += fieldWrap("Default (when nothing matches / formula has an error)", '<select id="' + eid("DDefaultOn") + '"><option value="0"' + (!d.defaultOn ? " selected" : "") + '>Off</option><option value="1"' + (d.defaultOn ? " selected" : "") + '>On</option></select>');
+      html += buildCtpModeSelector(d, eid);
+      html += (d.mode === "formula") ? buildCtpFormulaEditor(comp, eid, allComponents, "on") : buildCtpRulesEditor(comp, eid, "on", allComponents);
       break;
     case "gauge":
       html += '<div style="display:flex;gap:6px">' + fieldWrap("Min", '<input type="number" id="' + eid("DMin") + '" value="' + d.min + '" />') + fieldWrap("Max", '<input type="number" id="' + eid("DMax") + '" value="' + d.max + '" />') + '</div>';
-      html += fieldWrap("Default value (when no rule matches)", '<input type="number" id="' + eid("DDefaultValue") + '" value="' + d.defaultValue + '" />');
-      html += buildCtpRulesEditor(comp, eid, "value", allComponents);
+      html += fieldWrap("Default value (when nothing matches / formula has an error)", '<input type="number" id="' + eid("DDefaultValue") + '" value="' + d.defaultValue + '" />');
+      html += buildCtpModeSelector(d, eid);
+      html += (d.mode === "formula") ? buildCtpFormulaEditor(comp, eid, allComponents, "value") : buildCtpRulesEditor(comp, eid, "value", allComponents);
       break;
     case "digitalDisplay":
-      html += fieldWrap("Default text (when no rule matches)", '<input type="text" id="' + eid("DDefaultText") + '" value="' + esc(d.defaultText || "") + '" />');
-      html += buildCtpRulesEditor(comp, eid, "text", allComponents);
+      html += fieldWrap("Default text (when nothing matches / formula has an error)", '<input type="text" id="' + eid("DDefaultText") + '" value="' + esc(d.defaultText || "") + '" />');
+      html += buildCtpModeSelector(d, eid);
+      html += (d.mode === "formula") ? buildCtpFormulaEditor(comp, eid, allComponents, "text") : buildCtpRulesEditor(comp, eid, "text", allComponents);
       break;
     case "image": case "gif":
       html += '<div class="field"><label>' + (comp.type === "gif" ? "GIF file" : "Image file") + '</label>' +
@@ -5045,17 +5235,23 @@ function wireControlPanelDesigner(n, prefix) {
         bindChangeRerender(byId(eid("DStyle")), function (v) { d.style = v; });
         bindColorLive(byId(eid("DColor")), function (v) { d.color = v; });
         bindChangeRerender(byId(eid("DDefaultOn")), function (v) { d.defaultOn = v === "1"; });
-        wireCtpRulesEditor(comp, eid, "on", c);
+        bindChangeRerender(byId(eid("DMode")), function (v) { d.mode = v; });
+        if (d.mode === "formula") wireCtpFormulaEditor(comp, eid, "on", c);
+        else wireCtpRulesEditor(comp, eid, "on", c);
         break;
       case "gauge":
         bindNumLive(byId(eid("DMin")), function (v) { d.min = v; });
         bindNumLive(byId(eid("DMax")), function (v) { d.max = v; });
         bindNumLive(byId(eid("DDefaultValue")), function (v) { d.defaultValue = v; });
-        wireCtpRulesEditor(comp, eid, "value", c);
+        bindChangeRerender(byId(eid("DMode")), function (v) { d.mode = v; });
+        if (d.mode === "formula") wireCtpFormulaEditor(comp, eid, "value", c);
+        else wireCtpRulesEditor(comp, eid, "value", c);
         break;
       case "digitalDisplay":
         bindLive(byId(eid("DDefaultText")), function (v) { d.defaultText = v; });
-        wireCtpRulesEditor(comp, eid, "text", c);
+        bindChangeRerender(byId(eid("DMode")), function (v) { d.mode = v; });
+        if (d.mode === "formula") wireCtpFormulaEditor(comp, eid, "text", c);
+        else wireCtpRulesEditor(comp, eid, "text", c);
         break;
       case "image": case "gif":
         if (byId(eid("DUploadBtn"))) byId(eid("DUploadBtn")).onclick = function () { byId(eid("DFile")).click(); };
@@ -5221,12 +5417,19 @@ function wireNodeInspector(n) {
       });
       break;
     case "physicalLockCode":
+      // Own onchange (not the shared bindChange helper) because switching
+      // to/from Dark Maritime also shows/hides the Lock appearance
+      // sub-field above (see buildTypeSpecificFields's "physicalLockCode"
+      // case) — the inspector form itself needs rebuilding, not just the
+      // live preview, same reason fLane/fSceneId call renderInspector().
+      if (byId("fAppearance")) byId("fAppearance").onchange = function (e) { c.appearance = e.target.value; afterEdit(); renderInspector(); };
       bindChange("fLockStyle", function (v) { c.lockStyle = v; });
       bindChange("fCodeFormat", function (v) { c.codeFormat = v; });
       if (byId("fCodeLength")) { byId("fCodeLength").oninput = function (e) { c.codeLength = Number(e.target.value); }; byId("fCodeLength").onblur = function () { afterEdit(false); }; }
       bindText("fAcceptedCode", "acceptedCode");
       break;
     case "cryptexLock":
+      bindChange("fAppearance", function (v) { c.appearance = v; });
       Array.prototype.forEach.call(document.querySelectorAll(".ansInput"), function (inp) {
         inp.oninput = function (e) { c.acceptedAnswers[+inp.dataset.idx] = e.target.value.toUpperCase(); };
         inp.onblur = function () { afterEdit(false); renderInspector(); };
@@ -5238,6 +5441,7 @@ function wireNodeInspector(n) {
       break;
     case "fusePanel":
       bindText("fPrompt", "prompt");
+      bindChange("fAppearance", function (v) { c.appearance = v; });
       Array.prototype.forEach.call(document.querySelectorAll(".fuseLabelInput"), function (inp) {
         inp.oninput = function (e) { var s = c.switches.find(function (x) { return x.id === inp.dataset.sid; }); if (s) s.label = e.target.value; };
         inp.onblur = function () { afterEdit(false); };
@@ -5264,6 +5468,7 @@ function wireNodeInspector(n) {
       break;
     case "ropeTying":
       bindText("fPrompt", "prompt");
+      bindChange("fAppearance", function (v) { c.appearance = v; });
       Array.prototype.forEach.call(document.querySelectorAll(".ropeSideCount"), function (sel) {
         sel.onchange = function (e) {
           resizeRopeSide(c, sel.dataset.side, Number(e.target.value));
@@ -5309,11 +5514,13 @@ function wireNodeInspector(n) {
       break;
     case "lumenPuzzle":
       bindText("fPrompt", "prompt");
+      bindChange("fAppearance", function (v) { c.appearance = v; });
       wireLumenDesigner(n);
       if (byId("btnOpenLumenBuilder")) byId("btnOpenLumenBuilder").onclick = function () { openLumenBuilder(n.id); };
       break;
     case "gearPulley":
       bindText("fPrompt", "prompt");
+      bindChange("fAppearance", function (v) { c.appearance = v; });
       wireGearPulleyDesigner(n);
       if (byId("btnOpenGearPulleyBuilder")) byId("btnOpenGearPulleyBuilder").onclick = function () { openGearPulleyBuilder(n.id); };
       if (byId("gpBuilderDetails")) byId("gpBuilderDetails").addEventListener("toggle", function (e) { gpUiState(n).expanded = e.target.open; });
@@ -5332,10 +5539,12 @@ function wireNodeInspector(n) {
       break;
     case "weightScale":
       bindText("fPrompt", "prompt");
+      bindChange("fAppearance", function (v) { c.appearance = v; });
       wireWeightScaleFields(n);
       break;
     case "controlPanel":
       bindText("fPrompt", "prompt");
+      bindChange("fAppearance", function (v) { c.appearance = v; });
       c.board = c.board || { width: 640, upperHeight: 220, lowerHeight: 260 };
       c.components = c.components || [];
       c.winConditions = c.winConditions || [];
@@ -5373,6 +5582,7 @@ function wireNodeInspector(n) {
       break;
     case "lockAndKey":
       bindText("fPrompt", "prompt");
+      bindChange("fAppearance", function (v) { c.appearance = v; });
       bindChange("fCorrectKey", function (v) { c.correctKeyNodeId = v; });
       break;
     case "key":

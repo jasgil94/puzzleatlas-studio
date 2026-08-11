@@ -23,6 +23,15 @@
   --pv-heading-transform:none; --pv-heading-letter-spacing:normal;
   --pv-radius:8px; --pv-border-width:1px; --pv-border-style:solid;
   --pv-image-filter:none;
+
+  /* Dark Maritime — the "19th-century engraved adventure book" prop
+     appearance offered on every physical-prop puzzle type (see
+     PAEngine.APPEARANCES/dmDefs in engine.js and appearanceFieldHtml in
+     app.js). Strictly two colours everywhere this is used: pale-aqua ink
+     on near-black-green ground, no gradients/shadows/opacity shading —
+     every .pv-dm rule below draws depth only from line density,
+     cross-hatching (see dmDefs' pattern library) and solid shape. */
+  --dm-ink:#BEE9E8; --dm-void:#001514;
 }
 *{box-sizing:border-box;}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);overflow:hidden;font-size:14px;}
@@ -553,6 +562,30 @@ button{font-family:inherit;cursor:pointer;}
 .pv-lock-style-rusted .pv-lock-arrow svg{fill:#2b1a10;}
 .pv-lock-style-rusted .pv-lock-wheel-row{font-family:Impact,'Arial Narrow',Haettenschweiler,sans-serif;letter-spacing:1px;color:#e8d9b0;text-shadow:0 1px 2px rgba(0,0,0,.7), 0 0 4px rgba(120,60,20,.5);}
 
+/* Dark Maritime — shared base rules every .pv-dm puzzle wrapper picks up
+   (flat two-colour ground, engraved serif type, hairline ink borders — no
+   gradients/shadows/box-shadow anywhere in this block or any .pv-dm-*
+   rule below). .pv-dm-hatch-bg is the small inline <svg> each darkMaritime
+   render branch drops in behind its illustration for a cross-hatched
+   ground fill (see dmDefs in engine.js) — absolutely positioned to fill
+   whatever solid shape it's layered under. */
+.pv-dm-hatch-bg{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;}
+.pv-dm{--dm-local-ink:var(--dm-ink);--dm-local-void:var(--dm-void);}
+
+/* Physical Lock Code — Dark Maritime: an engraved ship's padlock, flat
+   near-black-green body scored with pale-aqua cross-hatch, no plating
+   gradient. */
+.pv-lock-wrap.pv-dm .pv-lock-shackle{border-color:var(--dm-ink);background:var(--dm-void);box-shadow:none;}
+.pv-lock-wrap.pv-dm .pv-lock-body{background:var(--dm-void);border:2px solid var(--dm-ink);box-shadow:none;overflow:hidden;}
+.pv-lock-wrap.pv-dm .pv-dm-hatch-bg{opacity:.5;}
+.pv-lock-wrap.pv-dm .pv-lock-brand{position:relative;font-family:Georgia,'Palatino Linotype','Book Antiqua',serif;letter-spacing:2px;color:var(--dm-ink);}
+.pv-lock-wrap.pv-dm .pv-lock-dials{position:relative;background:var(--dm-void);border:1px solid var(--dm-ink);box-shadow:none;}
+.pv-lock-wrap.pv-dm .pv-lock-wheel-window{background:var(--dm-void);border:1px solid var(--dm-ink);box-shadow:none;}
+.pv-lock-wrap.pv-dm .pv-lock-arrow{background:var(--dm-void);border:1px solid var(--dm-ink);box-shadow:none;}
+.pv-lock-wrap.pv-dm .pv-lock-arrow svg{fill:var(--dm-ink);}
+.pv-lock-wrap.pv-dm .pv-lock-wheel-row{font-family:Georgia,'Palatino Linotype','Book Antiqua',serif;color:var(--dm-ink);text-shadow:none;}
+.pv-lock-wrap.pv-dm .pv-lock-readout{color:var(--dm-ink);}
+
 /* Lock and Key — a simple padlock hanging above a foreshortened metal
    ring at the bottom of the stage, with the currently-selected key's
    photo hanging from that ring (see renderPreviewNode's "lockAndKey"
@@ -589,6 +622,20 @@ button{font-family:inherit;cursor:pointer;}
 .pv-lk-feedback{position:absolute;left:0;right:0;top:44%;text-align:center;font-weight:700;font-size:15px;letter-spacing:.03em;color:var(--pv-danger, #ff5c5c);text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none;z-index:3;}
 .pv-lk-hint-row{text-align:center;font-size:11.5px;color:var(--pv-text-dim);margin-top:2px;}
 
+/* Lock and Key — Dark Maritime: the ring and padlock go flat void with
+   ink hairline strokes; the padlock body's cross-hatch is drawn with a
+   hard-edged repeating-linear-gradient (a tiled line pattern, not a
+   smooth shaded gradient) rather than an injected <svg>, since this
+   button's own child spans are also the exact elements
+   wireLockAndKeyInteractions animates directly — restructuring them would
+   risk breaking that animation. */
+.pv-lk-stage.pv-dm .pv-lk-ring{border-color:var(--dm-ink);background:var(--dm-void);box-shadow:none;}
+.pv-lk-stage.pv-dm .pv-lk-key-noimg{color:var(--dm-ink);}
+.pv-lk-stage.pv-dm .pv-lk-shackle{border-color:var(--dm-ink);background:var(--dm-void);box-shadow:none;}
+.pv-lk-stage.pv-dm .pv-lk-body{background-color:var(--dm-void);background-image:repeating-linear-gradient(45deg, var(--dm-ink) 0 1.2px, transparent 1.2px 8px);border:2px solid var(--dm-ink);box-shadow:none;}
+.pv-lk-stage.pv-dm .pv-lk-body::after{background:var(--dm-ink);box-shadow:none;}
+.pv-lk-stage.pv-dm .pv-lk-feedback{color:var(--dm-ink);text-shadow:none;}
+
 /* Cryptex Dial Lock (3 Letter) — three concentric letter rings rendered as
    inline SVG (see renderCryptexSvg/wireCryptexInteractions in engine.js).
    Colour/gradient fills live inline in the SVG itself (per-node <defs>, so
@@ -614,6 +661,12 @@ button{font-family:inherit;cursor:pointer;}
 
 .cryptex-shackle{transition:transform .7s cubic-bezier(.2,.9,.3,1.3);transform-origin:200px 340px;}
 .cryptex-shackle.cryptex-open{transform:translate(6px,-46px) rotate(22deg);}
+
+/* Cryptex Dial Lock — Dark Maritime: letters/hover states forced to the
+   two-colour palette (fills/strokes for the rings themselves are already
+   baked in per-node by renderCryptexSvg, see engine.js). */
+.pv-cryptex-wrap.pv-dm .cryptex-letter,.pv-cryptex-wrap.pv-dm .cryptex-letter-active{fill:var(--dm-ink);}
+.pv-cryptex-wrap.pv-dm .cryptex-center:hover .cryptex-btn-face{fill:var(--dm-void);}
 
 @keyframes pvCryptexShake{0%,100%{transform:translateX(0);}20%{transform:translateX(-9px);}40%{transform:translateX(9px);}60%{transform:translateX(-6px);}80%{transform:translateX(6px);}}
 .pv-cryptex-wrap.cryptex-shake{animation:pvCryptexShake .4s ease;}
@@ -667,6 +720,22 @@ button{font-family:inherit;cursor:pointer;}
 .pv-fuse-switch.on .pv-fuse-poslabel-on{color:#ffd48a;opacity:1;}
 .pv-fuse-switch:not(.on) .pv-fuse-poslabel-off{color:#e8e0c8;opacity:1;}
 
+/* Fuse Panel — Dark Maritime: a flat void panel with an ink hairline
+   border and hard-edged hatch (not a shading gradient), each switch a
+   flat void tile, brass fittings redrawn as flat-ink strokes. */
+.pv-fuse-panel.pv-dm{background-color:var(--dm-void);background-image:repeating-linear-gradient(135deg, var(--dm-ink) 0 1px, transparent 1px 9px);box-shadow:none;border:1px solid var(--dm-ink);}
+.pv-fuse-panel.pv-dm .pv-fuse-switch{background:var(--dm-void);box-shadow:inset 0 0 0 1px var(--dm-ink);}
+.pv-fuse-panel.pv-dm .pv-fuse-switch:hover,.pv-fuse-panel.pv-dm .pv-fuse-switch:focus-visible{box-shadow:inset 0 0 0 1px var(--dm-ink),0 0 0 2px var(--dm-ink);}
+.pv-fuse-panel.pv-dm .pv-fuse-switch-label{color:var(--dm-ink);text-shadow:none;}
+.pv-fuse-panel.pv-dm .pv-fuse-post{background:var(--dm-ink);box-shadow:none;}
+.pv-fuse-panel.pv-dm .pv-fuse-contact{background:var(--dm-void);border:1.2px solid var(--dm-ink);box-shadow:none;}
+.pv-fuse-panel.pv-dm .pv-fuse-blade{background:var(--dm-ink);box-shadow:none;}
+.pv-fuse-panel.pv-dm .pv-fuse-handle{background:var(--dm-void);border:1.2px solid var(--dm-ink);box-shadow:none;}
+.pv-fuse-panel.pv-dm .pv-fuse-poslabel{color:var(--dm-ink);text-shadow:none;opacity:.65;}
+.pv-fuse-panel.pv-dm .pv-fuse-switch.on .pv-fuse-contact-on{background:var(--dm-ink);box-shadow:none;}
+.pv-fuse-panel.pv-dm .pv-fuse-switch.on .pv-fuse-poslabel-on{color:var(--dm-void);background:var(--dm-ink);opacity:1;}
+.pv-fuse-panel.pv-dm .pv-fuse-switch:not(.on) .pv-fuse-poslabel-off{color:var(--dm-ink);opacity:1;}
+
 /* Rope Tying — a square rope-and-brass-plaque board rendered as inline SVG
    (see renderRopeBoardSvg/wireRopeTyingInteractions in engine.js), adapted
    from the standalone rope-tying-puzzle.html prototype. Colours are
@@ -713,6 +782,13 @@ button{font-family:inherit;cursor:pointer;}
 .pv-lumen-toast.show{opacity:1;transform:translate(-50%,4px);}
 .pv-lumen-summary{margin-top:6px;font-size:12px;color:var(--pv-text-dim);text-align:center;}
 
+/* Lumen Beam Puzzle — Dark Maritime: flat void board chrome (the hex
+   grid/beam/pieces themselves are drawn directly on the canvas by
+   lumenRenderScene's dm branches, see engine.js). */
+.pv-lumen-wrap.pv-dm{background:var(--dm-void);border-color:var(--dm-ink);box-shadow:none;}
+.pv-lumen-wrap.pv-dm .pv-lumen-toast{background:var(--dm-void);border-color:var(--dm-ink);color:var(--dm-ink);}
+.pv-lumen-wrap.pv-dm + .pv-lumen-summary{color:var(--dm-ink);}
+
 /* Gear & Pulley Builder — player board + cog tray. The board keeps the
    puzzle's native 900:620 aspect ratio at any container width (docked live
    mock, ~260px usable, all the way up to the ~850px-wide full-screen
@@ -748,6 +824,22 @@ button{font-family:inherit;cursor:pointer;}
 .pv-gear-tile.selected{border-color:#ffe6a0;box-shadow:0 0 0 1px #ffe6a0,0 0 10px rgba(255,230,160,.5);}
 .pv-gear-tile.selected .pv-gear-tile-svg path{fill:#ffe6a0;}
 .pv-gear-tile-teeth{font-size:11px;font-weight:700;color:var(--pv-text);}
+
+/* Gear & Pulley — Dark Maritime: flat void board, ink mesh/clash lines and
+   ink node labels (fills/strokes for the handle/hoist/axle/socket pieces
+   themselves are baked in per-node by gpNodeMarkup/gpSocketMarkup, see
+   engine.js). Correct/clash mesh-line feedback colour is left as-is (same
+   call as every other puzzle's transient success/fail colour). */
+.pv-gear-wrap.pv-dm{background:var(--dm-void);border-color:var(--dm-ink);box-shadow:none;}
+.pv-gear-wrap.pv-dm .gp-node-label{fill:var(--dm-ink);}
+.pv-gear-wrap.pv-dm .gp-socket-armed circle:first-child{stroke:var(--dm-ink);}
+.pv-gear-tray-wrap.pv-dm .pv-gear-tray{background:var(--dm-void);border-color:var(--dm-ink);}
+.pv-gear-tray-wrap.pv-dm .pv-gear-tray-label,.pv-gear-tray-wrap.pv-dm .pv-gear-tray-empty{color:var(--dm-ink);}
+.pv-gear-tray-wrap.pv-dm .pv-gear-tile{background:var(--dm-void);border-color:var(--dm-ink);}
+.pv-gear-tray-wrap.pv-dm .pv-gear-tile-svg path{fill:var(--dm-void);stroke:var(--dm-ink);stroke-width:1.4;}
+.pv-gear-tray-wrap.pv-dm .pv-gear-tile.selected{border-color:var(--dm-ink);box-shadow:0 0 0 1px var(--dm-ink);}
+.pv-gear-tray-wrap.pv-dm .pv-gear-tile.selected .pv-gear-tile-svg path{fill:var(--dm-ink);}
+.pv-gear-tray-wrap.pv-dm .pv-gear-tile-teeth{color:var(--dm-ink);}
 
 /* Weight Scale Builder — player board + tray (renderWeightScaleStage/
    renderWeightScaleTray, engine.js), ported from the standalone
@@ -808,6 +900,31 @@ button{font-family:inherit;cursor:pointer;}
 .ws-shape-pentagon{clip-path:polygon(50% 2%,98% 38%,80% 98%,20% 98%,2% 38%);}
 .ws-shape-diamond{clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%);}
 .ws-shape-octagon{clip-path:polygon(30% 3%,70% 3%,97% 30%,97% 70%,70% 97%,30% 97%,3% 70%,3% 30%);}
+
+/* Weight Scale — Dark Maritime: flat void stage, ink hairline rigging, and
+   every token (whatever colour/photo the creator chose) redrawn as a flat
+   void shape with just an ink outline — the strict two-colour rule leaves
+   no room for the creator's own swatch once this appearance is chosen. */
+.pv-ws-wrap.pv-dm{background:var(--dm-void);border:1px solid var(--dm-ink);box-shadow:none;}
+.pv-ws-wrap.pv-dm .pv-ws-base{background:var(--dm-void);border:1.5px solid var(--dm-ink);box-shadow:none;border-radius:2px;}
+.pv-ws-wrap.pv-dm .pv-ws-post{background:var(--dm-void);border-left:1.5px solid var(--dm-ink);border-right:1.5px solid var(--dm-ink);border-radius:0;}
+.pv-ws-wrap.pv-dm .pv-ws-pivot{background:var(--dm-void);border:1.5px solid var(--dm-ink);box-shadow:none;}
+.pv-ws-wrap.pv-dm .pv-ws-beam{background:var(--dm-void);border:1.5px solid var(--dm-ink);box-shadow:none;border-radius:0;}
+.pv-ws-wrap.pv-dm .pv-ws-rope{background:repeating-linear-gradient(180deg,var(--dm-ink) 0px,var(--dm-ink) 2px,transparent 2px,transparent 5px);}
+.pv-ws-wrap.pv-dm .pv-ws-pan{background:var(--dm-void);border:1.5px solid var(--dm-ink);box-shadow:none;border-radius:0 0 30% 30%/0 0 45% 45%;}
+.pv-ws-wrap.pv-dm .pv-ws-status.balanced{color:var(--dm-ink);}
+.pv-ws-wrap.pv-dm .pv-ws-status.left-heavy,.pv-ws-wrap.pv-dm .pv-ws-status.right-heavy{color:var(--dm-ink);}
+.pv-ws-wrap.pv-dm .pv-ws-token-inner,.pv-ws-wrap.pv-dm .pv-ws-token-image{background-color:var(--dm-void);background-image:none;box-shadow:inset 0 0 0 1.5px var(--dm-ink);}
+.pv-ws-wrap.pv-dm .pv-ws-token-inner::before{content:none;}
+.pv-ws-wrap.pv-dm .pv-ws-token.selected{box-shadow:0 0 0 2px var(--dm-ink);}
+.pv-ws-wrap.pv-dm .pv-ws-value-tag{background:var(--dm-ink);color:var(--dm-void);border:none;box-shadow:none;}
+.pv-ws-tray-wrap.pv-dm .pv-ws-tray-label{color:var(--dm-ink);}
+.pv-ws-tray-wrap.pv-dm .pv-ws-tray{background:var(--dm-void);border:1px solid var(--dm-ink);}
+.pv-ws-tray-wrap.pv-dm .pv-ws-tray-empty{color:var(--dm-ink);}
+.pv-ws-tray-wrap.pv-dm .pv-ws-token-inner,.pv-ws-tray-wrap.pv-dm .pv-ws-token-image{background-color:var(--dm-void);background-image:none;box-shadow:inset 0 0 0 1.5px var(--dm-ink);}
+.pv-ws-tray-wrap.pv-dm .pv-ws-token-inner::before{content:none;}
+.pv-ws-tray-wrap.pv-dm .pv-ws-token.selected{box-shadow:0 0 0 2px var(--dm-ink);}
+.pv-ws-tray-wrap.pv-dm .pv-ws-value-tag{background:var(--dm-ink);color:var(--dm-void);border:none;box-shadow:none;}
 
 /* Image Reveal — framed/cropped display of the node's own uploaded image
    (c.imageAsset). Deliberately built as normal-flow content (not an inset
@@ -1103,6 +1220,13 @@ button{font-family:inherit;cursor:pointer;}
 .ctp-cond-row{display:flex;gap:6px;align-items:center;}
 .ctp-rule-block{border:1px solid var(--line);border-radius:6px;padding:8px;margin-bottom:10px;background:var(--bg2);}
 
+/* Formula editor (buildCtpFormulaEditor/wireCtpFormulaEditor in app.js) —
+   variable-assignment rows (letter chip + component picker + remove) and
+   the expression input. */
+.ctp-formula-var-row{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+.ctp-formula-var-letter{flex-shrink:0;min-width:22px;text-align:center;font-family:monospace;font-weight:700;background:var(--bg4,var(--bg3));border:1px solid var(--line);border-radius:4px;padding:2px 6px;}
+.ctp-formula-input{width:100%;font-family:monospace;}
+
 /* Control Panel Builder overlay — the full-screen counterpart of the
    inline board designer (opened via "⛶ Open in Larger Pane"), same window
    chrome as the other builder overlays (.hb-window/.lb-window) but its
@@ -1118,6 +1242,42 @@ button{font-family:inherit;cursor:pointer;}
 .pv-ctp-wrap{margin:10px 0;display:flex;justify-content:center;max-width:100%;overflow-x:auto;}
 .pv-ctp-wrap .ctp-board{box-shadow:0 8px 24px rgba(0,0,0,.5);flex-shrink:0;}
 .pv-ctp-wrap.locked .ctp-comp-interactive{cursor:default;}
+
+/* Control Panel — Dark Maritime: every widget (switch/pushbutton/slider/
+   knob/light/gauge/digital readout/label/shape) redrawn as flat void with
+   ink hairline strokes, no radial "polished metal"/glow gradients. */
+.pv-ctp-wrap.pv-dm .ctp-board{background:var(--dm-void);border:1px solid var(--dm-ink);box-shadow:none;}
+.pv-ctp-wrap.pv-dm .ctp-zone-upper,.pv-ctp-wrap.pv-dm .ctp-zone-lower{background:var(--dm-void);border-color:var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-switch-track{background:var(--dm-void);box-shadow:inset 0 0 0 1px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-switch-knob{background:var(--dm-void);box-shadow:inset 0 0 0 1.2px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-switch-poslabel{color:var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-switch-v.on .ctp-switch-poslabel-on,.pv-ctp-wrap.pv-dm .ctp-switch-v:not(.on) .ctp-switch-poslabel-off,
+.pv-ctp-wrap.pv-dm .ctp-switch-h.on .ctp-switch-poslabel-on,.pv-ctp-wrap.pv-dm .ctp-switch-h:not(.on) .ctp-switch-poslabel-off{color:var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-pushbtn-arcade,.pv-ctp-wrap.pv-dm .ctp-pushbtn-toggle,.pv-ctp-wrap.pv-dm .ctp-pushbtn-industrial{background:var(--dm-void);box-shadow:inset 0 0 0 2px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-pushbtn-cap{background:var(--dm-void);box-shadow:inset 0 0 0 1.2px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-pushbtn-arcade.on .ctp-pushbtn-cap,.pv-ctp-wrap.pv-dm .ctp-pushbtn-toggle.on .ctp-pushbtn-cap,.pv-ctp-wrap.pv-dm .ctp-pushbtn-industrial.on .ctp-pushbtn-cap{background:var(--dm-ink);box-shadow:none;}
+.pv-ctp-wrap.pv-dm .ctp-slider-track{background:var(--dm-void);box-shadow:inset 0 0 0 1px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-slider-fill{background:var(--dm-void);background-image:repeating-linear-gradient(45deg, var(--dm-ink) 0 1px, transparent 1px 6px);}
+.pv-ctp-wrap.pv-dm .ctp-slider-thumb{background:var(--dm-ink);box-shadow:none;}
+.pv-ctp-wrap.pv-dm .ctp-slider-val,.pv-ctp-wrap.pv-dm .ctp-knob-label,.pv-ctp-wrap.pv-dm .ctp-gauge-val{color:var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-knob-body{background:var(--dm-void);box-shadow:inset 0 0 0 1.5px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-knob-pointer,.pv-ctp-wrap.pv-dm .ctp-knob-tick{background:var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-light{background:var(--dm-void);box-shadow:inset 0 0 0 1.5px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-light.on{background:var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-gauge-face{background:var(--dm-void);box-shadow:inset 0 0 0 1.5px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-gauge-needle{background:var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-gauge-hub{background:var(--dm-void);box-shadow:inset 0 0 0 1.2px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-digital{background:var(--dm-void);box-shadow:inset 0 0 0 1.5px var(--dm-ink);}
+.pv-ctp-wrap.pv-dm .ctp-digital-text{color:var(--dm-ink);text-shadow:none;}
+.pv-ctp-wrap.pv-dm .ctp-media-empty{background:var(--dm-void);border-color:var(--dm-ink);color:var(--dm-ink);}
+/* Uploaded photos/GIFs are the creator's own content (same exemption as
+   Lock and Key's key photos) — can't be forced to the strict two-colour
+   rule pixel-for-pixel, so this just pushes them toward the engraving
+   mood with a duotone-ish filter rather than leaving them full colour. */
+.pv-ctp-wrap.pv-dm .ctp-media:not(.ctp-media-empty){filter:grayscale(1) contrast(1.35) brightness(.85) sepia(.2) hue-rotate(140deg) saturate(2.2);}
+.pv-ctp-wrap.pv-dm .ctp-label-text{color:var(--dm-ink)!important;}
+.pv-ctp-wrap.pv-dm .ctp-shape-rect{background:var(--dm-void)!important;border-color:var(--dm-ink)!important;}
+.pv-ctp-wrap.pv-dm .ctp-shape-line{background:var(--dm-ink)!important;}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}
 
