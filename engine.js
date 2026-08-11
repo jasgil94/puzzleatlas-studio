@@ -1512,6 +1512,32 @@ function markAvailable(state, id) {
   if (!state.availableAt[id]) state.availableAt[id] = Date.now();
 }
 
+// A node sitting in the Inventory lane counts as "used up" the moment any
+// one of its outgoing connections has fired — i.e. gone from "not yet
+// allowed" to "completed source + allowed + target open" — for the first
+// time ever. state.itemConsumed is a one-way ratchet (only ever set,
+// never cleared) so once true it stays true even if the connection's own
+// condition later flips back to false, matching "used" being a permanent,
+// one-time event rather than a live truth. Runs as a final settle pass at
+// the end of every recompute() (called after every single player action —
+// see the recompute() call sites), so it always sees this action's fully
+// resolved available/completed state, whichever path got a target node
+// there. An item node with no outgoing connection at all never gets
+// touched here, so it just stays in the Inventory tab forever. See
+// globalInventoryItems below, which reads this map to decide what still
+// shows.
+function settleInventoryConsumption(hunt, state) {
+  if (!state.itemConsumed) state.itemConsumed = {};
+  hunt.connections.forEach(function (c) {
+    if (state.itemConsumed[c.sourceId]) return; // already used — nothing left to check
+    if (!state.available[c.targetId]) return;
+    var src = hunt.nodes.find(function (n) { return n.id === c.sourceId; });
+    if (!src || src.lane !== "inventory") return;
+    if (!state.completed[c.sourceId] || !isConnectionAllowed(c, hunt, state)) return;
+    state.itemConsumed[c.sourceId] = true;
+  });
+}
+
 function recompute(session) {
   var hunt = session.hunt, state = session.state, changed = true, iter = 0;
   while (changed && iter++ < 2000) {
@@ -1533,13 +1559,14 @@ function recompute(session) {
       if (isAutoType(n.type) && nodeCompletionOk(n, session, true)) { completeNodeInternal(n, hunt, state); changed = true; }
     });
   }
+  settleInventoryConsumption(hunt, state);
 }
 
 function createSession(hunt) {
   var state = {
     completed: {}, available: {}, availableAt: {}, variables: {}, items: {}, score: 0,
     choiceSelections: {}, branchChoices: {}, hintProgress: {}, history: [], endingReached: null,
-    feedback: {},
+    feedback: {}, itemConsumed: {}, // itemConsumed: node id -> true once that Inventory-lane item's outgoing connection has fired for the first time — see settleInventoryConsumption/globalInventoryItems
     seenAvailable: {} // nodeIds the player has already "seen" via visiting their lane's tab — drives the tab-bar notification badges (app.js laneBadgeCount/dismissLane)
   };
   (hunt.variables || []).forEach(function (v) { state.variables[v.id] = v.initial; });
@@ -2564,22 +2591,44 @@ function laneOptionsForScene(session, laneId, sceneId) {
   });
 }
 
+// The Inventory tab's own listing, used instead of laneOptionsForScene:
+// unlike Leads/Hints, items are NOT scoped to whatever scene the player
+// currently has open — a granted item stays visible no matter which scene
+// you're viewing. An item shows the instant its node becomes available
+// (that's the "granted" moment — regardless of node type, and regardless
+// of whether a non-auto-type item node has since been tapped/completed),
+// and keeps showing indefinitely unless state.itemConsumed says one of
+// its outgoing connections has fired (see settleInventoryConsumption in
+// the interpreter above) — a node with no outgoing connection just never
+// gets consumed. Sorted newest-grant-first via state.availableAt, the
+// timestamp each node first became available.
+function globalInventoryItems(session) {
+  var hunt = session.hunt, state = session.state;
+  var consumed = state.itemConsumed || {};
+  var items = hunt.nodes.filter(function (n) {
+    return n.lane === "inventory" && n.type !== "hint" && !!state.available[n.id] && !consumed[n.id];
+  });
+  return items.sort(function (a, b) { return (state.availableAt[b.id] || 0) - (state.availableAt[a.id] || 0); });
+}
+
 var LANE_LIST_TITLES = { leads: "Open leads", inventory: "Evidence & discoveries", hints: "Hints" };
 
 // Renders the list markup for a lane tab tap: leads are clickable
 // (data-lead, same mechanism as the Open Leads list) since they're
-// live player screens; inventory entries are read-only summaries of
-// what's fired in this scene's Inventory lane so far; hints are
-// rendered as their normal progressive reveal control, labelled with
-// which puzzle each one belongs to since more than one can be open at
-// once. Caller is responsible for wiring [data-lead]/[data-hint] after
-// inserting this into the DOM (see ctl.render / wireHintButtons).
+// live player screens; inventory entries are read-only "you're carrying
+// this" cards for every currently-granted item across the whole hunt (see
+// globalInventoryItems, whose ordering — most recently granted first — is
+// preserved here as-is); hints are rendered as their normal progressive
+// reveal control, labelled with which puzzle each one belongs to since
+// more than one can be open at once. Caller is responsible for wiring
+// [data-lead]/[data-hint] after inserting this into the DOM (see
+// ctl.render / wireHintButtons).
 function renderLaneOptionsList(session, laneId, nodes) {
   var hunt = session.hunt, state = session.state;
   var title = LANE_LIST_TITLES[laneId] || "Options";
   var html = '<p class="pv-side-title">' + esc(title) + (nodes.length ? " (" + nodes.length + ")" : "") + '</p>';
   if (!nodes.length) {
-    html += '<div class="pv-empty" style="padding-top:20px">Nothing available here yet in this scene.</div>';
+    html += '<div class="pv-empty" style="padding-top:20px">' + (laneId === "inventory" ? "Nothing in your inventory yet." : "Nothing available here yet in this scene.") + '</div>';
     return html;
   }
   if (laneId === "hints") {
@@ -2606,6 +2655,10 @@ function renderLaneOptionsList(session, laneId, nodes) {
         html += '<div class="pv-info-card pv-key-inv-card">' +
           (n.content.imageAsset ? '<img class="pv-key-inv-thumb" src="' + esc(n.content.imageAsset) + '" alt="" />' : '<span class="pv-key-inv-thumb pv-key-inv-thumb-empty">🔑</span>') +
           '<span>' + esc(n.content.name || n.title) + '</span></div>';
+      } else if (n.type === "awardItem") {
+        // Show the actual granted item's catalog name (hunt.items), not
+        // the Award Item node's own creator-facing title.
+        html += '<div class="pv-info-card">' + NODE_TYPES[n.type].icon + " " + esc(itemName(hunt, n.content.itemId)) + '</div>';
       } else if (isAutoType(n.type)) {
         html += '<div class="pv-info-card">' + NODE_TYPES[n.type].icon + " " + esc(NODE_TYPES[n.type].summary(n.content, hunt)) + '</div>';
       } else {
@@ -6476,7 +6529,7 @@ function createPreviewController(mainEl, sideEl) {
       wirePreviewNodeInteractions(session, peekNode, ctl);
       ctl._activeIds = { expandedId: peekNode.id, leadIds: openLeadNodes(session).map(function (x) { return x.id; }) };
     } else if (ctl.laneListId && !state.endingReached) {
-      var laneNodes = laneOptionsForScene(session, ctl.laneListId, ctl.laneListSceneId);
+      var laneNodes = ctl.laneListId === "inventory" ? globalInventoryItems(session) : laneOptionsForScene(session, ctl.laneListId, ctl.laneListSceneId);
       main.innerHTML = renderLaneOptionsList(session, ctl.laneListId, laneNodes);
       wireHintButtons(session, main, ctl);
       Array.prototype.forEach.call(main.querySelectorAll("[data-lead]"), function (el) {
@@ -6726,6 +6779,7 @@ return {
   autoRevealedHintStageCount: autoRevealedHintStageCount,
   renderHintBlockHtml: renderHintBlockHtml,
   laneOptionsForScene: laneOptionsForScene,
+  globalInventoryItems: globalInventoryItems,
   renderLaneOptionsList: renderLaneOptionsList,
   wireHintButtons: wireHintButtons,
   wrapWithMedia: wrapWithMedia,

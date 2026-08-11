@@ -772,7 +772,7 @@ button{font-family:inherit;cursor:pointer;}
 .pv-ws-beam{position:absolute;left:50%;top:37.5%;width:53.125%;height:4%;transform:translate(-50%,-50%) rotate(0rad);background:linear-gradient(180deg,#d9a86c,#6b4226 55%,#3e2417);border-radius:4px;box-shadow:0 3px 6px rgba(0,0,0,.5);z-index:3;}
 .pv-ws-arm{position:absolute;width:20.3125%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;z-index:4;}
 .pv-ws-rope{width:2px;height:17.5%;min-height:20px;background:repeating-linear-gradient(180deg,#caa66f 0px,#caa66f 4px,#8a5f34 4px,#8a5f34 8px);flex:0 0 auto;}
-.pv-ws-pan{width:100%;min-height:11%;margin-top:-2px;padding:6% 6% 9%;box-sizing:border-box;background:linear-gradient(180deg,#a9713f,#6b4226 70%,#3e2417);border:2px solid #3e2417;border-radius:0 0 40% 40%/0 0 55% 55%;box-shadow:inset 0 6px 10px rgba(0,0,0,.35),0 4px 8px rgba(0,0,0,.4);display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:center;gap:4px;}
+.pv-ws-pan{width:100%;min-height:23%;margin-top:-2px;padding:6% 6% 9%;box-sizing:border-box;background:linear-gradient(180deg,#a9713f,#6b4226 70%,#3e2417);border:2px solid #3e2417;border-radius:0 0 40% 40%/0 0 55% 55%;box-shadow:inset 0 6px 10px rgba(0,0,0,.35),0 4px 8px rgba(0,0,0,.4);display:flex;flex-wrap:wrap;align-content:flex-end;align-items:flex-end;justify-content:center;gap:6px;}
 .pv-ws-status{margin-top:10px;text-align:center;font-size:12.5px;color:var(--pv-text);}
 .pv-ws-status.balanced{color:var(--pv-ok);}
 .pv-ws-status.left-heavy,.pv-ws-status.right-heavy{color:var(--pv-warn);}
@@ -790,6 +790,12 @@ button{font-family:inherit;cursor:pointer;}
    are the same ones the standalone balance-scale-puzzle.html prototype
    used. */
 .pv-ws-token{width:15%;max-width:40px;min-width:0;aspect-ratio:1/1;flex:0 1 auto;position:relative;cursor:pointer;}
+/* Tokens read a bit larger once they're actually sitting in a pan (the pans
+   themselves are also deeper now, see .pv-ws-pan above, so there's room for
+   two full rows of these without spilling out) — the tray keeps the
+   smaller base size above so a full crowd of 8 unplaced tokens still fits
+   comfortably in a couple of wrapped rows. */
+.pv-ws-pan .pv-ws-token{width:21%;max-width:52px;}
 .pv-ws-token.selected{box-shadow:0 0 0 2px #ffe6a0,0 0 10px rgba(255,230,160,.6);border-radius:6px;}
 .pv-ws-token-inner,.pv-ws-token-image{position:absolute;inset:0;background-color:var(--tok-color,#8a8a8a);box-shadow:0 3px 6px rgba(0,0,0,.5),inset 0 2px 3px rgba(255,255,255,.25),inset 0 -3px 4px rgba(0,0,0,.25);}
 .pv-ws-token-inner::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.4),transparent 60%);}

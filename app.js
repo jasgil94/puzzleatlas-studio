@@ -161,6 +161,7 @@ var renderHintBlockHtml = PAEngine.renderHintBlockHtml;
 var autoRevealedHintStageCount = PAEngine.autoRevealedHintStageCount;
 var wireHintButtons = PAEngine.wireHintButtons;
 var laneOptionsForScene = PAEngine.laneOptionsForScene;
+var globalInventoryItems = PAEngine.globalInventoryItems;
 var renderPreviewNode = PAEngine.renderPreviewNode;
 var wirePreviewNodeInteractions = PAEngine.wirePreviewNodeInteractions;
 var renderPinnedNode = PAEngine.renderPinnedNode;
@@ -1433,7 +1434,12 @@ function initCanvasInteraction() {
 
     if (laneHandleEl) {
       var L0 = lastLayout || computeLayout();
-      var lhIdx = LANE_INDEX[laneHandleEl.dataset.laneId];
+      // Index into L0.lanes/L0.laneHeights (this hunt's active lane subset,
+      // in order), not the global LANE_INDEX — those two only coincide when
+      // every lane is enabled, so a hunt missing a lane (see huntLanes())
+      // would otherwise grab the wrong lane's height here and the resize
+      // would silently do nothing useful.
+      var lhIdx = L0.lanes.findIndex(function (l) { return l.id === laneHandleEl.dataset.laneId; });
       drag = { kind: "laneResize", laneId: laneHandleEl.dataset.laneId, startClientY: e.clientY, startHeight: L0.laneHeights[lhIdx], resized: false };
       e.preventDefault();
       e.stopPropagation();
@@ -6695,13 +6701,13 @@ var LANE_LIST_TABS = { leads: true, inventory: true, hints: true };
 // session.state.seenAvailable so it resets naturally with the session.
 function laneBadgeCount(ctl, laneId) {
   if (!ctl.session) return 0;
-  var nodes = laneOptionsForScene(ctl.session, laneId, currentSceneIdForCtl(ctl));
+  var nodes = laneId === "inventory" ? globalInventoryItems(ctl.session) : laneOptionsForScene(ctl.session, laneId, currentSceneIdForCtl(ctl));
   var seen = ctl.session.state.seenAvailable || {};
   return nodes.filter(function (n) { return !seen[n.id]; }).length;
 }
 function dismissLane(ctl, laneId, sceneId) {
   if (!ctl.session) return;
-  var nodes = laneOptionsForScene(ctl.session, laneId, sceneId !== undefined ? sceneId : currentSceneIdForCtl(ctl));
+  var nodes = laneId === "inventory" ? globalInventoryItems(ctl.session) : laneOptionsForScene(ctl.session, laneId, sceneId !== undefined ? sceneId : currentSceneIdForCtl(ctl));
   var seen = ctl.session.state.seenAvailable || (ctl.session.state.seenAvailable = {});
   nodes.forEach(function (n) { seen[n.id] = true; });
 }
