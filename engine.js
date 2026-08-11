@@ -394,6 +394,51 @@ var NODE_TYPES = {
       return axleCount + " axle(s), " + decoyCount + " decoy cog(s) in the tray";
     }
   },
+  weightScale: {
+    family: "puzzle", label: "Weight Scale Builder", icon: "⚖️",
+    defaultTitle: "New Weight Scale Puzzle",
+    // A two-pan balance scale, ported from the standalone
+    // balance-scale-puzzle.html prototype: the creator lists up to
+    // WS_MAX_ITEMS tokens (see below), each with a hidden weight plus either
+    // a preset shape+colour or an uploaded photo, in a builder pane embedded
+    // directly in the Studio inspector (buildTypeSpecificFields/
+    // wireNodeInspector's "weightScale" case in app.js — a flat resizable
+    // list, no spatial designer needed, so unlike Gear & Pulley/Lumen Puzzle
+    // there's no shared geometry math to export). At player-time every
+    // token starts in a tray below the scale; tapping a token then tapping
+    // the tray or a pan moves it there (same "select then act" shape as
+    // Gear & Pulley's cog tray — see wireWeightScaleInteractions below).
+    // Weights are never shown until the puzzle is solved. Auto-validates
+    // the instant every token is off the tray and the two pans' totals
+    // exactly match (see pv_action_submitWeightScale) — same "auto-validate,
+    // withhold while incomplete" family as Category Grid/Gear & Pulley.
+    // The stage itself (renderWeightScaleStage) is plain positioned HTML
+    // (not SVG) but every position/size is a percentage of a fixed 640×400
+    // virtual coordinate space rather than a pixel value, and the pans use
+    // flex-wrap for their token contents — so, same as the SVG viewBox
+    // trick Gear & Pulley/Lumen Puzzle use, the whole scale (and however
+    // many tokens end up piled on one pan) is always rendered in full at
+    // any container width, never clipped or overflowing sideways.
+    defaultContent: function () {
+      return {
+        prompt: "Tap a token, then tap the tray or a pan to move it there. Watch which way the beam tips, and keep rearranging until it settles perfectly level.",
+        items: [
+          { id: uid("wsit"), kind: "shape", shape: "circle", color: "#c0524a", weight: 4, imageAsset: "" },
+          { id: uid("wsit"), kind: "shape", shape: "square", color: "#3f8f8f", weight: 7, imageAsset: "" },
+          { id: uid("wsit"), kind: "shape", shape: "triangle", color: "#c9a233", weight: 9, imageAsset: "" },
+          { id: uid("wsit"), kind: "shape", shape: "hexagon", color: "#5c7a35", weight: 10, imageAsset: "" },
+          { id: uid("wsit"), kind: "shape", shape: "star", color: "#9c4368", weight: 12, imageAsset: "" },
+          { id: uid("wsit"), kind: "shape", shape: "pentagon", color: "#4a5a91", weight: 14, imageAsset: "" }
+        ],
+        showBackButton: false
+      };
+    },
+    summary: function (c) {
+      var items = c.items || [];
+      var total = items.reduce(function (s, it) { return s + (Number(it.weight) || 0); }, 0);
+      return items.length + " token(s), total weight " + total + (total % 2 !== 0 ? " (odd — no exact balance is possible!)" : "");
+    }
+  },
   categoryGrid: {
     family: "puzzle", label: "Category Grid (3×3 Image Puzzle)", icon: "🖼️",
     defaultTitle: "New Category Grid",
@@ -649,7 +694,7 @@ var NODE_TYPES = {
     family: "support", label: "Hint (progressive)", icon: "💡",
     defaultTitle: "Hint",
     defaultContent: function () {
-      return { forNodeId: "", stages: [{ id: uid("hs"), text: "First, gentle nudge." }, { id: uid("hs"), text: "A stronger hint." }] };
+      return { forNodeId: "", stages: [{ id: uid("hs"), text: "First, gentle nudge.", delayMinutes: 0, delaySeconds: 0 }, { id: uid("hs"), text: "A stronger hint.", delayMinutes: 1, delaySeconds: 0 }] };
     },
     summary: function (c, hunt) { return "For: " + nodeTitle(hunt, c.forNodeId) + " (" + (c.stages || []).length + " stages)"; }
   },
@@ -657,7 +702,7 @@ var NODE_TYPES = {
     family: "support", label: "Hint Unlock Cost", icon: "🔓",
     defaultTitle: "Hint (with unlock cost)",
     defaultContent: function () {
-      return { forNodeId: "", costType: "score", costPerStage: 1, stages: [{ id: uid("hs"), text: "First, gentle nudge." }, { id: uid("hs"), text: "A stronger hint." }] };
+      return { forNodeId: "", costType: "score", costPerStage: 1, stages: [{ id: uid("hs"), text: "First, gentle nudge.", delayMinutes: 0, delaySeconds: 0 }, { id: uid("hs"), text: "A stronger hint.", delayMinutes: 1, delaySeconds: 0 }] };
     },
     summary: function (c, hunt) { return "For: " + nodeTitle(hunt, c.forNodeId) + " — costs " + c.costPerStage + " " + c.costType + "/stage"; }
   },
@@ -1298,7 +1343,7 @@ function validateHunt(hunt) {
       if (n.content.forNodeId && nodeIds.indexOf(n.content.forNodeId) === -1)
         issues.push({ level: "error", title: "Dangling hint target", detail: "Hint \"" + n.title + "\" points at missing node " + n.content.forNodeId + ".", nodeId: n.id });
       if (!n.content.forNodeId)
-        issues.push({ level: "warning", title: "Unattached hint", detail: "Hint \"" + n.title + "\" is not attached to any puzzle node.", nodeId: n.id });
+        issues.push({ level: "warning", title: "Unattached hint", detail: "Hint \"" + n.title + "\" has no incoming connection, so it isn't auto-attached to anything. Draw a connection from the node it should attach to, into this hint node.", nodeId: n.id });
     }
     if (n.type === "awardItem" && n.content.itemId && itemIds.indexOf(n.content.itemId) === -1)
       issues.push({ level: "error", title: "Dangling item reference", detail: "Node \"" + n.title + "\" references missing item " + n.content.itemId + ".", nodeId: n.id });
@@ -1456,21 +1501,32 @@ function completeNodeInternal(n, hunt, state) {
   if (n.type === "ending") state.endingReached = n.id;
 }
 
+// Marks a node available and stamps state.availableAt[id] with the moment
+// it first became available (i.e. first accessed) — the only place this
+// timestamp is ever set. Progressive hint stages (see
+// autoRevealedHintStageCount below) time themselves off this stamp, read
+// from whichever node is connected into the hint node.
+function markAvailable(state, id) {
+  state.available[id] = true;
+  if (!state.availableAt) state.availableAt = {};
+  if (!state.availableAt[id]) state.availableAt[id] = Date.now();
+}
+
 function recompute(session) {
   var hunt = session.hunt, state = session.state, changed = true, iter = 0;
   while (changed && iter++ < 2000) {
     changed = false;
     hunt.nodes.forEach(function (n) {
       if (state.completed[n.id] || state.available[n.id]) return;
-      if (hunt.entryPointIds.indexOf(n.id) !== -1) { state.available[n.id] = true; changed = true; return; }
+      if (hunt.entryPointIds.indexOf(n.id) !== -1) { markAvailable(state, n.id); changed = true; return; }
       if (n.type === "hint") return; // hints are surfaced via their attached puzzle, not the main graph
       if (n.type === "convergence") {
-        if (convergenceSatisfied(n, hunt, state)) { state.available[n.id] = true; changed = true; }
+        if (convergenceSatisfied(n, hunt, state)) { markAvailable(state, n.id); changed = true; }
         return;
       }
       var incoming = hunt.connections.filter(function (c) { return c.targetId === n.id; });
       var ok = incoming.some(function (c) { return state.completed[c.sourceId] && isConnectionAllowed(c, hunt, state); });
-      if (ok) { state.available[n.id] = true; changed = true; }
+      if (ok) { markAvailable(state, n.id); changed = true; }
     });
     hunt.nodes.forEach(function (n) {
       if (!state.available[n.id] || state.completed[n.id]) return;
@@ -1481,7 +1537,7 @@ function recompute(session) {
 
 function createSession(hunt) {
   var state = {
-    completed: {}, available: {}, variables: {}, items: {}, score: 0,
+    completed: {}, available: {}, availableAt: {}, variables: {}, items: {}, score: 0,
     choiceSelections: {}, branchChoices: {}, hintProgress: {}, history: [], endingReached: null,
     feedback: {},
     seenAvailable: {} // nodeIds the player has already "seen" via visiting their lane's tab — drives the tab-bar notification badges (app.js laneBadgeCount/dismissLane)
@@ -1996,6 +2052,22 @@ function pv_action_submitGearPulley(session, nodeId, driveConnected) {
   return ok;
 }
 
+// Weight Scale Builder — auto-validates the instant every token is off the
+// tray and the two pans balance exactly (same "auto-validate, no submit
+// button" family as Gear & Pulley/Category Grid), driven by
+// wireWeightScaleInteractions below, which only calls this once every
+// token has been placed (never with a false/incorrect mechanicOk while the
+// player's still mid-sort — same withholding idiom as
+// wireCategoryGridInteractions' maybeCheck).
+function pv_action_submitWeightScale(session, nodeId, allPlaced, balanced) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var mechanicOk = !!allPlaced && !!balanced;
+  var ok = nodeCompletionOk(n, session, mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+
 // Control Panel Builder — shared component-type metadata, condition
 // evaluation and widget-rendering helpers, used identically by the
 // Studio-embedded board designer (wireControlPanelDesigner in app.js) and
@@ -2349,7 +2421,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey", "controlPanel"];
+  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey", "controlPanel"];
 
 // Node types offering a generic, opt-in "← Back" button — every
 // PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
@@ -2365,7 +2437,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // Studio inspector field.
 var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
-  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction", "lockAndKey", "controlPanel"];
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "lockAndKey", "controlPanel"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -2408,6 +2480,61 @@ function openLeadNodes(session) {
 
 function hintsForNode(hunt, nodeId) {
   return hunt.nodes.filter(function (n) { return n.type === "hint" && n.content.forNodeId === nodeId; });
+}
+
+// A hint node (or Hint Unlock Cost node) no longer has its target picked
+// manually in the inspector — it auto-attaches to whatever node is
+// connected into it on the canvas (any node type, not just puzzles), same
+// "one deterministic incoming connection" rule as previousConnectingNode.
+// Studio calls this after every connection/node mutation (see Store.
+// addConnection/removeConnection/removeNode/removeNodes/duplicateNode and
+// Store.replaceHunt in app.js) to keep content.forNodeId in sync; it's
+// also safe to call defensively any time since it's idempotent.
+function syncHintForNodeIds(hunt) {
+  (hunt.nodes || []).forEach(function (n) {
+    if (n.type !== "hint" && n.type !== "hintUnlockCost") return;
+    var connected = previousConnectingNode(hunt, n.id);
+    n.content.forNodeId = connected ? connected.id : "";
+  });
+}
+
+// How many of a hint's progressive stages should already be auto-revealed
+// purely from elapsed time, independent of any manual "Reveal hint" click.
+// Each stage's delayMinutes/delaySeconds is measured from the moment the
+// hint's connecting node first became available (state.availableAt — see
+// markAvailable in recompute), not from when a previous stage revealed —
+// so stage 2's timer isn't relative to stage 1's, it's relative to the
+// same activation moment. Stops at the first stage whose timer hasn't
+// elapsed yet, so stages still surface in order.
+function autoRevealedHintStageCount(hunt, state, hintNode) {
+  var targetId = hintNode.content && hintNode.content.forNodeId;
+  var activatedAt = targetId && state.availableAt ? state.availableAt[targetId] : null;
+  if (!activatedAt) return 0;
+  var elapsedMs = Date.now() - activatedAt;
+  var stages = (hintNode.content && hintNode.content.stages) || [];
+  var count = 0;
+  for (var i = 0; i < stages.length; i++) {
+    var delayMs = ((Number(stages[i].delayMinutes) || 0) * 60 + (Number(stages[i].delaySeconds) || 0)) * 1000;
+    if (elapsedMs >= delayMs) count = i + 1; else break;
+  }
+  return count;
+}
+
+// Markup for one hint's "Reveal hint" button + its already-revealed stage
+// text, shared by renderLaneOptionsList's Hints lane and by the hint block
+// under whichever node is currently on screen (renderPreviewNode). Wrapped
+// in a [data-hint-wrap] container keyed to the hint node's id so app.js's
+// tickHintReveals() can refresh just this block in place every second (to
+// surface time-based auto-reveals — see autoRevealedHintStageCount above)
+// without touching the rest of the screen, which may hold in-progress
+// puzzle input the player is mid-interacting with.
+function renderHintBlockHtml(session, h) {
+  var shown = Math.max(session.state.hintProgress[h.id] || 0, autoRevealedHintStageCount(session.hunt, session.state, h));
+  var html = '<div data-hint-wrap="' + h.id + '" data-shown="' + shown + '">';
+  html += '<button class="pv-hint-btn" data-hint="' + h.id + '" ' + (shown >= h.content.stages.length ? "disabled" : "") + '>💡 Reveal hint (' + shown + "/" + h.content.stages.length + ')</button>';
+  for (var i = 0; i < shown; i++) html += '<div class="pv-hint-text"' + pvFontStyle(h.content.stages[i].fontSize, 12) + '>' + esc(h.content.stages[i].text) + '</div>';
+  html += '</div>';
+  return html;
 }
 
 // Which nodes placed in a given lane+scene cell of the canvas are
@@ -2457,10 +2584,8 @@ function renderLaneOptionsList(session, laneId, nodes) {
   }
   if (laneId === "hints") {
     nodes.forEach(function (h) {
-      var shown = state.hintProgress[h.id] || 0;
       html += '<div style="margin-bottom:16px"><div style="color:var(--pv-text-dim);font-size:11.5px;margin-bottom:4px">For: ' + esc(nodeTitle(hunt, h.content.forNodeId)) + '</div>';
-      html += '<button class="pv-hint-btn" data-hint="' + h.id + '" ' + (shown >= h.content.stages.length ? "disabled" : "") + '>💡 Reveal hint (' + shown + "/" + h.content.stages.length + ')</button>';
-      for (var i = 0; i < shown; i++) html += '<div class="pv-hint-text"' + pvFontStyle(h.content.stages[i].fontSize, 12) + '>' + esc(h.content.stages[i].text) + '</div>';
+      html += renderHintBlockHtml(session, h);
       html += '</div>';
     });
   } else if (laneId === "inventory") {
@@ -3100,6 +3225,15 @@ function renderPreviewNode(session, n, ctl) {
     html += renderGearPulleyTray(n, ctl);
     var fbGp = session.state.feedback[n.id];
     if (fbGp === "correct") html += '<div class="pv-feedback correct">✓ Drive connected — it turns freely.</div>';
+  } else if (n.type === "weightScale") {
+    ctl.wsDraft = ctl.wsDraft || {};
+    if (!ctl.wsDraft[n.id]) ctl.wsDraft[n.id] = wsInitDraft(c);
+    var wsSolved = !!session.state.completed[n.id];
+    if (c.prompt) html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += renderWeightScaleStage(n, ctl, wsSolved);
+    html += renderWeightScaleTray(n, ctl, wsSolved);
+    var fbWs = session.state.feedback[n.id];
+    if (fbWs === "correct") html += '<div class="pv-feedback correct">✓ Balanced — the beam settles dead level.</div>';
   } else if (n.type === "controlPanel") {
     ctl.controlPanelDraft = ctl.controlPanelDraft || {};
     if (!ctl.controlPanelDraft[n.id]) ctl.controlPanelDraft[n.id] = ctpDefaultValuesById(c);
@@ -3434,10 +3568,7 @@ function renderPreviewNode(session, n, ctl) {
   if (hints.length) {
     html += '<div style="margin-top:14px">';
     hints.forEach(function (h) {
-      var shown = session.state.hintProgress[h.id] || 0;
-      html += '<div><button class="pv-hint-btn" data-hint="' + h.id + '" ' + (shown >= h.content.stages.length ? "disabled" : "") + '>💡 Reveal hint (' + shown + "/" + h.content.stages.length + ')</button>';
-      for (var i = 0; i < shown; i++) html += '<div class="pv-hint-text"' + pvFontStyle(h.content.stages[i].fontSize, 12) + '>' + esc(h.content.stages[i].text) + '</div>';
-      html += '</div>';
+      html += renderHintBlockHtml(session, h);
     });
     html += '</div>';
   }
@@ -4626,6 +4757,232 @@ function wireGearPulleyInteractions(root, ctl, session, n) {
         setTimeout(function () { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; ctl.render(); }, 900);
         return;
       }
+    }
+    ctl.render();
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Weight Scale Builder — two-pan balance puzzle, ported from the
+   standalone balance-scale-puzzle.html prototype. No shared geometry math
+   with app.js here (unlike Gear & Pulley/Lumen Puzzle): the Studio builder
+   is a flat resizable list of up to WS_MAX_ITEMS tokens (shape+colour or an
+   uploaded photo, plus a hidden weight) with no spatial layout to keep in
+   sync, so app.js only ever reads/writes n.content.items directly.
+
+   Every position and size below is a percentage of a fixed WS_VB_W×WS_VB_H
+   virtual coordinate space (the same "always render the whole board, never
+   crop it" trick as the SVG viewBox on Gear & Pulley/Lumen Puzzle, just
+   done with percentages instead since this stage is plain positioned HTML,
+   not SVG) — see .pv-ws-stage in styles.css, which locks that aspect ratio
+   via width:100%/aspect-ratio so the scale is always shown in full at any
+   container width. The two pans (.pv-ws-pan) are flex-wrap containers, so
+   however many tokens end up piled on one side never overflows sideways
+   either — they just wrap onto another row inside the pan.
+--------------------------------------------------------------------- */
+var WS_VB_W = 640, WS_VB_H = 400;
+var WS_PIVOT = { x: 320, y: 150 };
+var WS_HALF_LEN = 170;
+var WS_MAX_ANGLE = 20 * Math.PI / 180;
+var WS_MAX_ITEMS = 8;
+var WS_SHAPES = ["circle", "square", "triangle", "hexagon", "star", "pentagon", "diamond", "octagon"];
+
+function wsClamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function wsPctX(v) { return (v / WS_VB_W * 100).toFixed(3); }
+function wsPctY(v) { return (v / WS_VB_H * 100).toFixed(3); }
+
+// Per-node player draft: a shuffled display order for the tray plus the
+// live itemId -> "tray"|"left"|"right" placement map. Built once per node
+// per session (see renderPreviewNode's "weightScale" branch, which lazily
+// creates ctl.wsDraft[n.id]) and mutated in place by
+// wireWeightScaleInteractions as the player taps tokens around — content
+// itself is never touched, same "draft, not the hunt" pattern as
+// ctl.gearDraft/ctl.ropeDraft.
+function wsInitDraft(c) {
+  var items = (c.items || []).slice(0, WS_MAX_ITEMS);
+  var order = items.map(function (it) { return it.id; });
+  for (var i = order.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+  }
+  var placements = {};
+  items.forEach(function (it) { placements[it.id] = "tray"; });
+  return { order: order, placements: placements, selectedId: null };
+}
+
+// left/right pan totals, the raw diff (right - left, same sign convention
+// as the prototype's beam-tilt math) and whether every token has left the
+// tray yet — solved only ever requires allPlaced && diff === 0 (see
+// pv_action_submitWeightScale), which the beam's own weight-positivity
+// already rules out ever being trivially true with one pan left empty.
+function wsTotals(c, draft) {
+  var items = c.items || [];
+  var left = 0, right = 0, total = 0, allPlaced = true;
+  items.forEach(function (it) {
+    var w = Number(it.weight) || 0;
+    total += w;
+    var zone = draft.placements[it.id];
+    if (zone === "left") left += w;
+    else if (zone === "right") right += w;
+    else allPlaced = false;
+  });
+  return { left: left, right: right, diff: right - left, total: total, allPlaced: allPlaced };
+}
+
+// One token, in whichever zone it currently lives in. Deliberately two
+// nested divs, not one: the outer .pv-ws-token is the click target and
+// carries the selected-state ring and the weight badge (.pv-ws-value-tag,
+// always in the markup but only shown once solved — see the "solved"
+// class), while the inner .pv-ws-token-inner/.pv-ws-token-image carries the
+// actual clip-path shape. clip-path clips *everything* painted inside the
+// element it's set on, badge included — putting it one level down keeps
+// the badge (and the selection ring) from being silently clipped away on
+// any non-round shape (star, hexagon, triangle, …). Shape tokens carry
+// their creator-chosen colour as a CSS custom property (--tok-color) read
+// by the .ws-shape-* clip-path classes in styles.css (shared with the
+// small preview swatch buildWeightScaleFields draws in the Studio
+// inspector, so the same 8 clip-paths aren't defined twice); image tokens
+// skip the shape entirely and just show the uploaded photo.
+function wsTokenMarkup(item, extraClass) {
+  var cls = extraClass ? " " + extraClass : "";
+  var weightLabel = esc(String(Math.round(Number(item.weight) || 0)));
+  var inner;
+  if (item.kind === "image" && item.imageAsset) {
+    inner = '<div class="pv-ws-token-image" style="background-image:url(\'' + esc(item.imageAsset) + '\')"></div>';
+  } else {
+    inner = '<div class="pv-ws-token-inner ws-shape-' + esc(item.shape || "circle") + '" style="--tok-color:' + esc(item.color || "#8a8a8a") + '"></div>';
+  }
+  var body = '<div class="pv-ws-token' + cls + '" data-itemid="' + esc(item.id) + '">' + inner;
+  body += '<span class="pv-ws-value-tag">' + weightLabel + '</span></div>';
+  return body;
+}
+
+// The scale itself — base/post/pivot are fixed (styled entirely in CSS),
+// only the beam's rotation and the two pans' positions change per render,
+// recomputed fresh from the live left/right totals every time (no
+// persistent DOM refs or CSS transitions to manage, same "just re-render
+// the whole thing" shape as Gear & Pulley's mesh lines).
+function renderWeightScaleStage(n, ctl, solved) {
+  var c = n.content;
+  var items = (c.items || []).slice(0, WS_MAX_ITEMS);
+  var itemById = {}; items.forEach(function (it) { itemById[it.id] = it; });
+  var draft = ctl.wsDraft[n.id];
+  var totals = wsTotals(c, draft);
+
+  var theta = totals.total > 0 ? wsClamp(totals.diff / totals.total, -1, 1) * WS_MAX_ANGLE : 0;
+  var cosT = Math.cos(theta), sinT = Math.sin(theta);
+  var leftX = WS_PIVOT.x - WS_HALF_LEN * cosT, leftY = WS_PIVOT.y - WS_HALF_LEN * sinT;
+  var rightX = WS_PIVOT.x + WS_HALF_LEN * cosT, rightY = WS_PIVOT.y + WS_HALF_LEN * sinT;
+
+  function tokensFor(zone) {
+    return draft.order.map(function (id) { return itemById[id]; })
+      .filter(function (it) { return it && draft.placements[it.id] === zone; })
+      .map(function (it) { return wsTokenMarkup(it, (draft.selectedId === it.id ? "selected" : "") + (solved ? " solved" : "")); })
+      .join("");
+  }
+
+  var statusText, statusClass;
+  if (totals.allPlaced && totals.diff === 0) {
+    statusText = "Balanced! The beam settles dead level."; statusClass = "balanced";
+  } else if (totals.left === 0 && totals.right === 0) {
+    statusText = "The beam rests, empty and level."; statusClass = "";
+  } else if (totals.diff > 0) {
+    statusText = "The right pan dips lower…"; statusClass = "right-heavy";
+  } else if (totals.diff < 0) {
+    statusText = "The left pan dips lower…"; statusClass = "left-heavy";
+  } else {
+    statusText = "Level for now — the tray isn't empty yet."; statusClass = "";
+  }
+
+  var html = '<div class="pv-ws-wrap" data-node="' + esc(n.id) + '">';
+  html += '<div class="pv-ws-stage">';
+  html += '<div class="pv-ws-base"></div><div class="pv-ws-post"></div>';
+  html += '<div class="pv-ws-beam" style="transform:translate(-50%,-50%) rotate(' + theta.toFixed(4) + 'rad)"></div>';
+  html += '<div class="pv-ws-pivot"></div>';
+  html += '<div class="pv-ws-arm" style="left:' + wsPctX(leftX) + '%;top:' + wsPctY(leftY) + '%">' +
+    '<div class="pv-ws-rope"></div>' +
+    '<div class="pv-ws-pan" data-node="' + esc(n.id) + '" data-wszone="left">' + tokensFor("left") + '</div>' +
+    '</div>';
+  html += '<div class="pv-ws-arm" style="left:' + wsPctX(rightX) + '%;top:' + wsPctY(rightY) + '%">' +
+    '<div class="pv-ws-rope"></div>' +
+    '<div class="pv-ws-pan" data-node="' + esc(n.id) + '" data-wszone="right">' + tokensFor("right") + '</div>' +
+    '</div>';
+  html += '</div>'; // .pv-ws-stage
+  html += '<div class="pv-ws-status ' + statusClass + '">' + esc(statusText) + '</div>';
+  html += '</div>'; // .pv-ws-wrap
+  return html;
+}
+
+// The tray — every token not currently on a pan, in a wrapping row below
+// the stage (see .pv-ws-tray in styles.css; flex-wrap, not the single
+// scrolling strip Gear & Pulley's cog tray uses, since up to 8 tokens
+// wraps onto at most two short rows rather than needing a long sideways
+// scroll).
+function renderWeightScaleTray(n, ctl, solved) {
+  var c = n.content;
+  var items = (c.items || []).slice(0, WS_MAX_ITEMS);
+  var itemById = {}; items.forEach(function (it) { itemById[it.id] = it; });
+  var draft = ctl.wsDraft[n.id];
+  var tokensHtml = draft.order
+    .filter(function (id) { return draft.placements[id] === "tray"; })
+    .map(function (id) { var it = itemById[id]; return it ? wsTokenMarkup(it, (draft.selectedId === id ? "selected" : "") + (solved ? " solved" : "")) : ""; })
+    .join("");
+  return '<div class="pv-ws-tray-wrap">' +
+    '<div class="pv-ws-tray-label">Tray — tap a token, then tap the tray or a pan to move it there</div>' +
+    '<div class="pv-ws-tray" data-node="' + esc(n.id) + '" data-wszone="tray">' +
+    (tokensHtml || '<div class="pv-ws-tray-empty">All tokens placed on the scale</div>') +
+    '</div></div>';
+}
+
+// Player-runtime interaction — tapping a token selects it (tapping it again
+// deselects it, tapping a *different* token moves whatever was already
+// selected into that token's own zone), tapping empty space in a pan or the
+// tray moves the selected token there. Same "select then act, then
+// ctl.render()" shape as wireGearPulleyInteractions above. Recomputes
+// wsTotals after every placement and only calls
+// pv_action_submitWeightScale once every token is off the tray (never with
+// a false/incorrect mechanicOk while the player's still mid-sort — same
+// withholding idiom as wireCategoryGridInteractions' maybeCheck).
+function wireWeightScaleInteractions(root, ctl, session, n) {
+  var wrap = root.querySelector('.pv-ws-wrap[data-node="' + n.id + '"]');
+  if (!wrap) return;
+  var c = n.content;
+  ctl.wsDraft = ctl.wsDraft || {};
+  if (!ctl.wsDraft[n.id]) ctl.wsDraft[n.id] = wsInitDraft(c);
+  var draft = ctl.wsDraft[n.id];
+
+  function moveSelectedTo(zone) {
+    if (!draft.selectedId) return;
+    draft.placements[draft.selectedId] = zone;
+    draft.selectedId = null;
+    checkSolved();
+  }
+
+  Array.prototype.forEach.call(root.querySelectorAll(".pv-ws-token[data-itemid]"), function (tokEl) {
+    tokEl.onclick = function (e) {
+      e.stopPropagation();
+      var id = tokEl.dataset.itemid;
+      if (!draft.selectedId) { draft.selectedId = id; ctl.render(); return; }
+      if (draft.selectedId === id) { draft.selectedId = null; ctl.render(); return; }
+      var zoneEl = tokEl.closest("[data-wszone]");
+      moveSelectedTo(zoneEl ? zoneEl.dataset.wszone : "tray");
+    };
+  });
+  // Only reached on a genuine tap on empty pan/tray background — a tap that
+  // landed on a token itself is already handled above, and stopPropagation
+  // there keeps it from also bubbling up to this listener.
+  Array.prototype.forEach.call(root.querySelectorAll("[data-wszone]"), function (zoneEl) {
+    zoneEl.onclick = function () { moveSelectedTo(zoneEl.dataset.wszone); };
+  });
+
+  function checkSolved() {
+    var totals = wsTotals(c, draft);
+    if (!totals.allPlaced) { ctl.render(); return; }
+    var ok = pv_action_submitWeightScale(session, n.id, true, totals.diff === 0);
+    if (ok) {
+      ctl.render();
+      setTimeout(function () { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; ctl.render(); }, 900);
+      return;
     }
     ctl.render();
   }
@@ -5884,6 +6241,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireRopeTyingInteractions(root, ctl, session, n);
   wireLumenPuzzleInteractions(root, ctl, session, n);
   wireGearPulleyInteractions(root, ctl, session, n);
+  wireWeightScaleInteractions(root, ctl, session, n);
   wireControlPanelInteractions(root, ctl, session, n);
   wireCategoryGridInteractions(root, ctl, session, n);
   wireConstraintSatisfactionInteractions(root, ctl, session, n);
@@ -6013,6 +6371,7 @@ function createPreviewController(mainEl, sideEl) {
     lumenDraft: {}, lumenGeom: {}, // lumenDraft: node id -> live {sources,pieces,targets,walls,cards} the player rotates; lumenGeom: node id -> memoized hex geometry (see wireLumenPuzzleInteractions)
     categoryGridDraft: {}, categoryGridReveal: {}, // categoryGridDraft: node id -> live {cells[9], gallery[], selected}; categoryGridReveal: node id -> {phase:"rows"|"cols", cellIds, names} while the completion graphic plays (see wireCategoryGridInteractions)
     gearDraft: {}, // node id -> live {tiles:[{id,teeth}], placements: axleId -> tileId, selectedTileId} (see gpInitDraft/wireGearPulleyInteractions)
+    wsDraft: {}, // node id -> live {order:[itemId,...], placements: itemId -> "tray"|"left"|"right", selectedId} (see wsInitDraft/wireWeightScaleInteractions)
     controlPanelDraft: {}, // node id -> live componentId -> current value (boolean 0/1, knob point index, or numeric) for every interactive component (see ctpDefaultValuesById/wireControlPanelInteractions)
     cspDraft: {}, // node id -> live {mode:"info"|"answer", alloc: recipientId -> itemId -> count} (see renderPreviewNode's "constraintSatisfaction" branch / wireConstraintSatisfactionInteractions)
     pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
@@ -6045,6 +6404,7 @@ function createPreviewController(mainEl, sideEl) {
     ctl.categoryGridDraft = {};
     ctl.categoryGridReveal = {};
     ctl.gearDraft = {};
+    ctl.wsDraft = {};
     ctl.cspDraft = {};
     ctl.lockAndKeyDraft = {};
     ctl.pinnedNodeId = null;
@@ -6254,6 +6614,7 @@ return {
   pv_action_submitRopeTying: pv_action_submitRopeTying,
   pv_action_submitLumenPuzzle: pv_action_submitLumenPuzzle,
   pv_action_submitGearPulley: pv_action_submitGearPulley,
+  pv_action_submitWeightScale: pv_action_submitWeightScale,
   pv_action_submitControlPanel: pv_action_submitControlPanel,
   pv_action_submitCategoryGrid: pv_action_submitCategoryGrid,
   pv_action_submitConstraintSatisfaction: pv_action_submitConstraintSatisfaction,
@@ -6313,6 +6674,15 @@ return {
   gpComputeMesh: gpComputeMesh,
   gpSolveState: gpSolveState,
 
+  // Weight Scale Builder — just the shared constants (no geometry math to
+  // export: unlike Gear & Pulley/Lumen Puzzle there's no spatial layout for
+  // Studio's inspector to keep in sync, see the comment above
+  // NODE_TYPES.weightScale). WS_MAX_ITEMS/WS_SHAPES are used by
+  // buildWeightScaleFields/wireWeightScaleFields in app.js so the builder's
+  // item cap and shape list can never drift from the player runtime's.
+  WS_MAX_ITEMS: WS_MAX_ITEMS,
+  WS_SHAPES: WS_SHAPES,
+
   // Control Panel Builder — component-type metadata, condition evaluation
   // and shared widget-rendering math, used identically by the player
   // runtime (above) and Studio's inspector-embedded board designer
@@ -6352,6 +6722,9 @@ return {
   nodeCompletionOk: nodeCompletionOk,
   openLeadNodes: openLeadNodes,
   hintsForNode: hintsForNode,
+  syncHintForNodeIds: syncHintForNodeIds,
+  autoRevealedHintStageCount: autoRevealedHintStageCount,
+  renderHintBlockHtml: renderHintBlockHtml,
   laneOptionsForScene: laneOptionsForScene,
   renderLaneOptionsList: renderLaneOptionsList,
   wireHintButtons: wireHintButtons,

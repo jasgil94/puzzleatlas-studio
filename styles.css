@@ -305,6 +305,28 @@ button{font-family:inherit;cursor:pointer;}
 .gp-builder-details[open] .gp-builder-chevron{transform:rotate(90deg);}
 .gp-builder-body{padding:0 10px 10px;}
 
+/* Weight Scale Builder — expandable inspector build pane (buildWeightScaleFields/
+   wireWeightScaleFields, app.js), same collapsible <details> shell as the
+   Gear & Pulley board designer above, just wrapping a flat token list
+   instead of a canvas. */
+.ws-builder-details{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;background:var(--bg2);overflow:hidden;}
+.ws-builder-summary{list-style:none;display:flex;align-items:center;gap:6px;padding:8px 10px;cursor:pointer;font-size:12px;font-weight:700;color:var(--text-dim);user-select:none;}
+.ws-builder-summary::-webkit-details-marker{display:none;}
+.ws-builder-summary:hover{color:var(--text);background:var(--bg3);}
+.ws-builder-chevron{display:inline-block;width:10px;font-size:10px;transition:transform .12s;}
+.ws-builder-details[open] .ws-builder-chevron{transform:rotate(90deg);}
+.ws-builder-body{padding:0 10px 10px;}
+.ws-item-block{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:var(--bg2);}
+.ws-item-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.ws-item-header select.wsItemKindSelect{flex:1;min-width:0;}
+.ws-item-weight-label{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);flex-shrink:0;}
+.ws-item-weight-label input{width:52px;}
+.ws-item-body{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.ws-item-body select.wsItemShapeSelect{flex:1;min-width:100px;}
+.ws-item-thumb{width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--line);display:block;background:var(--bg3);}
+.ws-item-thumb-empty{display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;color:var(--text-dim);background:var(--bg3);}
+.ws-item-swatch{width:22px;height:22px;flex-shrink:0;display:inline-block;background-color:var(--tok-color,#8a8a8a);background-size:cover;background-position:center;box-shadow:0 0 0 1px var(--line);}
+
 .media-adjust-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .section-title{font-size:11.5px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;border-top:1px solid var(--line);padding-top:12px;}
 .section-title:first-child{border-top:none;padding-top:0;margin-top:0;}
@@ -373,6 +395,41 @@ button{font-family:inherit;cursor:pointer;}
 .warn-title{font-weight:600;font-size:12.5px;}
 .warn-detail{font-size:11.5px;color:var(--text-dim);margin-top:2px;}
 .warn-empty{color:var(--ok);padding:20px;text-align:center;}
+
+/* New Hunt wizard overlay — two-step type + lanes picker, opened from the
+   Library screen's "＋ New Hunt" button (see openNewHuntWizard in app.js). */
+.nhw-window{width:min(680px,92vw);max-height:88vh;background:var(--bg2);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.nhw-header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--bg3);flex-shrink:0;}
+.nhw-title{font-weight:700;font-size:14.5px;}
+.nhw-steps{color:var(--text-dim);font-size:11.5px;flex:1;}
+.nhw-body{padding:20px;overflow-y:auto;flex:1;min-height:0;}
+.nhw-step-title{font-size:14px;font-weight:700;margin-bottom:4px;}
+.nhw-step-sub{font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:16px;}
+.nhw-type-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;}
+.nhw-type-card{background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:5px;font-family:inherit;}
+.nhw-type-card:hover{border-color:var(--accent);}
+.nhw-type-card.selected{border-color:var(--accent);background:rgba(108,140,255,.12);}
+.nhw-type-card.disabled{opacity:.45;cursor:not-allowed;}
+.nhw-type-card.disabled:hover{border-color:var(--line);}
+.nhw-type-emoji{font-size:22px;line-height:1;}
+.nhw-type-label{font-weight:700;font-size:13.5px;color:var(--text);}
+.nhw-type-desc{font-size:11.5px;color:var(--text-dim);line-height:1.4;}
+.nhw-soon{align-self:flex-start;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:1px 6px;}
+.nhw-lane-list{display:flex;flex-direction:column;gap:10px;}
+.nhw-lane-row{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg3);}
+.nhw-lane-row.off{opacity:.65;}
+.nhw-lane-row-head{display:flex;align-items:center;gap:10px;cursor:pointer;}
+.nhw-lane-checkbox{width:15px;height:15px;flex-shrink:0;cursor:pointer;}
+.nhw-lane-icon-preview{width:18px;height:18px;flex-shrink:0;display:flex;}
+.nhw-lane-icon-preview svg{width:100%;height:100%;}
+.nhw-lane-label{font-weight:600;font-size:13px;flex:1;}
+.nhw-lane-icon-options{display:flex;gap:6px;margin-top:10px;padding-left:26px;}
+.nhw-icon-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);display:flex;align-items:center;justify-content:center;padding:7px;cursor:pointer;color:var(--text-dim);}
+.nhw-icon-btn svg{width:100%;height:100%;}
+.nhw-icon-btn:hover{border-color:var(--accent);color:var(--text);}
+.nhw-icon-btn.selected{border-color:var(--accent);background:rgba(108,140,255,.15);color:var(--accent);}
+.nhw-footer{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--line);background:var(--bg3);flex-shrink:0;}
+.nhw-footer-right{display:flex;gap:8px;}
 
 /* preview overlay — content styling driven by --pv-* (style pack) variables */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:flex;align-items:center;justify-content:center;}
@@ -694,6 +751,60 @@ button{font-family:inherit;cursor:pointer;}
 .pv-gear-tile.selected{border-color:#ffe6a0;box-shadow:0 0 0 1px #ffe6a0,0 0 10px rgba(255,230,160,.5);}
 .pv-gear-tile.selected .pv-gear-tile-svg path{fill:#ffe6a0;}
 .pv-gear-tile-teeth{font-size:11px;font-weight:700;color:var(--pv-text);}
+
+/* Weight Scale Builder — player board + tray (renderWeightScaleStage/
+   renderWeightScaleTray, engine.js), ported from the standalone
+   balance-scale-puzzle.html prototype. .pv-ws-stage locks a 640:400 aspect
+   ratio via width:100%/aspect-ratio (same "always fit, never crop" idea as
+   the SVG viewBox on Gear & Pulley/Lumen Puzzle above) and every child
+   inside it is positioned/sized as a percentage of that virtual 640×400 box
+   rather than a pixel value, so the whole scale — base, post, beam and both
+   pans at any tilt — always renders in full at any container width, from
+   the ~236px docked live mock up to the full-screen Preview overlay, never
+   clipped or squashed. The pans (.pv-ws-pan) are flex-wrap containers, so
+   however many tokens end up piled on one side wraps onto another row
+   inside the pan instead of overflowing sideways. */
+.pv-ws-wrap{width:100%;max-width:480px;margin:10px auto 0;border-radius:var(--pv-radius);background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);border:1px solid #2a3556;box-shadow:0 10px 30px rgba(0,0,0,.4);padding:8px 8px 4px;}
+.pv-ws-stage{position:relative;width:100%;aspect-ratio:640/400;user-select:none;}
+.pv-ws-base{position:absolute;left:50%;top:92.5%;width:29.6875%;height:5.5%;transform:translateX(-50%);background:linear-gradient(180deg,#a9713f,#3e2417);border-radius:8px;box-shadow:0 4px 8px rgba(0,0,0,.5);}
+.pv-ws-post{position:absolute;left:50%;top:37.5%;width:2.8125%;height:57.5%;transform:translateX(-50%);background:linear-gradient(90deg,#3e2417,#a9713f 45%,#3e2417);border-radius:4px;}
+.pv-ws-pivot{position:absolute;left:50%;top:37.5%;width:3.4375%;height:5.5%;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle at 35% 30%,#e0b06b,#3e2417 75%);z-index:5;box-shadow:0 2px 4px rgba(0,0,0,.6);}
+.pv-ws-beam{position:absolute;left:50%;top:37.5%;width:53.125%;height:4%;transform:translate(-50%,-50%) rotate(0rad);background:linear-gradient(180deg,#d9a86c,#6b4226 55%,#3e2417);border-radius:4px;box-shadow:0 3px 6px rgba(0,0,0,.5);z-index:3;}
+.pv-ws-arm{position:absolute;width:20.3125%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;z-index:4;}
+.pv-ws-rope{width:2px;height:17.5%;min-height:20px;background:repeating-linear-gradient(180deg,#caa66f 0px,#caa66f 4px,#8a5f34 4px,#8a5f34 8px);flex:0 0 auto;}
+.pv-ws-pan{width:100%;min-height:11%;margin-top:-2px;padding:6% 6% 9%;box-sizing:border-box;background:linear-gradient(180deg,#a9713f,#6b4226 70%,#3e2417);border:2px solid #3e2417;border-radius:0 0 40% 40%/0 0 55% 55%;box-shadow:inset 0 6px 10px rgba(0,0,0,.35),0 4px 8px rgba(0,0,0,.4);display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:center;gap:4px;}
+.pv-ws-status{margin-top:10px;text-align:center;font-size:12.5px;color:var(--pv-text);}
+.pv-ws-status.balanced{color:var(--pv-ok);}
+.pv-ws-status.left-heavy,.pv-ws-status.right-heavy{color:var(--pv-warn);}
+
+.pv-ws-tray-wrap{width:100%;max-width:480px;margin:10px auto 0;}
+.pv-ws-tray-label{font-size:11px;color:var(--pv-text-dim);text-align:center;margin-bottom:6px;}
+.pv-ws-tray{display:flex;flex-wrap:wrap;gap:10px;padding:10px 12px;justify-content:center;align-items:center;min-height:56px;border-radius:var(--pv-radius);background:rgba(0,0,0,.18);border:var(--pv-border-width) var(--pv-border-style) var(--line);}
+.pv-ws-tray-empty{width:100%;text-align:center;font-size:12px;color:var(--pv-text-dim);padding:6px 0;font-style:italic;}
+
+/* Tokens — two nested divs (see the comment above wsTokenMarkup, engine.js)
+   so the weight badge and selected-state ring, both on the outer
+   .pv-ws-token, are never clipped away by the inner shape's clip-path. The
+   .ws-shape-* clip-paths are shared with the small preview swatch in the
+   Studio inspector's builder pane (.ws-item-swatch, styles.css above) and
+   are the same ones the standalone balance-scale-puzzle.html prototype
+   used. */
+.pv-ws-token{width:15%;max-width:40px;min-width:0;aspect-ratio:1/1;flex:0 1 auto;position:relative;cursor:pointer;}
+.pv-ws-token.selected{box-shadow:0 0 0 2px #ffe6a0,0 0 10px rgba(255,230,160,.6);border-radius:6px;}
+.pv-ws-token-inner,.pv-ws-token-image{position:absolute;inset:0;background-color:var(--tok-color,#8a8a8a);box-shadow:0 3px 6px rgba(0,0,0,.5),inset 0 2px 3px rgba(255,255,255,.25),inset 0 -3px 4px rgba(0,0,0,.25);}
+.pv-ws-token-inner::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.4),transparent 60%);}
+.pv-ws-token-image{background-size:cover;background-position:center;border-radius:50%;}
+.pv-ws-value-tag{position:absolute;bottom:-8px;right:-8px;background:var(--pv-surface);color:var(--pv-text);font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:none;align-items:center;justify-content:center;padding:0 3px;border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.5);z-index:2;}
+.pv-ws-token.solved .pv-ws-value-tag{display:flex;}
+
+.ws-shape-circle{border-radius:50%;}
+.ws-shape-square{border-radius:4px;}
+.ws-shape-triangle{clip-path:polygon(50% 4%,4% 96%,96% 96%);}
+.ws-shape-hexagon{clip-path:polygon(25% 3%,75% 3%,100% 50%,75% 97%,25% 97%,0% 50%);}
+.ws-shape-star{clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);}
+.ws-shape-pentagon{clip-path:polygon(50% 2%,98% 38%,80% 98%,20% 98%,2% 38%);}
+.ws-shape-diamond{clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%);}
+.ws-shape-octagon{clip-path:polygon(30% 3%,70% 3%,97% 30%,97% 70%,70% 97%,30% 97%,3% 70%,3% 30%);}
 
 /* Image Reveal — framed/cropped display of the node's own uploaded image
    (c.imageAsset). Deliberately built as normal-flow content (not an inset

@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Merchant's Scale — A Balance Puzzle</title>
+<style>
+  :root{
+    --wood-dark:#3e2417;
+    --wood-mid:#6b4226;
+    --wood-light:#a9713f;
+    --wood-pale:#d9a86c;
+    --parchment:#f3e2c2;
+    --accent:#c9772e;
+    --ink:#3b2413;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;
+    padding:0;
+    min-height:100%;
+    font-family:'Iowan Old Style','Palatino Linotype',Georgia,'Times New Roman',serif;
+    color:var(--parchment);
+    background:
+      repeating-linear-gradient(115deg, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 2px, transparent 2px, transparent 6px),
+      radial-gradient(ellipse at top, #5a3821, #2b190f 75%);
+    overflow-x:hidden;
+  }
+  .wrap{
+    max-width:760px;
+    margin:0 auto;
+    padding:28px 20px 60px;
+    text-align:center;
+  }
+  h1{
+    font-size:2.1em;
+    letter-spacing:1px;
+    margin:0 0 6px;
+    color:var(--parchment);
+    text-shadow:2px 2px 0 rgba(0,0,0,0.5), 0 0 18px rgba(201,119,46,0.25);
+  }
+  .subtitle{
+    font-size:1.02em;
+    color:var(--wood-pale);
+    margin:0 0 4px;
+    line-height:1.5;
+  }
+  .hint{
+    font-size:0.88em;
+    color:#c8ab84;
+    opacity:0.85;
+    margin-bottom:18px;
+    font-style:italic;
+  }
+
+  /* ---------- Scale Stage ---------- */
+  .stage-frame{
+    position:relative;
+    width:100%;
+    max-width:640px;
+    height:400px;
+    margin:0 auto;
+    user-select:none;
+  }
+  .base{
+    position:absolute;
+    left:50%;
+    top:370px;
+    width:190px;
+    height:22px;
+    transform:translateX(-50%);
+    background:linear-gradient(180deg,var(--wood-light),var(--wood-dark));
+    border-radius:8px;
+    box-shadow:0 6px 10px rgba(0,0,0,0.5), inset 0 2px 2px rgba(255,255,255,0.15);
+  }
+  .post{
+    position:absolute;
+    left:50%;
+    top:150px;
+    width:18px;
+    height:230px;
+    transform:translateX(-50%);
+    background:linear-gradient(90deg,var(--wood-dark),var(--wood-light) 45%, var(--wood-dark));
+    border-radius:5px;
+    box-shadow:0 0 6px rgba(0,0,0,0.4);
+  }
+  .pivot-cap{
+    position:absolute;
+    left:50%;
+    top:150px;
+    width:22px;
+    height:22px;
+    transform:translate(-50%,-50%);
+    background:radial-gradient(circle at 35% 30%, #e0b06b, var(--wood-dark) 75%);
+    border-radius:50%;
+    z-index:5;
+    box-shadow:0 2px 4px rgba(0,0,0,0.6);
+  }
+  .beam{
+    position:absolute;
+    left:320px;
+    top:150px;
+    width:340px;
+    height:16px;
+    transform:translate(-50%,-50%) rotate(0rad);
+    background:linear-gradient(180deg,var(--wood-pale),var(--wood-mid) 55%, var(--wood-dark));
+    border-radius:6px;
+    box-shadow:0 3px 6px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.25);
+    transition:transform 0.5s cubic-bezier(.3,.6,.35,1);
+    z-index:3;
+  }
+  .arm{
+    position:absolute;
+    left:150px;
+    top:150px;
+    width:130px;
+    transform:translateX(-50%);
+    transition:left 0.5s cubic-bezier(.3,.6,.35,1), top 0.5s cubic-bezier(.3,.6,.35,1);
+    z-index:4;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+  .rope{
+    width:3px;
+    height:70px;
+    background:repeating-linear-gradient(180deg,#caa66f 0px,#caa66f 4px,#8a5f34 4px,#8a5f34 8px);
+    box-shadow:0 0 3px rgba(0,0,0,0.4);
+  }
+  .pan{
+    width:132px;
+    min-height:44px;
+    margin-top:-2px;
+    padding:6px 8px 10px;
+    background:linear-gradient(180deg,var(--wood-light),var(--wood-mid) 70%, var(--wood-dark));
+    border:2px solid var(--wood-dark);
+    border-radius:0 0 46px 46px / 0 0 30px 30px;
+    box-shadow:inset 0 6px 10px rgba(0,0,0,0.35), 0 4px 8px rgba(0,0,0,0.4);
+    display:flex;
+    flex-wrap:wrap;
+    align-items:flex-end;
+    justify-content:center;
+    gap:5px;
+    min-width:132px;
+  }
+  .pan[data-dropzone] { cursor:default; }
+  .pan.drop-hover{
+    box-shadow:inset 0 6px 10px rgba(0,0,0,0.35), 0 0 0 3px var(--accent), 0 4px 8px rgba(0,0,0,0.4);
+  }
+
+  /* ---------- Status ---------- */
+  .status{
+    margin:14px 0 18px;
+    font-size:1.15em;
+    min-height:1.4em;
+    color:var(--parchment);
+    letter-spacing:0.5px;
+  }
+  .status.balanced{ color:#8fdc8f; text-shadow:0 0 10px rgba(143,220,143,0.6); }
+  .status.left-heavy, .status.right-heavy{ color:#e8b56a; }
+
+  .controls{ margin-bottom:26px; }
+  button{
+    font-family:inherit;
+    font-size:0.95em;
+    padding:9px 20px;
+    border-radius:8px;
+    border:2px solid var(--wood-dark);
+    background:linear-gradient(180deg,var(--wood-light),var(--wood-mid));
+    color:var(--parchment);
+    cursor:pointer;
+    box-shadow:0 3px 0 var(--wood-dark);
+    transition:transform 0.1s;
+  }
+  button:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--wood-dark); }
+
+  /* ---------- Tray ---------- */
+  .tray-label{
+    font-size:1.05em;
+    color:var(--wood-pale);
+    margin-bottom:10px;
+    letter-spacing:0.5px;
+  }
+  .tray{
+    background:linear-gradient(180deg,rgba(0,0,0,0.25),rgba(0,0,0,0.15));
+    border:2px dashed rgba(217,168,108,0.4);
+    border-radius:14px;
+    padding:18px;
+    min-height:90px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px;
+    justify-content:center;
+    align-items:center;
+  }
+  .tray:empty::after{
+    content:"All tokens placed on the scale";
+    color:#a98a63;
+    font-style:italic;
+    font-size:0.9em;
+  }
+
+  /* ---------- Weight tokens ---------- */
+  .weight-token{
+    width:48px;
+    height:48px;
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:grab;
+    touch-action:none;
+    box-shadow:0 3px 6px rgba(0,0,0,0.5), inset 0 2px 3px rgba(255,255,255,0.25), inset 0 -3px 4px rgba(0,0,0,0.25);
+    filter:saturate(0.9);
+    flex:0 0 auto;
+  }
+  .weight-token:active{ cursor:grabbing; }
+  .weight-token.dragging-ghost{
+    position:fixed;
+    z-index:999;
+    pointer-events:none;
+    opacity:0.9;
+    transform:scale(1.08);
+  }
+  .weight-token.placeholder{ visibility:hidden; }
+
+  .shape-circle   { border-radius:50%;               background:radial-gradient(circle at 35% 30%,#e07a5f,#9c3d24 80%); }
+  .shape-square   { border-radius:8px;                background:radial-gradient(circle at 35% 30%,#4ea1a1,#1f5c5c 80%); }
+  .shape-triangle { clip-path:polygon(50% 4%,4% 96%,96% 96%); background:radial-gradient(circle at 40% 20%,#e0b93f,#a37a10 80%); }
+  .shape-hexagon  { clip-path:polygon(25% 3%,75% 3%,100% 50%,75% 97%,25% 97%,0% 50%); background:radial-gradient(circle at 35% 30%,#7a9a4c,#41551f 80%); }
+  .shape-star     { clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%); background:radial-gradient(circle at 40% 25%,#b25a7a,#6e2740 80%); }
+  .shape-pentagon { clip-path:polygon(50% 2%,98% 38%,80% 98%,20% 98%,2% 38%); background:radial-gradient(circle at 35% 25%,#6d7fb0,#334066 80%); }
+  .shape-diamond  { clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%); background:radial-gradient(circle at 40% 30%,#d98a4f,#8a4a1c 80%); }
+  .shape-octagon  { clip-path:polygon(30% 3%,70% 3%,97% 30%,97% 70%,70% 97%,30% 97%,3% 70%,3% 30%); background:radial-gradient(circle at 35% 30%,#8fae7a,#4b6339 80%); }
+
+  .value-tag{
+    position:absolute;
+    bottom:-9px;
+    right:-9px;
+    background:var(--parchment);
+    color:var(--ink);
+    font-size:0.62em;
+    font-weight:bold;
+    min-width:16px;
+    height:16px;
+    border-radius:8px;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:0 3px;
+    border:1px solid var(--wood-dark);
+    box-shadow:0 1px 2px rgba(0,0,0,0.5);
+  }
+  .solved .value-tag{ display:flex; }
+
+  /* ---------- Win banner ---------- */
+  .win-banner{
+    display:none;
+    margin:0 auto 18px;
+    max-width:420px;
+    background:linear-gradient(180deg,#3d5c3d,#284228);
+    border:2px solid #8fdc8f;
+    border-radius:12px;
+    padding:14px 20px;
+    font-size:1.15em;
+    color:#e7ffe7;
+    box-shadow:0 0 22px rgba(143,220,143,0.35);
+  }
+  .win-banner.show{ display:block; animation:pop 0.4s ease; }
+  @keyframes pop{ 0%{ transform:scale(0.85); opacity:0;} 100%{ transform:scale(1); opacity:1;} }
+
+  .confetti-piece{
+    position:fixed;
+    top:-20px;
+    width:9px;
+    height:14px;
+    z-index:998;
+    pointer-events:none;
+    animation-name:confetti-fall;
+    animation-timing-function:ease-in;
+    animation-fill-mode:forwards;
+  }
+  @keyframes confetti-fall{
+    0%{ transform:translateY(0) rotate(0deg); opacity:1; }
+    100%{ transform:translateY(560px) rotate(680deg); opacity:0; }
+  }
+
+  footer{
+    margin-top:10px;
+    font-size:0.78em;
+    color:#8a6d4a;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>&#9878;&#65039; The Merchant's Scale</h1>
+  <p class="subtitle">Eight carved tokens sit in the crate below. Each hides its own weight — a secret known only to the scale itself.</p>
+  <p class="hint">Drag every token onto the two pans. Watch which way the beam tips, and rearrange until it settles perfectly level.</p>
+
+  <div class="stage-frame" id="stage">
+    <div class="base"></div>
+    <div class="post"></div>
+    <div class="beam" id="beam"></div>
+    <div class="pivot-cap"></div>
+    <div class="arm" id="armLeft">
+      <div class="rope"></div>
+      <div class="pan" id="panLeft" data-dropzone="left"></div>
+    </div>
+    <div class="arm" id="armRight">
+      <div class="rope"></div>
+      <div class="pan" id="panRight" data-dropzone="right"></div>
+    </div>
+  </div>
+
+  <div class="status" id="status">The beam rests, empty and level.</div>
+  <div class="win-banner" id="winBanner">&#9878;&#65039; <strong>Balanced!</strong> Every token found its place — the scale holds true.</div>
+
+  <div class="controls">
+    <button id="resetBtn">&#8635; Reset the Crate</button>
+  </div>
+
+  <p class="tray-label">The Weight Crate</p>
+  <div class="tray" id="tray" data-dropzone="tray"></div>
+
+  <footer>Drag tokens with mouse or touch. All eight must be placed for the scale to settle.</footer>
+</div>
+
+<script>
+(function(){
+  // Weight values are fixed here in the "builder" — never shown to the player until solved.
+  const WEIGHTS = [
+    { id:1, shape:'circle',   value:5  },
+    { id:2, shape:'square',   value:8  },
+    { id:3, shape:'triangle', value:3  },
+    { id:4, shape:'hexagon',  value:11 },
+    { id:5, shape:'star',     value:6  },
+    { id:6, shape:'pentagon', value:9  },
+    { id:7, shape:'diamond',  value:14 },
+    { id:8, shape:'octagon',  value:4  }
+  ];
+
+  let state = {};           // id -> 'tray' | 'left' | 'right'
+  let trayOrder = [];
+  let solved = false;
+
+  function resetState(){
+    WEIGHTS.forEach(w => state[w.id] = 'tray');
+    trayOrder = WEIGHTS.map(w => w.id);
+    // shuffle tray order for a fresh look each time
+    for(let i = trayOrder.length -1; i>0; i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [trayOrder[i], trayOrder[j]] = [trayOrder[j], trayOrder[i]];
+    }
+    solved = false;
+    document.getElementById('winBanner').classList.remove('show');
+    clearConfetti();
+    render();
+  }
+
+  // ---------- Geometry for the beam ----------
+  const pivot = { x:320, y:150 };
+  const halfLength = 170;
+  const maxAngle = 20 * Math.PI/180;
+  const sensitivity = maxAngle / 12; // radians per unit weight difference
+
+  function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
+
+  function updateScaleVisual(theta){
+    const cos = Math.cos(theta), sin = Math.sin(theta);
+    const leftEnd  = { x: pivot.x - halfLength*cos, y: pivot.y - halfLength*sin };
+    const rightEnd = { x: pivot.x + halfLength*cos, y: pivot.y + halfLength*sin };
+    document.getElementById('beam').style.transform = `translate(-50%,-50%) rotate(${theta}rad)`;
+    const armLeft = document.getElementById('armLeft');
+    const armRight = document.getElementById('armRight');
+    armLeft.style.left = leftEnd.x + 'px';
+    armLeft.style.top  = leftEnd.y + 'px';
+    armRight.style.left = rightEnd.x + 'px';
+    armRight.style.top  = rightEnd.y + 'px';
+  }
+
+  // ---------- Rendering ----------
+  function weightById(id){ return WEIGHTS.find(w => w.id === id); }
+
+  function makeTokenEl(w){
+    const el = document.createElement('div');
+    el.className = 'weight-token shape-' + w.shape + (solved ? ' solved' : '');
+    el.dataset.id = w.id;
+    const tag = document.createElement('span');
+    tag.className = 'value-tag';
+    tag.textContent = w.value;
+    el.appendChild(tag);
+    el.addEventListener('pointerdown', onPointerDown);
+    return el;
+  }
+
+  function render(){
+    const trayEl = document.getElementById('tray');
+    const leftEl = document.getElementById('panLeft');
+    const rightEl = document.getElementById('panRight');
+
+    const leftTotal = WEIGHTS.filter(w => state[w.id]==='left').reduce((s,w)=>s+w.value,0);
+    const rightTotal = WEIGHTS.filter(w => state[w.id]==='right').reduce((s,w)=>s+w.value,0);
+    const diff = rightTotal - leftTotal;
+    const trayEmpty = WEIGHTS.every(w => state[w.id] !== 'tray');
+    const onScaleCount = WEIGHTS.filter(w => state[w.id] !== 'tray').length;
+    const justSolved = trayEmpty && diff === 0 && onScaleCount === WEIGHTS.length;
+
+    solved = justSolved;
+
+    trayEl.innerHTML = '';
+    leftEl.innerHTML = '';
+    rightEl.innerHTML = '';
+    trayOrder.forEach(id => {
+      if(state[id] === 'tray') trayEl.appendChild(makeTokenEl(weightById(id)));
+    });
+    WEIGHTS.forEach(w => {
+      if(state[w.id] === 'left') leftEl.appendChild(makeTokenEl(w));
+      if(state[w.id] === 'right') rightEl.appendChild(makeTokenEl(w));
+    });
+
+    const theta = clamp(diff * sensitivity, -maxAngle, maxAngle);
+    updateScaleVisual(theta);
+
+    const statusEl = document.getElementById('status');
+    const winBanner = document.getElementById('winBanner');
+
+    if(solved){
+      statusEl.textContent = 'The beam settles dead level. Balanced at last!';
+      statusEl.className = 'status balanced';
+      winBanner.classList.add('show');
+      launchConfetti();
+    } else {
+      winBanner.classList.remove('show');
+      if(onScaleCount === 0){
+        statusEl.textContent = 'The beam rests, empty and level.';
+        statusEl.className = 'status';
+      } else if(diff > 0){
+        statusEl.textContent = 'The right pan dips lower...';
+        statusEl.className = 'status right-heavy';
+      } else if(diff < 0){
+        statusEl.textContent = 'The left pan dips lower...';
+        statusEl.className = 'status left-heavy';
+      } else {
+        statusEl.textContent = trayEmpty ? 'Balanced!' : 'Level for now — but the crate isn\'t empty yet.';
+        statusEl.className = 'status' + (trayEmpty ? ' balanced' : '');
+      }
+    }
+  }
+
+  // ---------- Drag & drop (pointer events, mouse + touch) ----------
+  let dragId = null;
+  let ghost = null;
+  let dragW = 0, dragH = 0;
+
+  function onPointerDown(e){
+    if(solved) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    dragId = parseInt(el.dataset.id, 10);
+    const rect = el.getBoundingClientRect();
+    dragW = rect.width; dragH = rect.height;
+
+    ghost = el.cloneNode(true);
+    ghost.classList.add('dragging-ghost');
+    ghost.style.width = dragW + 'px';
+    ghost.style.height = dragH + 'px';
+    ghost.style.left = (e.clientX - dragW/2) + 'px';
+    ghost.style.top = (e.clientY - dragH/2) + 'px';
+    document.body.appendChild(ghost);
+
+    el.classList.add('placeholder');
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  }
+
+  function onPointerMove(e){
+    if(!ghost) return;
+    ghost.style.left = (e.clientX - dragW/2) + 'px';
+    ghost.style.top = (e.clientY - dragH/2) + 'px';
+
+    document.querySelectorAll('[data-dropzone]').forEach(z => z.classList.remove('drop-hover'));
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const zone = under && under.closest('[data-dropzone]');
+    if(zone) zone.classList.add('drop-hover');
+  }
+
+  function onPointerUp(e){
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+    document.querySelectorAll('[data-dropzone]').forEach(z => z.classList.remove('drop-hover'));
+
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const zone = under && under.closest('[data-dropzone]');
+    if(zone){
+      state[dragId] = zone.dataset.dropzone;
+    }
+    if(ghost){ ghost.remove(); ghost = null; }
+    dragId = null;
+    render();
+  }
+
+  // ---------- Confetti ----------
+  const confettiColors = ['#e0b93f','#e07a5f','#7a9a4c','#6d7fb0','#d98a4f','#8fdc8f'];
+  let confettiActive = false;
+  function launchConfetti(){
+    if(confettiActive) return;
+    confettiActive = true;
+    for(let i=0;i<28;i++){
+      const p = document.createElement('div');
+      p.className = 'confetti-piece';
+      p.style.left = Math.random()*100 + 'vw';
+      p.style.background = confettiColors[Math.floor(Math.random()*confettiColors.length)];
+      p.style.animationDuration = (1.6 + Math.random()*1.2) + 's';
+      p.style.animationDelay = (Math.random()*0.4) + 's';
+      document.body.appendChild(p);
+      setTimeout(()=>p.remove(), 3200);
+    }
+    setTimeout(()=>{ confettiActive = false; }, 3200);
+  }
+  function clearConfetti(){
+    document.querySelectorAll('.confetti-piece').forEach(p=>p.remove());
+  }
+
+  document.getElementById('resetBtn').addEventListener('click', resetState);
+
+  resetState();
+})();
+</script>
+</body>
+</html>

@@ -115,6 +115,11 @@ var gpGearPathD = PAEngine.gpGearPathD;
 var gpComputeMesh = PAEngine.gpComputeMesh;
 var gpSolveState = PAEngine.gpSolveState;
 
+// Weight Scale Builder — shared item cap/shape list (see the comment above
+// NODE_TYPES.weightScale in engine.js).
+var WS_MAX_ITEMS = PAEngine.WS_MAX_ITEMS;
+var WS_SHAPES = PAEngine.WS_SHAPES;
+
 // Control Panel Builder — component-type metadata, condition evaluation and
 // shared widget-rendering math, used by the inspector-embedded board
 // designer below (buildControlPanelFields/wireControlPanelDesigner) — see
@@ -151,6 +156,10 @@ var DEFAULT_BUTTON_LABEL = PAEngine.DEFAULT_BUTTON_LABEL;
 var BUTTON_LABEL_TYPES = PAEngine.BUTTON_LABEL_TYPES;
 var openLeadNodes = PAEngine.openLeadNodes;
 var hintsForNode = PAEngine.hintsForNode;
+var syncHintForNodeIds = PAEngine.syncHintForNodeIds;
+var renderHintBlockHtml = PAEngine.renderHintBlockHtml;
+var autoRevealedHintStageCount = PAEngine.autoRevealedHintStageCount;
+var wireHintButtons = PAEngine.wireHintButtons;
 var laneOptionsForScene = PAEngine.laneOptionsForScene;
 var renderPreviewNode = PAEngine.renderPreviewNode;
 var wirePreviewNodeInteractions = PAEngine.wirePreviewNodeInteractions;
@@ -300,11 +309,123 @@ function newBlankStylePack() {
   return base;
 }
 
-function newHunt(title) {
+/* ---------------------------------------------------------------------
+   Player-app lanes — the canvas is organized as up to 5 horizontal lanes
+   that mirror the Player app's bottom tab bar (Story / Leads / Map /
+   Inventory / Hints), crossed by creator-defined vertical "Scene"
+   columns. A node's lane + sceneId together pick its cell in this grid;
+   computeLayout() (below) turns that into actual pixel position. Defined
+   here, ahead of newHunt() and HUNT_TYPES below, since newHunt()'s default
+   `lanes` argument reads LANES at hunt-creation time.
+--------------------------------------------------------------------- */
+// Player tab bar icons — plain single-color line drawings (stroke:
+// currentColor, no fill) so they pick up whatever color the tab bar CSS
+// gives them, including the active style pack's accent color.
+var LANE_TAB_SVG = {
+  story: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-1.8-1.3-4.2-2-7-2-1 0-2 .1-3 .3v13.7c1-.2 2-.3 3-.3 2.8 0 5.2.7 7 2 1.8-1.3 4.2-2 7-2 1 0 2 .1 3 .3V4.3c-1-.2-2-.3-3-.3-2.8 0-5.2.7-7 2Z"/><path d="M12 6v14"/></svg>',
+  leads: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l1.5 1.5L8 5.5"/><path d="M11 6h9"/><path d="M4 12.5l1.5 1.5L8 11.5"/><path d="M11 12h9"/><path d="M4 18.5l1.5 1.5L8 17.5"/><path d="M11 18h9"/></svg>',
+  map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-7.2 7-12a7 7 0 1 0-14 0c0 4.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.4"/></svg>',
+  inventory: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="11" rx="2"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>',
+  hints: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 .8 1.1 1.6l.1.5h4.6l.1-.5c.1-.8.5-1.2 1.1-1.6A6 6 0 0 0 12 3Z"/></svg>'
+};
+var LANES = [
+  { id: "story",     label: "Story",     icon: LANE_TAB_SVG.story },
+  { id: "leads",     label: "Leads",     icon: LANE_TAB_SVG.leads },
+  { id: "map",       label: "Map",       icon: LANE_TAB_SVG.map },
+  { id: "inventory", label: "Inventory", icon: LANE_TAB_SVG.inventory },
+  { id: "hints",     label: "Hints",     icon: LANE_TAB_SVG.hints }
+];
+var LANE_INDEX = {}, LANE_BY_ID = {};
+LANES.forEach(function (l, i) { LANE_INDEX[l.id] = i; LANE_BY_ID[l.id] = l; });
+
+// Alternate icon choices offered for each lane in step 2 of the New Hunt
+// wizard (see openNewHuntWizard). Each lane's "default" key always reuses
+// the lane's original LANE_TAB_SVG artwork, so a hunt that never sets
+// laneIcons renders identically to before this feature existed.
+var LANE_ICON_VARIANTS = {
+  story: {
+    default: LANE_TAB_SVG.story,
+    eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+    board: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>'
+  },
+  leads: {
+    default: LANE_TAB_SVG.leads,
+    magnifier: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="7"/><path d="M20.5 20.5l-5-5"/></svg>'
+  },
+  map: {
+    default: LANE_TAB_SVG.map,
+    foldedMap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16"/><path d="M15 5v16"/></svg>'
+  },
+  inventory: {
+    default: LANE_TAB_SVG.inventory,
+    rucksack: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8V6a4 4 0 0 1 8 0v2"/><rect x="5" y="8" width="14" height="13" rx="3"/><path d="M9 8v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V8"/><path d="M9 17h6"/></svg>'
+  },
+  hints: {
+    default: LANE_TAB_SVG.hints,
+    question: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.4 9.2a2.6 2.6 0 1 1 3.7 2.4c-.7.4-1.1.8-1.1 1.6v.3"/><path d="M12 17h.01"/></svg>'
+  }
+};
+// Ordered [key, label] pairs per lane, for rendering the wizard's icon-choice
+// buttons in a stable, deliberate order (object key order isn't guaranteed
+// meaningful enough to rely on for UI).
+var LANE_ICON_CHOICES = {
+  story: [["default", "Book"], ["eye", "Eye"], ["board", "Board"]],
+  leads: [["default", "List"], ["magnifier", "Magnifying glass"]],
+  map: [["default", "Pin"], ["foldedMap", "Map"]],
+  inventory: [["default", "Briefcase"], ["rucksack", "Rucksack"]],
+  hints: [["default", "Bulb"], ["question", "Question mark"]]
+};
+
+// Per-hunt lane subset — a hunt's `lanes` array (chosen in the New Hunt
+// wizard) filters the master LANES registry down to just the lanes that
+// hunt actually uses. Legacy hunts (predating this feature) have `lanes`
+// backfilled to all 5 ids by migrateHuntForType(), so they behave exactly
+// as before. Everywhere the canvas grid and player tab bar used to iterate
+// the global LANES constant, they now iterate huntLanes(hunt) instead.
+function huntLaneIds(hunt) {
+  return (hunt && hunt.lanes && hunt.lanes.length) ? hunt.lanes : LANES.map(function (l) { return l.id; });
+}
+function huntLanes(hunt) {
+  var ids = huntLaneIds(hunt);
+  return LANES.filter(function (l) { return ids.indexOf(l.id) !== -1; });
+}
+// The SVG markup for a given lane on a given hunt, respecting that hunt's
+// laneIcons choice (falls back to the lane's default artwork).
+function laneIconSvg(hunt, laneId) {
+  var key = (hunt && hunt.laneIcons && hunt.laneIcons[laneId]) || "default";
+  var variants = LANE_ICON_VARIANTS[laneId];
+  return (variants && variants[key]) || LANE_TAB_SVG[laneId] || "";
+}
+
+// Hunt "type", chosen as step 1 of the New Hunt wizard (see openNewHuntWizard
+// below). Purely descriptive/metadata for now — Party and Live are flagged
+// `disabled` because their gameplay mechanics (in-person multiplayer, and
+// in-game/real-world clocks) aren't built yet, so their cards render greyed
+// out and unselectable in the wizard.
+var HUNT_TYPES = [
+  { id: "armchair", label: "Armchair", emoji: "🛋️", description: "Story-driven, locationless hunts.", disabled: false },
+  { id: "location", label: "Location", emoji: "📍", description: "Utilises player GPS.", disabled: false },
+  { id: "party", label: "Party", emoji: "🎉", description: "In-person multiplayer hunts.", disabled: true },
+  { id: "live", label: "Live", emoji: "⏱️", description: "Has an in-game, or uses a real-world, clock to determine gameplay elements.", disabled: true }
+];
+var HUNT_TYPE_BY_ID = {};
+HUNT_TYPES.forEach(function (t) { HUNT_TYPE_BY_ID[t.id] = t; });
+var DEFAULT_HUNT_TYPE = "location";
+
+function newHunt(title, type, lanes, laneIcons) {
   return {
     schemaVersion: SCHEMA_VERSION,
     id: uid("hunt"),
     title: title || "Untitled Hunt",
+    // Chosen in the New Hunt wizard: `type` is one of HUNT_TYPES; `lanes` is
+    // the subset of LANES ids this hunt actually uses (canvas grid rows +
+    // player tab bar both derive from this — see huntLanes()); `laneIcons`
+    // picks which icon variant (see LANE_ICON_VARIANTS) renders in the
+    // player tab bar for each chosen lane, keyed by lane id, falling back to
+    // LANE_ICON_DEFAULT when a lane has no entry.
+    type: type || DEFAULT_HUNT_TYPE,
+    lanes: lanes || LANES.map(function (l) { return l.id; }),
+    laneIcons: laneIcons || {},
     metadata: {
       concept: "",
       audience: "",
@@ -403,6 +524,9 @@ var Store = {
 
   replaceHunt: function (hunt) {
     migrateHuntForLanes(hunt);
+    migrateHuntForType(hunt);
+    migrateHintConnections(hunt); // one-time: synthesize connections for hints attached under the old manual-picker model
+    syncHintForNodeIds(hunt); // self-heals hint→node auto-attachment on every load/import/undo-redo/demo swap
     this.hunt = hunt;
     this.selection = { type: null, id: null };
     this.multiSelectNodeIds = [];
@@ -423,6 +547,7 @@ var Store = {
     this.hunt.nodes = this.hunt.nodes.filter(function (n) { return n.id !== id; });
     this.hunt.connections = this.hunt.connections.filter(function (c) { return c.sourceId !== id && c.targetId !== id; });
     this.hunt.entryPointIds = this.hunt.entryPointIds.filter(function (eid) { return eid !== id; });
+    syncHintForNodeIds(this.hunt); // a removed connection/node may have been a hint's auto-attached target
     this.pushHistory();
   },
 
@@ -437,6 +562,7 @@ var Store = {
     var copy = PAEngine.duplicateNode(n);
     var idx = this.hunt.nodes.indexOf(n);
     this.hunt.nodes.splice(idx + 1, 0, copy);
+    syncHintForNodeIds(this.hunt); // duplicate has no connections of its own — clears any stale copied forNodeId
     this.pushHistory();
     return copy;
   },
@@ -450,6 +576,7 @@ var Store = {
     this.hunt.connections = this.hunt.connections.filter(function (c) {
       return ids.indexOf(c.sourceId) === -1 && ids.indexOf(c.targetId) === -1;
     });
+    syncHintForNodeIds(this.hunt);
     this.pushHistory();
   },
 
@@ -476,12 +603,14 @@ var Store = {
       c.condition = { type: "keychainSupply" };
     }
     this.hunt.connections.push(c);
+    syncHintForNodeIds(this.hunt); // a hint node on either end of this connection may have just gained/kept its auto-attached target
     this.pushHistory();
     return c;
   },
 
   removeConnection: function (id) {
     this.hunt.connections = this.hunt.connections.filter(function (c) { return c.id !== id; });
+    syncHintForNodeIds(this.hunt); // a hint node that lost its only incoming connection goes back to unattached
     this.pushHistory();
   },
 
@@ -512,33 +641,6 @@ var Store = {
 --------------------------------------------------------------------- */
 var NODE_W = 220, NODE_H = 100, EDGE_OFFSET = 5000, GRID = 20;
 var NODE_MIN_W = 160, NODE_MIN_H = 64, NODE_MAX_W = 560, NODE_MAX_H = 480;
-
-/* ---------------------------------------------------------------------
-   Player-app lanes — the canvas is organized as 5 fixed horizontal lanes
-   that mirror the Player app's bottom tab bar (Story / Leads / Map /
-   Inventory / Hints), crossed by creator-defined vertical "Scene"
-   columns. A node's lane + sceneId together pick its cell in this grid;
-   computeLayout() (below) turns that into actual pixel position.
---------------------------------------------------------------------- */
-// Player tab bar icons — plain single-color line drawings (stroke:
-// currentColor, no fill) so they pick up whatever color the tab bar CSS
-// gives them, including the active style pack's accent color.
-var LANE_TAB_SVG = {
-  story: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-1.8-1.3-4.2-2-7-2-1 0-2 .1-3 .3v13.7c1-.2 2-.3 3-.3 2.8 0 5.2.7 7 2 1.8-1.3 4.2-2 7-2 1 0 2 .1 3 .3V4.3c-1-.2-2-.3-3-.3-2.8 0-5.2.7-7 2Z"/><path d="M12 6v14"/></svg>',
-  leads: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l1.5 1.5L8 5.5"/><path d="M11 6h9"/><path d="M4 12.5l1.5 1.5L8 11.5"/><path d="M11 12h9"/><path d="M4 18.5l1.5 1.5L8 17.5"/><path d="M11 18h9"/></svg>',
-  map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-7.2 7-12a7 7 0 1 0-14 0c0 4.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.4"/></svg>',
-  inventory: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="11" rx="2"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>',
-  hints: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 .8 1.1 1.6l.1.5h4.6l.1-.5c.1-.8.5-1.2 1.1-1.6A6 6 0 0 0 12 3Z"/></svg>'
-};
-var LANES = [
-  { id: "story",     label: "Story",     icon: LANE_TAB_SVG.story },
-  { id: "leads",     label: "Leads",     icon: LANE_TAB_SVG.leads },
-  { id: "map",       label: "Map",       icon: LANE_TAB_SVG.map },
-  { id: "inventory", label: "Inventory", icon: LANE_TAB_SVG.inventory },
-  { id: "hints",     label: "Hints",     icon: LANE_TAB_SVG.hints }
-];
-var LANE_INDEX = {}, LANE_BY_ID = {};
-LANES.forEach(function (l, i) { LANE_INDEX[l.id] = i; LANE_BY_ID[l.id] = l; });
 
 // A connection's "kind" is never stored on the connection itself — it's
 // derived live from whichever lane its target node currently sits in.
@@ -732,12 +834,24 @@ function computeLayout() {
   var colOf = {};
   columns.forEach(function (c, i) { colOf[c.id === null ? "__u__" : c.id] = i; });
 
+  // This hunt's chosen lane subset (see huntLanes()) — a hunt that opted
+  // out of a lane simply never gets a row for it, here or in renderGrid().
+  var lanes = huntLanes(hunt);
+  var laneIdx = {};
+  lanes.forEach(function (l, i) { laneIdx[l.id] = i; });
+
   // Bucket nodes into [laneIdx][colIdx], preserving hunt.nodes array order
   // as the fallback stacking order within a cell.
-  var buckets = LANES.map(function () { return columns.map(function () { return []; }); });
+  var buckets = lanes.map(function () { return columns.map(function () { return []; }); });
   hunt.nodes.forEach(function (n) {
-    if (!n.lane || LANE_INDEX[n.lane] === undefined) n.lane = SUGGESTED_LANE[n.type] || "story";
-    var li = LANE_INDEX[n.lane];
+    if (!n.lane || laneIdx[n.lane] === undefined) {
+      // Either no lane yet, or its lane was disabled for this hunt after
+      // the node was placed — fall back to the type's suggested lane if
+      // that's still active, else just the first active lane.
+      var suggested = SUGGESTED_LANE[n.type];
+      n.lane = (suggested && laneIdx[suggested] !== undefined) ? suggested : lanes[0].id;
+    }
+    var li = laneIdx[n.lane];
     var key = n.sceneId === null || n.sceneId === undefined ? "__u__" : n.sceneId;
     var ci = colOf[key];
     if (ci === undefined) { n.sceneId = null; ci = 0; } // scene was deleted elsewhere — fall back to Unassigned
@@ -747,7 +861,7 @@ function computeLayout() {
   // Within each cell, let connections between cellmates set the stacking
   // order (see orderByConnections() above) instead of leaving it as
   // whatever order hunt.nodes happens to be in.
-  LANES.forEach(function (l, li) {
+  lanes.forEach(function (l, li) {
     columns.forEach(function (_, ci) {
       buckets[li][ci] = orderByConnections(buckets[li][ci], hunt.connections);
     });
@@ -759,7 +873,7 @@ function computeLayout() {
   // content needs — see wireGridInteractions()'s colResize handling).
   var colWidths = columns.map(function (col, ci) {
     var w = COL_W_BASE;
-    LANES.forEach(function (l, li) {
+    lanes.forEach(function (l, li) {
       buckets[li][ci].forEach(function (n) { w = Math.max(w, nodeSize(n).w + CELL_PAD_SIDE * 2); });
     });
     if (col.width && col.width > w) w = col.width;
@@ -778,7 +892,7 @@ function computeLayout() {
   // otherwise a lane with a few freely-arranged nodes gets forced open
   // far taller than what they actually occupy, while a node dragged low
   // in its cell still needs the lane grown enough to reach it.
-  var laneHeights = LANES.map(function (l, li) {
+  var laneHeights = lanes.map(function (l, li) {
     var h = LANE_H_BASE;
     columns.forEach(function (_, ci) {
       var cell = buckets[li][ci];
@@ -800,7 +914,7 @@ function computeLayout() {
     return h;
   });
   var laneY = [], runY = SCENE_HEADER_H;
-  LANES.forEach(function (l, li) { laneY[li] = runY; runY += laneHeights[li]; });
+  lanes.forEach(function (l, li) { laneY[li] = runY; runY += laneHeights[li]; });
 
   // Place every node: left-aligned in its column, stacked top-down in its
   // cell — UNLESS the creator has freely dragged it somewhere else within
@@ -812,7 +926,7 @@ function computeLayout() {
   // before. Crossing into a different cell just re-clamps the same
   // cellPos into the new cell's bounds — see the mouseup handler, which
   // recomputes cellPos relative to whichever cell the node was dropped in.
-  LANES.forEach(function (l, li) {
+  lanes.forEach(function (l, li) {
     columns.forEach(function (_, ci) {
       var y = laneY[li] + CELL_PAD_TOP;
       buckets[li][ci].forEach(function (n) {
@@ -829,17 +943,17 @@ function computeLayout() {
     });
   });
 
-  lastLayout = { columns: columns, colX: colX, colWidths: colWidths, laneY: laneY, laneHeights: laneHeights,
+  lastLayout = { columns: columns, colX: colX, colWidths: colWidths, lanes: lanes, laneY: laneY, laneHeights: laneHeights,
     totalWidth: run, totalHeight: runY };
   return lastLayout;
 }
 
 function laneIndexForWorldY(y) {
   var L = lastLayout || computeLayout();
-  for (var i = 0; i < LANES.length; i++) {
-    if (y < L.laneY[i] + L.laneHeights[i] || i === LANES.length - 1) return i;
+  for (var i = 0; i < L.lanes.length; i++) {
+    if (y < L.laneY[i] + L.laneHeights[i] || i === L.lanes.length - 1) return i;
   }
-  return LANES.length - 1;
+  return L.lanes.length - 1;
 }
 function colIndexForWorldX(x) {
   var L = lastLayout || computeLayout();
@@ -854,7 +968,7 @@ function renderGrid() {
   var layer = dom.gridLayer;
   layer.innerHTML = "";
 
-  LANES.forEach(function (l, li) {
+  L.lanes.forEach(function (l, li) {
     var band = document.createElement("div");
     band.className = "lane-band";
     band.style.top = L.laneY[li] + "px";
@@ -1088,6 +1202,45 @@ function migrateHuntForLanes(hunt) {
   hunt.nodes.forEach(function (n) {
     if (!n.lane) n.lane = SUGGESTED_LANE[n.type] || "story";
     if (n.sceneId === undefined) n.sceneId = null;
+  });
+  return hunt;
+}
+
+// Backfills the hunt-type / lane-subset / lane-icon fields introduced by the
+// New Hunt wizard. Hunts saved before this feature existed have none of
+// these fields, so they default to type "location" with all 5 lanes
+// enabled and every lane's default icon — visually and functionally
+// identical to how they behaved before this feature shipped.
+function migrateHuntForType(hunt) {
+  if (!hunt.type || !HUNT_TYPE_BY_ID[hunt.type]) hunt.type = DEFAULT_HUNT_TYPE;
+  if (!hunt.lanes || !hunt.lanes.length) hunt.lanes = LANES.map(function (l) { return l.id; });
+  else hunt.lanes = hunt.lanes.filter(function (id) { return LANE_INDEX[id] !== undefined; });
+  if (!hunt.lanes.length) hunt.lanes = LANES.map(function (l) { return l.id; }); // never let a hunt end up with zero lanes
+  if (!hunt.laneIcons) hunt.laneIcons = {};
+  return hunt;
+}
+
+// Hints used to record their target purely as content.forNodeId, picked
+// from a dropdown in the inspector, with no actual edge drawn on the
+// canvas. Now that a hint auto-attaches to whatever node has a connection
+// drawn into it (see syncHintForNodeIds/PAEngine.syncHintForNodeIds), a
+// hunt saved under the old model would otherwise revert every hint to
+// "unattached" the instant it's opened. So: the first time such a hunt
+// loads, synthesize the missing connection so the attachment survives (and
+// becomes a real, visible edge on the canvas) instead of silently
+// vanishing. A no-op on every later load, since the connection then
+// already exists.
+function migrateHintConnections(hunt) {
+  hunt.connections = hunt.connections || [];
+  (hunt.nodes || []).forEach(function (n) {
+    if (n.type !== "hint" && n.type !== "hintUnlockCost") return;
+    var target = n.content && n.content.forNodeId;
+    if (!target) return;
+    var hasIncoming = hunt.connections.some(function (c) { return c.targetId === n.id; });
+    if (hasIncoming) return;
+    var targetExists = hunt.nodes.some(function (x) { return x.id === target; });
+    if (!targetExists) return;
+    hunt.connections.push(newConnection(target, n.id));
   });
   return hunt;
 }
@@ -1454,7 +1607,7 @@ function initCanvasInteraction() {
           var sz = nodeSize(n);
           var cx = n.position.x + sz.w / 2, cy = n.position.y + sz.h / 2;
           var li = laneIndexForWorldY(cy), ci = colIndexForWorldX(cx);
-          n.lane = LANES[li].id;
+          n.lane = lastLayout.lanes[li].id;
           var col = lastLayout.columns[ci];
           n.sceneId = col.unassigned ? null : col.id;
           n.cellPos = { x: n.position.x - lastLayout.colX[ci], y: n.position.y - lastLayout.laneY[li] };
@@ -1641,7 +1794,7 @@ function initPaletteDrop() {
     // lays out the exact pixel position once it's added.
     var li = laneIndexForWorldY(world.y), ci = colIndexForWorldX(world.x);
     var col = lastLayout.columns[ci];
-    var n = Store.addNode(type, world.x, world.y, LANES[li].id, col.unassigned ? null : col.id);
+    var n = Store.addNode(type, world.x, world.y, lastLayout.lanes[li].id, col.unassigned ? null : col.id);
     render();
     Store.select("node", n.id);
   });
@@ -1945,7 +2098,7 @@ function buildNodeInspector(n) {
   html += fieldWrap("Title", '<input type="text" id="fTitle" value="' + esc(n.title) + '" />');
   html += '<div class="section-title">Canvas placement</div>';
   html += fieldWrap("Lane", '<select id="fLane">' +
-    LANES.map(function (l) { return '<option value="' + l.id + '"' + (n.lane === l.id ? " selected" : "") + '>' + esc(l.label) + '</option>'; }).join("") +
+    huntLanes(Store.hunt).map(function (l) { return '<option value="' + l.id + '"' + (n.lane === l.id ? " selected" : "") + '>' + esc(l.label) + '</option>'; }).join("") +
     '</select>');
   var sceneOpts = '<option value=""' + (!n.sceneId ? " selected" : "") + '>Unassigned</option>' +
     (Store.hunt.scenes || []).map(function (s) { return '<option value="' + s.id + '"' + (n.sceneId === s.id ? " selected" : "") + '>' + esc(s.title) + '</option>'; }).join("");
@@ -2154,6 +2307,9 @@ function buildTypeSpecificFields(n) {
       html += '<button type="button" class="small-btn" style="color:var(--danger)" id="gpBtnClear">Clear board</button>';
       html += '</div></details>';
       break;
+    case "weightScale":
+      html += buildWeightScaleFields(n);
+      break;
     case "controlPanel":
       html += buildControlPanelFields(n);
       break;
@@ -2195,18 +2351,34 @@ function buildTypeSpecificFields(n) {
       html += playerTextField("Ending text (player-visible)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
       break;
     case "hint":
-      var puzzleNodes = hunt.nodes.filter(function (x) { return familyOf(x.type) === "puzzle"; });
-      html += fieldWrap("Attached to puzzle node", '<select id="fForNodeId">' + selectOptions(puzzleNodes, "id", "title", c.forNodeId, "— choose puzzle —") + '</select>');
+      // No more manual picker — a hint auto-attaches to whatever node has a
+      // connection drawn into this hint node (any node type, not just
+      // puzzles; see Store.addConnection/removeConnection's syncHintForNodeIds
+      // calls and PAEngine.syncHintForNodeIds). This field is read-only,
+      // reflecting whatever that auto-detection currently resolves to.
+      var hintConnected = previousConnectingNode(hunt, n.id);
+      html += fieldWrap("Attached to", hintConnected
+        ? '<p style="font-size:12px;color:var(--text-dim)">' + esc(NODE_TYPES[hintConnected.type].icon) + ' <b>' + esc(hintConnected.title) + '</b> — auto-connected from the incoming connection drawn into this hint node.</p>'
+        : '<p class="lane-warn-note">⚠ Not connected to anything yet. Draw a connection from the node this hint should attach to, onto this hint node.</p>');
       html += '<div class="field"><label>Progressive stages (revealed in order, player-visible)</label><div id="hintStages">' +
         c.stages.map(function (s, idx) {
           var hid = "fHintStage_" + s.id, prop = "stage:" + s.id, fs = s.fontSize || 12;
+          var dm = s.delayMinutes || 0, ds = s.delaySeconds || 0;
           return '<div class="hint-block"><div class="field-label-row" style="margin-bottom:6px"><span class="hint-badge">STAGE ' + (idx + 1) + '</span>' +
             '<div class="fs-controls">' +
               '<button type="button" class="fs-btn" data-fsdec="' + prop + '" data-fstarget="' + hid + '" title="Decrease font size">−</button>' +
               '<span class="fs-val" data-fsval="' + prop + '">' + fs + 'px</span>' +
               '<button type="button" class="fs-btn" data-fsinc="' + prop + '" data-fstarget="' + hid + '" title="Increase font size">+</button>' +
             '</div></div>' +
-            '<textarea id="' + hid + '" data-hid="' + s.id + '" class="hintStageInput autoscale-ta" style="font-size:' + fs + 'px">' + esc(s.text) + '</textarea><div style="text-align:right;margin-top:4px"><button class="small-btn" data-hid="' + s.id + '">Remove stage</button></div></div>';
+            '<textarea id="' + hid + '" data-hid="' + s.id + '" class="hintStageInput autoscale-ta" style="font-size:' + fs + 'px">' + esc(s.text) + '</textarea>' +
+            '<div class="field-label-row" style="margin-top:6px;gap:6px;align-items:center">' +
+              '<label style="font-size:11px;color:var(--text-dim)">Reveal this many minutes/seconds after the attached node first activates:</label>' +
+            '</div>' +
+            '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">' +
+              '<input type="number" min="0" class="hintStageDelayMin" data-hid="' + s.id + '" value="' + dm + '" style="width:64px" /><span style="font-size:11px;color:var(--text-dim)">min</span>' +
+              '<input type="number" min="0" max="59" class="hintStageDelaySec" data-hid="' + s.id + '" value="' + ds + '" style="width:64px" /><span style="font-size:11px;color:var(--text-dim)">sec</span>' +
+            '</div>' +
+            '<div style="text-align:right;margin-top:4px"><button class="small-btn" data-hid="' + s.id + '">Remove stage</button></div></div>';
         }).join("") + '</div><button class="small-btn" id="btnAddHintStage">+ Add stage</button></div>';
       break;
     case "locationPlaceholder":
@@ -2848,6 +3020,152 @@ function wireConstraintSatisfactionFields(c) {
       if (cur <= 0) return;
       r.requirements[btn.dataset.itemid] = cur - 1;
       afterEdit(false); renderInspector();
+    };
+  });
+}
+
+/* Weight Scale Builder — bespoke inspector: a flat, resizable (1-WS_MAX_ITEMS)
+   list of tokens, each either a preset shape+colour or an uploaded photo
+   plus a hidden weight, in an expandable <details> builder pane (same
+   "standard fields, then a collapsible build pane below" shape as Gear &
+   Pulley/Control Panel — see buildTypeSpecificFields's "gearPulley" case in
+   this file). Unlike those two there's no spatial board to design and
+   nothing shared with engine.js beyond WS_MAX_ITEMS/WS_SHAPES (aliased at
+   the top of this file), so this needed no "Open in Larger Pane" overlay —
+   a flat list never benefits from extra screen real estate the way a
+   drag-to-place board does (same reasoning as Constraint Satisfaction's
+   item/recipient lists just above, which also skip an overlay). */
+var wsDesignerUiState = {};
+function wsUiState(n) {
+  if (!wsDesignerUiState[n.id]) wsDesignerUiState[n.id] = { expanded: true };
+  return wsDesignerUiState[n.id];
+}
+
+function resizeWsItems(c, count) {
+  c.items = c.items || [];
+  count = Math.max(1, Math.min(WS_MAX_ITEMS, Number(count) || 1));
+  var colorCycle = ["#c0524a", "#3f8f8f", "#c9a233", "#5c7a35", "#9c4368", "#4a5a91", "#a15b2c", "#5a8a7a"];
+  while (c.items.length < count) {
+    var idx = c.items.length;
+    c.items.push({ id: uid("wsit"), kind: "shape", shape: WS_SHAPES[idx % WS_SHAPES.length], color: colorCycle[idx % colorCycle.length], weight: 4 + idx * 2, imageAsset: "" });
+  }
+  while (c.items.length > count) c.items.pop();
+}
+
+function buildWeightScaleFields(n) {
+  var c = n.content;
+  c.items = c.items || [];
+  if (!c.items.length) resizeWsItems(c, 6);
+  var items = c.items;
+
+  var html = playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+
+  var wsExpanded = wsUiState(n).expanded !== false; // expanded by default; collapsed state persists across inspector re-renders (see the "toggle" listener in wireNodeInspector)
+  html += '<details class="ws-builder-details"' + (wsExpanded ? " open" : "") + ' id="wsBuilderDetails">' +
+    '<summary class="ws-builder-summary"><span class="ws-builder-chevron">▸</span>⚖️ Token Builder — shapes, colours, photos &amp; weights</summary>' +
+    '<div class="ws-builder-body">';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:8px 0 8px">Set up to ' + WS_MAX_ITEMS + ' tokens for the player to sort onto the two pans. Give each one a preset shape and colour, or upload a photo instead. Every weight is hidden from the player until the scale balances — it only needs to add up correctly, nothing here is shown to them directly.</p>';
+
+  html += fieldWrap("Number of tokens", '<select id="fWsItemCount">' + [1, 2, 3, 4, 5, 6, 7, 8].map(function (v) {
+    return '<option value="' + v + '"' + (items.length === v ? " selected" : "") + '>' + v + '</option>';
+  }).join("") + '</select>');
+
+  var totalWeight = items.reduce(function (s, it) { return s + (Number(it.weight) || 0); }, 0);
+  html += '<p style="font-size:11px;margin:4px 0 10px;color:' + (totalWeight % 2 === 0 ? "var(--text-dim)" : "var(--danger)") + '">Total weight: <b>' + totalWeight + '</b>' +
+    (totalWeight % 2 === 0 ? " — an exact 50/50 split is possible." : " — odd total, no exact balance is possible! Adjust a weight below.") + '</p>';
+
+  html += '<div id="wsItemList">' + items.map(function (it, idx) {
+    var isImage = it.kind === "image";
+    var swatch = '<span class="ws-item-swatch' + (isImage ? "" : " ws-shape-" + esc(it.shape || "circle")) + '"' +
+      (isImage ? (it.imageAsset ? ' style="background-image:url(\'' + esc(it.imageAsset) + '\')"' : "") : ' style="--tok-color:' + esc(it.color || "#8a8a8a") + '"') + '></span>';
+    return '<div class="ws-item-block" data-itemid="' + it.id + '">' +
+      '<div class="ws-item-header">' + swatch + '<span class="chip">' + (idx + 1) + '</span>' +
+      '<select class="wsItemKindSelect" data-itemid="' + it.id + '">' +
+        '<option value="shape"' + (!isImage ? " selected" : "") + '>Preset shape</option>' +
+        '<option value="image"' + (isImage ? " selected" : "") + '>Uploaded photo</option>' +
+      '</select>' +
+      '<label class="ws-item-weight-label">Weight<input type="number" class="wsItemWeightInput" data-itemid="' + it.id + '" min="1" max="99" value="' + (Number(it.weight) || 1) + '" /></label>' +
+      '</div>' +
+      '<div class="ws-item-body">' +
+      (isImage ?
+        ('<input type="file" id="wsItemFile_' + it.id + '" accept="image/*" style="display:none" />' +
+          (it.imageAsset ? '<img class="ws-item-thumb" src="' + esc(it.imageAsset) + '" alt="" />' : '<div class="ws-item-thumb ws-item-thumb-empty">No photo</div>') +
+          '<div style="display:flex;gap:6px;margin-top:4px">' +
+            '<button type="button" class="small-btn wsItemUploadBtn" data-itemid="' + it.id + '">⬆ Upload</button>' +
+            (it.imageAsset ? '<button type="button" class="small-btn wsItemClearBtn" data-itemid="' + it.id + '" style="color:var(--danger)">✕</button>' : "") +
+          '</div>')
+        :
+        ('<select class="wsItemShapeSelect" data-itemid="' + it.id + '">' + WS_SHAPES.map(function (s) {
+          return '<option value="' + s + '"' + ((it.shape || "circle") === s ? " selected" : "") + '>' + s.charAt(0).toUpperCase() + s.slice(1) + '</option>';
+        }).join("") + '</select>' +
+        '<input type="color" class="wsItemColorInput" data-itemid="' + it.id + '" value="' + esc(it.color || "#8a8a8a") + '" />')
+      ) +
+      '</div></div>';
+  }).join("") + '</div>';
+
+  html += '</div></details>';
+  return html;
+}
+
+function wireWeightScaleFields(n) {
+  var c = n.content;
+  var byId = function (id) { return document.getElementById(id); };
+
+  if (byId("fWsItemCount")) byId("fWsItemCount").onchange = function (e) {
+    resizeWsItems(c, e.target.value); afterEdit(false); renderInspector();
+  };
+  if (byId("wsBuilderDetails")) byId("wsBuilderDetails").addEventListener("toggle", function (e) { wsUiState(n).expanded = e.target.open; });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".wsItemKindSelect"), function (sel) {
+    sel.onchange = function (e) {
+      var it = c.items.find(function (x) { return x.id === sel.dataset.itemid; });
+      if (it) it.kind = e.target.value;
+      afterEdit(false); renderInspector();
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".wsItemWeightInput"), function (inp) {
+    inp.oninput = function (e) {
+      var it = c.items.find(function (x) { return x.id === inp.dataset.itemid; });
+      if (it) it.weight = Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1));
+    };
+    inp.onblur = function () { afterEdit(false); renderInspector(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".wsItemShapeSelect"), function (sel) {
+    sel.onchange = function (e) {
+      var it = c.items.find(function (x) { return x.id === sel.dataset.itemid; });
+      if (it) it.shape = e.target.value;
+      afterEdit(false); renderInspector();
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".wsItemColorInput"), function (inp) {
+    inp.oninput = function (e) {
+      var it = c.items.find(function (x) { return x.id === inp.dataset.itemid; });
+      if (it) it.color = e.target.value;
+    };
+    inp.onchange = function () { afterEdit(false); renderInspector(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".wsItemUploadBtn"), function (btn) {
+    btn.onclick = function () { byId("wsItemFile_" + btn.dataset.itemid).click(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#wsItemList input[type="file"]'), function (fileInp) {
+    fileInp.onchange = function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var itemid = fileInp.id.replace("wsItemFile_", "");
+      readImageFileCompressed(file, function (dataUrl) {
+        if (!dataUrl) { toast("Couldn't read that image file."); return; }
+        var it = c.items.find(function (x) { return x.id === itemid; });
+        if (it) it.imageAsset = dataUrl;
+        afterEdit(); renderInspector();
+        toast("Image attached.");
+      });
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".wsItemClearBtn"), function (btn) {
+    btn.onclick = function () {
+      var it = c.items.find(function (x) { return x.id === btn.dataset.itemid; });
+      if (it) it.imageAsset = "";
+      afterEdit(); renderInspector();
     };
   });
 }
@@ -4892,6 +5210,10 @@ function wireNodeInspector(n) {
       });
       if (byId("gpBtnAddDecoy")) byId("gpBtnAddDecoy").onclick = function () { c.decoyTeeth.push(GP_TEETH_DEFAULT); afterEdit(false); renderInspector(); };
       break;
+    case "weightScale":
+      bindText("fPrompt", "prompt");
+      wireWeightScaleFields(n);
+      break;
     case "controlPanel":
       bindText("fPrompt", "prompt");
       c.board = c.board || { width: 640, upperHeight: 220, lowerHeight: 260 };
@@ -4983,15 +5305,24 @@ function wireNodeInspector(n) {
       if (byId("fReqMode")) byId("fReqMode").onchange = function (e) { c.requiredMode = e.target.value; afterEdit(false); renderInspector(); };
       break;
     case "hint":
-      bindChange("fForNodeId", function (v) { c.forNodeId = v; });
+      // "Attached to" is now a read-only auto-detected display, not a
+      // bound field — nothing to wire for it (see syncHintForNodeIds).
       Array.prototype.forEach.call(document.querySelectorAll(".hintStageInput"), function (ta) {
         ta.oninput = function (e) { var s = c.stages.find(function (x) { return x.id === ta.dataset.hid; }); if (s) s.text = e.target.value; };
         ta.onblur = function () { afterEdit(false); };
       });
+      Array.prototype.forEach.call(document.querySelectorAll(".hintStageDelayMin"), function (inp) {
+        inp.oninput = function (e) { var s = c.stages.find(function (x) { return x.id === inp.dataset.hid; }); if (s) s.delayMinutes = Math.max(0, Number(e.target.value) || 0); };
+        inp.onchange = function () { afterEdit(false); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".hintStageDelaySec"), function (inp) {
+        inp.oninput = function (e) { var s = c.stages.find(function (x) { return x.id === inp.dataset.hid; }); if (s) s.delaySeconds = Math.max(0, Math.min(59, Number(e.target.value) || 0)); };
+        inp.onchange = function () { afterEdit(false); };
+      });
       Array.prototype.forEach.call(document.querySelectorAll("#hintStages button"), function (btn) {
         btn.onclick = function () { c.stages = c.stages.filter(function (s) { return s.id !== btn.dataset.hid; }); afterEdit(false); renderInspector(); };
       });
-      if (byId("btnAddHintStage")) byId("btnAddHintStage").onclick = function () { c.stages.push({ id: uid("hs"), text: "Another hint stage." }); afterEdit(false); renderInspector(); };
+      if (byId("btnAddHintStage")) byId("btnAddHintStage").onclick = function () { c.stages.push({ id: uid("hs"), text: "Another hint stage.", delayMinutes: 0, delaySeconds: 0 }); afterEdit(false); renderInspector(); };
       break;
     case "imageReveal":
       wireImageRevealFields(c);
@@ -5690,13 +6021,150 @@ function openHuntById(id) {
   Store.replaceHunt(clone(hunt));
   showStudioScreen();
 }
-function createNewHuntAndOpen() {
-  var h = newHunt();
+/* ---------------------------------------------------------------------
+   New Hunt wizard — two-step overlay opened from the Library screen's
+   "＋ New Hunt" button. Step 1 picks the hunt's type (HUNT_TYPES); step 2
+   picks which lanes it uses (LANES) and, per chosen lane, which icon
+   variant (LANE_ICON_VARIANTS) shows in the player's tab bar. Only on
+   "Create" does this actually build+save+open a hunt — everything before
+   that is just local wizard state (NewHuntWizard), thrown away on cancel.
+--------------------------------------------------------------------- */
+var NewHuntWizard = { step: 1, type: null, lanes: {}, laneIcons: {} };
+
+function openNewHuntWizard() {
+  NewHuntWizard.step = 1;
+  NewHuntWizard.type = null;
+  NewHuntWizard.lanes = {};
+  LANES.forEach(function (l) { NewHuntWizard.lanes[l.id] = true; }); // all 5 lanes on by default
+  NewHuntWizard.laneIcons = {};
+  document.getElementById("newHuntOverlay").classList.remove("hidden");
+  renderNewHuntWizard();
+}
+function closeNewHuntWizard() {
+  document.getElementById("newHuntOverlay").classList.add("hidden");
+}
+
+function renderNewHuntWizard() {
+  document.getElementById("nhwSteps").textContent = "Step " + NewHuntWizard.step + " of 2";
+  document.getElementById("nhwBody").innerHTML = NewHuntWizard.step === 1 ? buildNhwStep1() : buildNhwStep2();
+  wireNhwBody();
+  updateNhwFooter();
+}
+
+function buildNhwStep1() {
+  var html = '<div class="nhw-step-title">What type of hunt is this?</div>';
+  html += '<div class="nhw-step-sub">This shapes which gameplay mechanics the hunt has available to it.</div>';
+  html += '<div class="nhw-type-grid">';
+  HUNT_TYPES.forEach(function (t) {
+    var selected = NewHuntWizard.type === t.id;
+    html += '<button type="button" class="nhw-type-card' + (selected ? " selected" : "") + (t.disabled ? " disabled" : "") +
+      '" data-type="' + t.id + '"' + (t.disabled ? " disabled" : "") + '>' +
+      '<span class="nhw-type-emoji">' + t.emoji + '</span>' +
+      '<span class="nhw-type-label">' + esc(t.label) + '</span>' +
+      '<span class="nhw-type-desc">' + esc(t.description) + '</span>' +
+      (t.disabled ? '<span class="nhw-soon">Coming soon</span>' : '') +
+      '</button>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function laneIconVariantSvg(laneId, key) {
+  var v = LANE_ICON_VARIANTS[laneId];
+  return (v && v[key]) || LANE_TAB_SVG[laneId] || "";
+}
+
+function buildNhwStep2() {
+  var html = '<div class="nhw-step-title">Which lanes does this hunt need?</div>';
+  html += '<div class="nhw-step-sub">Each lane you switch on becomes a row on your canvas and a tab in the player app. Pick an icon for each one — the choice only affects the player app\'s tab bar.</div>';
+  html += '<div class="nhw-lane-list">';
+  LANES.forEach(function (l) {
+    var on = !!NewHuntWizard.lanes[l.id];
+    var chosenIcon = NewHuntWizard.laneIcons[l.id] || "default";
+    html += '<div class="nhw-lane-row' + (on ? "" : " off") + '">' +
+      '<label class="nhw-lane-row-head">' +
+        '<input type="checkbox" class="nhw-lane-checkbox" data-lane-toggle="' + l.id + '"' + (on ? " checked" : "") + ' />' +
+        '<span class="nhw-lane-icon-preview" style="color:var(--lane-' + l.id + ')">' + laneIconVariantSvg(l.id, chosenIcon) + '</span>' +
+        '<span class="nhw-lane-label">' + esc(l.label) + '</span>' +
+      '</label>';
+    if (on) {
+      html += '<div class="nhw-lane-icon-options">' + LANE_ICON_CHOICES[l.id].map(function (pair) {
+        var key = pair[0], iconLabel = pair[1];
+        var sel = key === chosenIcon;
+        return '<button type="button" class="nhw-icon-btn' + (sel ? " selected" : "") + '" data-lane-icon="' + l.id + '" data-icon-key="' + key + '" title="' + esc(iconLabel) + '">' +
+          laneIconVariantSvg(l.id, key) + '</button>';
+      }).join("") + '</div>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function wireNhwBody() {
+  var body = document.getElementById("nhwBody");
+  if (NewHuntWizard.step === 1) {
+    Array.prototype.forEach.call(body.querySelectorAll(".nhw-type-card"), function (card) {
+      card.onclick = function () {
+        if (card.disabled) return;
+        NewHuntWizard.type = card.dataset.type;
+        renderNewHuntWizard();
+      };
+    });
+  } else {
+    Array.prototype.forEach.call(body.querySelectorAll("[data-lane-toggle]"), function (cb) {
+      cb.onchange = function () {
+        NewHuntWizard.lanes[cb.dataset.laneToggle] = cb.checked;
+        renderNewHuntWizard();
+      };
+    });
+    Array.prototype.forEach.call(body.querySelectorAll("[data-lane-icon]"), function (btn) {
+      btn.onclick = function () {
+        NewHuntWizard.laneIcons[btn.dataset.laneIcon] = btn.dataset.iconKey;
+        renderNewHuntWizard();
+      };
+    });
+  }
+}
+
+function nhwSelectedLaneCount() {
+  return LANES.filter(function (l) { return NewHuntWizard.lanes[l.id]; }).length;
+}
+
+function updateNhwFooter() {
+  var backBtn = document.getElementById("nhwBtnBack");
+  var nextBtn = document.getElementById("nhwBtnNext");
+  var createBtn = document.getElementById("nhwBtnCreate");
+  backBtn.classList.toggle("hidden", NewHuntWizard.step === 1);
+  nextBtn.classList.toggle("hidden", NewHuntWizard.step !== 1);
+  createBtn.classList.toggle("hidden", NewHuntWizard.step !== 2);
+  nextBtn.disabled = !NewHuntWizard.type;
+  createBtn.disabled = nhwSelectedLaneCount() === 0;
+}
+
+function nhwBack() {
+  if (NewHuntWizard.step > 1) { NewHuntWizard.step--; renderNewHuntWizard(); }
+}
+function nhwNext() {
+  if (!NewHuntWizard.type) return;
+  NewHuntWizard.step = 2;
+  renderNewHuntWizard();
+}
+function nhwCreate() {
+  var lanes = LANES.filter(function (l) { return NewHuntWizard.lanes[l.id]; }).map(function (l) { return l.id; });
+  if (!lanes.length) return;
+  var laneIcons = {};
+  lanes.forEach(function (id) {
+    if (NewHuntWizard.laneIcons[id] && NewHuntWizard.laneIcons[id] !== "default") laneIcons[id] = NewHuntWizard.laneIcons[id];
+  });
+  var h = newHunt(undefined, NewHuntWizard.type, lanes, laneIcons);
   upsertHuntInLibrary(h);
   Store.replaceHunt(clone(h));
+  closeNewHuntWizard();
   showStudioScreen();
   toast("Created a new hunt.");
 }
+
 function openTemplateAndOpen(template, label) {
   var h = clone(template);
   h.id = uid("hunt");
@@ -6247,12 +6715,13 @@ function renderPlayerTabBar(ctl, tabBarEl) {
   // lane something new landed in — only other lanes accumulate a count.
   if (activeLane) dismissLane(ctl, activeLane, currentSceneIdForCtl(ctl));
 
-  tabBarEl.innerHTML = LANES.map(function (l) {
+  var hunt = ctl.session.hunt;
+  tabBarEl.innerHTML = huntLanes(hunt).map(function (l) {
     var active = l.id === activeLane;
     var count = active ? 0 : laneBadgeCount(ctl, l.id);
     return '<button class="player-tab' + (active ? " active" : "") + '" data-lane="' + l.id + '"' +
       ' title="' + esc(l.label) + '" aria-label="' + esc(l.label) + '">' +
-      '<span class="player-tab-icon">' + l.icon + '</span>' +
+      '<span class="player-tab-icon">' + laneIconSvg(hunt, l.id) + '</span>' +
       (count > 0 ? '<span class="player-tab-badge">' + (count > 9 ? "9+" : count) + '</span>' : '') +
       '</button>';
   }).join("");
@@ -6815,6 +7284,37 @@ function wireHotspotSidePanelEvents() {
 }
 
 /* ---------------------------------------------------------------------
+   Progressive hint auto-reveal ticking (Preview + LiveMock)
+--------------------------------------------------------------------- */
+// Called on a 1s interval (see init() below). For each hint block currently
+// on screen in either preview pane, recomputes its markup (PAEngine.
+// renderHintBlockHtml folds in both manual reveal progress and the new
+// time-based auto-reveal) and only touches the DOM if it actually changed —
+// so a puzzle mid-interaction elsewhere on the same screen is never
+// re-rendered out from under the player.
+function tickHintReveals() {
+  [Preview, LiveMock].forEach(function (ctl) {
+    if (!ctl || !ctl.session) return;
+    var hunt = ctl.session.hunt, state = ctl.session.state;
+    [ctl.mainEl, ctl.sideEl].forEach(function (root) {
+      if (!root) return;
+      Array.prototype.forEach.call(root.querySelectorAll("[data-hint-wrap]"), function (wrap) {
+        var h = hunt.nodes.find(function (n) { return n.id === wrap.dataset.hintWrap; });
+        if (!h) return;
+        var shown = Math.max(state.hintProgress[h.id] || 0, autoRevealedHintStageCount(hunt, state, h));
+        if (String(shown) === wrap.dataset.shown) return; // nothing new to reveal — leave the DOM alone
+        var tmp = document.createElement("div");
+        tmp.innerHTML = renderHintBlockHtml(ctl.session, h);
+        var freshEl = tmp.firstChild;
+        freshEl.dataset.shown = String(shown);
+        wrap.parentNode.replaceChild(freshEl, wrap);
+        wireHintButtons(ctl.session, freshEl, ctl);
+      });
+    });
+  });
+}
+
+/* ---------------------------------------------------------------------
    Bootstrap
 --------------------------------------------------------------------- */
 function init() {
@@ -6841,6 +7341,14 @@ function init() {
   var previewTabBarEl = document.getElementById("previewTabBar");
   LiveMock.onRender = function (ctl) { updateCanvasPlayerHighlight(ctl); renderPlayerTabBar(ctl, mockTabBarEl); };
   Preview.onRender = function (ctl) { renderPlayerTabBar(ctl, previewTabBarEl); };
+
+  // Progressive hint stages can now auto-reveal purely from elapsed time
+  // (see PAEngine.autoRevealedHintStageCount) rather than only from a
+  // manual "Reveal hint" click, so the preview panes need to notice time
+  // passing even when the player isn't doing anything. Polling + patching
+  // just the [data-hint-wrap] blocks in place (instead of a full ctl.render())
+  // means this never disturbs in-progress puzzle input elsewhere on screen.
+  setInterval(tickHintReveals, 1000);
 
   initCanvasInteraction();
   initPaletteDrop();
@@ -6899,7 +7407,11 @@ function init() {
   document.getElementById("ctpbBtnDone").onclick = closeControlPanelBuilder;
 
   // Library screen controls
-  document.getElementById("btnNewHunt").onclick = createNewHuntAndOpen;
+  document.getElementById("btnNewHunt").onclick = openNewHuntWizard;
+  document.getElementById("nhwBtnCancel").onclick = closeNewHuntWizard;
+  document.getElementById("nhwBtnBack").onclick = nhwBack;
+  document.getElementById("nhwBtnNext").onclick = nhwNext;
+  document.getElementById("nhwBtnCreate").onclick = nhwCreate;
   document.getElementById("btnLibImport").onclick = function () { document.getElementById("fileLibImport").click(); };
   document.getElementById("fileLibImport").onchange = function (e) {
     if (e.target.files[0]) importHuntFileToLibrary(e.target.files[0]);

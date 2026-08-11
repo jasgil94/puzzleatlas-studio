@@ -349,6 +349,27 @@
     </div>
   </div>
 
+  <!-- New Hunt wizard — opened from the Library screen's "＋ New Hunt"
+       button. Lives outside libraryScreen/studioScreen (both toggle
+       .hidden independently of this) so it can overlay either. -->
+  <div id="newHuntOverlay" class="overlay hidden">
+    <div class="nhw-window">
+      <div class="nhw-header">
+        <span class="nhw-title">New Hunt</span>
+        <span class="nhw-steps" id="nhwSteps">Step 1 of 2</span>
+        <button class="btn small" id="nhwBtnCancel">✕ Cancel</button>
+      </div>
+      <div class="nhw-body" id="nhwBody"></div>
+      <div class="nhw-footer">
+        <button class="btn hidden" id="nhwBtnBack">← Back</button>
+        <div class="nhw-footer-right">
+          <button class="btn primary-btn" id="nhwBtnNext">Next →</button>
+          <button class="btn primary-btn hidden" id="nhwBtnCreate">＋ Create Hunt</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
 
 </div>
