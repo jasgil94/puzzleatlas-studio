@@ -115,6 +115,13 @@ var gpGearPathD = PAEngine.gpGearPathD;
 var gpComputeMesh = PAEngine.gpComputeMesh;
 var gpSolveState = PAEngine.gpSolveState;
 
+// Lock and Key — the "which keys does this puzzle's supplying keychain
+// offer" lookup, shared with engine.js's player runtime (see the comment
+// above NODE_TYPES.lockAndKey in engine.js) and used below by
+// buildLockAndKeyFields's "correct key" picker.
+var lockAndKeySupplyConnection = PAEngine.lockAndKeySupplyConnection;
+var lockAndKeyOptions = PAEngine.lockAndKeyOptions;
+
 var PLAYER_SCREEN_TYPES = PAEngine.PLAYER_SCREEN_TYPES;
 var DEFAULT_BUTTON_LABEL = PAEngine.DEFAULT_BUTTON_LABEL;
 var BUTTON_LABEL_TYPES = PAEngine.BUTTON_LABEL_TYPES;
@@ -430,6 +437,20 @@ var Store = {
     var exists = this.hunt.connections.some(function (c) { return c.sourceId === sourceId && c.targetId === targetId; });
     if (exists) { toast("Connection already exists"); return null; }
     var c = newConnection(sourceId, targetId);
+    // Lock and Key — a connection drawn from a Keychain node straight onto
+    // a Lock and Key puzzle node is automatically tagged as that puzzle's
+    // "keychain supply" (see the comment on NODE_TYPES.lockAndKey in
+    // engine.js), exactly the same "picking the connection auto-writes its
+    // condition" idea as setStoryButtonConnection uses for Story Block
+    // buttons/Clickable Image hotspots — a creator never has to hand-edit
+    // this connection's condition themselves. Harmless if a puzzle
+    // somehow ends up with more than one such connection into it:
+    // lockAndKeySupplyConnection (engine.js) just uses whichever one
+    // Array#find sees first.
+    var srcNode = this.getNode(sourceId), tgtNode = this.getNode(targetId);
+    if (srcNode && tgtNode && srcNode.type === "keychain" && tgtNode.type === "lockAndKey") {
+      c.condition = { type: "keychainSupply" };
+    }
     this.hunt.connections.push(c);
     this.pushHistory();
     return c;
@@ -534,6 +555,10 @@ var SUGGESTED_LANE = {
   timer: "leads", attemptLimiter: "leads",
   combineCraftItem: "inventory", trade: "inventory",
   hintUnlockCost: "hints",
+  // Lock and Key — the puzzle itself sits alongside its Leads siblings;
+  // its Key/Keychain items sit in Inventory next to Award Item, same
+  // pairing as every other puzzle + the item(s) it depends on.
+  lockAndKey: "leads", key: "inventory", keychain: "inventory",
   // Media nodes are content reveals like Scene, so they default to Story;
   // Map Display is the one exception since it's literally a map.
   imageReveal: "story", audioReveal: "story", videoReveal: "story", documentReveal: "story", gallery: "story", pdfReveal: "story",
@@ -542,6 +567,10 @@ var SUGGESTED_LANE = {
   // picks a route, like Choice/Story Block), not a passive content reveal,
   // so it defaults to Leads alongside them rather than Story.
   clickableImage: "leads",
+  // Cell Phone is a self-contained, replayable prop meant to be granted
+  // to the player and then opened from their Inventory tab at will (see
+  // NODE_TYPES.cellPhone in engine.js) — Inventory, not Story/Leads.
+  cellPhone: "inventory",
   // Real-world input nodes are Location Placeholder's siblings, so they
   // default to the same Map lane.
   photoUploadVerification: "map", geolocationCheckIn: "map", qrNfcScan: "map", gameMasterCheckIn: "map"
@@ -2107,6 +2136,15 @@ function buildTypeSpecificFields(n) {
     case "constraintSatisfaction":
       html += buildConstraintSatisfactionFields(c);
       break;
+    case "lockAndKey":
+      html += buildLockAndKeyFields(n);
+      break;
+    case "key":
+      html += buildKeyFields(c);
+      break;
+    case "keychain":
+      html += buildKeychainFields(n);
+      break;
     case "awardItem":
       html += fieldWrap("Item to award", '<select id="fItemId">' + selectOptions(hunt.items, "id", "name", c.itemId, "— choose item —") + '</select>');
       break;
@@ -2155,6 +2193,9 @@ function buildTypeSpecificFields(n) {
       break;
     case "clickableImage":
       html += buildClickableImageFields(c);
+      break;
+    case "cellPhone":
+      html += buildCellPhoneFields(c);
       break;
     default:
       html += buildGenericContentFields(n);
@@ -2286,6 +2327,200 @@ function wirePdfRevealFields(c) {
     byId("fPdfCaption").oninput = function (e) { c.caption = e.target.value; };
     byId("fPdfCaption").onblur = function () { afterEdit(); };
   }
+}
+
+/* Cell Phone — bespoke inspector: which of the three built-in apps show
+   on the phone's home screen, then three flat list editors (Contacts,
+   Voicemails, SMS Threads) each following the same "list of blocks, each
+   with a + Add / ✕ Remove button" pattern as e.g. Fuse Panel's switches
+   above. Audio clips reuse readImageFileCompressed for the upload (see
+   its own comment above buildPdfRevealFields — for any non-image file
+   type it's just a raw data-URI read, exactly what an audio clip needs)
+   rather than a bespoke audio reader. See NODE_TYPES.cellPhone in
+   engine.js for the full content shape this reads/writes and
+   renderPreviewNode's "cellPhone" branch for how it's played back. */
+function buildCellPhoneFields(c) {
+  c.sections = c.sections || { calls: true, voicemails: true, sms: true };
+  c.contacts = c.contacts || [];
+  c.voicemails = c.voicemails || [];
+  c.smsThreads = c.smsThreads || [];
+
+  var html = '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">A self-contained prop, not a one-shot content reveal — place this node in the Inventory lane and connect something into it to "grant" it (that connection is labelled Grant Item in the Completion section). The player can then open it from their Inventory tab as many times as they like for the rest of the hunt.</p>';
+
+  html += '<div class="section-title">Home screen apps</div>';
+  html += '<div class="field"><label>Which apps appear on the phone\'s home screen</label>' +
+    '<label class="cp-inline-check"><input type="checkbox" id="fCpSecCalls"' + (c.sections.calls ? " checked" : "") + ' /> 📞 Calls</label>' +
+    '<label class="cp-inline-check"><input type="checkbox" id="fCpSecVoicemails"' + (c.sections.voicemails ? " checked" : "") + ' /> 📼 Voicemails</label>' +
+    '<label class="cp-inline-check"><input type="checkbox" id="fCpSecSms"' + (c.sections.sms ? " checked" : "") + ' /> 💬 Messages</label>' +
+    '</div>';
+
+  html += '<div class="section-title">📞 Calls — contacts &amp; numbers</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">A dialled number that matches one of a contact\'s accepted numbers rings a couple of times then plays that contact\'s audio clip; anything else gets an engaged/busy tone. Turn off "Show in contacts list" for a number the player has to already know (found elsewhere in the hunt) rather than one they can just pick from the list.</p>';
+  html += '<div id="cpContactList">' + c.contacts.map(function (ct, i) {
+    return '<div class="cp-item-block" data-ctid="' + esc(ct.id) + '">' +
+      '<div class="cp-item-row"><span class="chip">' + (i + 1) + '</span>' +
+      '<input type="text" class="cpCtName" data-ctid="' + esc(ct.id) + '" value="' + esc(ct.name || "") + '" placeholder="Contact name" style="flex:1" />' +
+      '<button class="small-btn cpCtRemove" data-ctid="' + esc(ct.id) + '">✕</button></div>' +
+      '<div class="field"><label>Accepted numbers (comma-separated)</label><input type="text" class="cpCtNumbers" data-ctid="' + esc(ct.id) + '" value="' + esc(ct.numbers || "") + '" placeholder="e.g. 07911 123456, 01914 960000" /></div>' +
+      '<label class="cp-inline-check"><input type="checkbox" class="cpCtShow" data-ctid="' + esc(ct.id) + '"' + (ct.showInContacts !== false ? " checked" : "") + ' /> Show in contacts list</label>' +
+      '<div class="field"><label>Audio clip (plays once connected)</label>' +
+      '<input type="file" class="cpCtAudioFile" data-ctid="' + esc(ct.id) + '" accept="audio/*" style="display:none" />' +
+      '<button class="small-btn cpCtAudioBtn" data-ctid="' + esc(ct.id) + '">⬆ ' + (ct.audioAsset ? "Replace" : "Upload") + ' audio</button>' +
+      (ct.audioAsset ? ' <button class="small-btn cpCtAudioClear" data-ctid="' + esc(ct.id) + '" style="color:var(--danger)">✕ Remove audio</button><audio controls src="' + esc(ct.audioAsset) + '" style="display:block;margin-top:6px;max-width:100%"></audio>' : '') +
+      '</div></div>';
+  }).join("") + '</div><button class="small-btn" id="btnCpAddContact">+ Add contact</button>';
+
+  html += '<div class="section-title">📼 Voicemails</div>';
+  html += '<div id="cpVoicemailList">' + c.voicemails.map(function (vm, i) {
+    return '<div class="cp-item-block" data-vmid="' + esc(vm.id) + '">' +
+      '<div class="cp-item-row"><span class="chip">' + (i + 1) + '</span>' +
+      '<input type="text" class="cpVmName" data-vmid="' + esc(vm.id) + '" value="' + esc(vm.name || "") + '" placeholder="Voicemail name" style="flex:1" />' +
+      '<button class="small-btn cpVmRemove" data-vmid="' + esc(vm.id) + '">✕</button></div>' +
+      '<div class="field"><label>Audio clip</label>' +
+      '<input type="file" class="cpVmAudioFile" data-vmid="' + esc(vm.id) + '" accept="audio/*" style="display:none" />' +
+      '<button class="small-btn cpVmAudioBtn" data-vmid="' + esc(vm.id) + '">⬆ ' + (vm.audioAsset ? "Replace" : "Upload") + ' audio</button>' +
+      (vm.audioAsset ? ' <button class="small-btn cpVmAudioClear" data-vmid="' + esc(vm.id) + '" style="color:var(--danger)">✕ Remove audio</button><audio controls src="' + esc(vm.audioAsset) + '" style="display:block;margin-top:6px;max-width:100%"></audio>' : '') +
+      '</div></div>';
+  }).join("") + '</div><button class="small-btn" id="btnCpAddVoicemail">+ Add voicemail</button>';
+
+  html += '<div class="section-title">💬 Messages</div>';
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Add each message in the order it appears in the thread and mark it Sent (from the player) or Received — sent messages line up on the right, received on the left, same as a real SMS app.</p>';
+  html += '<div id="cpSmsList">' + c.smsThreads.map(function (th, ti) {
+    th.messages = th.messages || [];
+    return '<div class="cp-item-block" data-thid="' + esc(th.id) + '">' +
+      '<div class="cp-item-row"><span class="chip">' + (ti + 1) + '</span>' +
+      '<input type="text" class="cpThName" data-thid="' + esc(th.id) + '" value="' + esc(th.name || "") + '" placeholder="Thread name (contact)" style="flex:1" />' +
+      '<button class="small-btn cpThRemove" data-thid="' + esc(th.id) + '">✕ Remove thread</button></div>' +
+      '<div class="cp-msg-list">' + th.messages.map(function (m) {
+        return '<div class="cp-msg-row" data-msgid="' + esc(m.id) + '">' +
+          '<select class="cpMsgSent" data-thid="' + esc(th.id) + '" data-msgid="' + esc(m.id) + '"><option value="0"' + (!m.sent ? " selected" : "") + '>Received</option><option value="1"' + (m.sent ? " selected" : "") + '>Sent</option></select>' +
+          '<textarea class="cpMsgText" data-thid="' + esc(th.id) + '" data-msgid="' + esc(m.id) + '" rows="2" placeholder="Message text">' + esc(m.text || "") + '</textarea>' +
+          '<button class="small-btn cpMsgRemove" data-thid="' + esc(th.id) + '" data-msgid="' + esc(m.id) + '">✕</button>' +
+          '</div>';
+      }).join("") + '</div>' +
+      '<button class="small-btn cpBtnAddMsg" data-thid="' + esc(th.id) + '">+ Add message</button>' +
+      '</div>';
+  }).join("") + '</div><button class="small-btn" id="btnCpAddThread">+ Add SMS thread</button>';
+
+  return html;
+}
+
+function wireCellPhoneFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+  c.sections = c.sections || {};
+  if (byId("fCpSecCalls")) byId("fCpSecCalls").onchange = function (e) { c.sections.calls = e.target.checked; afterEdit(false); };
+  if (byId("fCpSecVoicemails")) byId("fCpSecVoicemails").onchange = function (e) { c.sections.voicemails = e.target.checked; afterEdit(false); };
+  if (byId("fCpSecSms")) byId("fCpSecSms").onchange = function (e) { c.sections.sms = e.target.checked; afterEdit(false); };
+
+  // Contacts
+  Array.prototype.forEach.call(document.querySelectorAll(".cpCtName"), function (inp) {
+    inp.oninput = function (e) { var ct = c.contacts.find(function (x) { return x.id === inp.dataset.ctid; }); if (ct) ct.name = e.target.value; };
+    inp.onblur = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpCtNumbers"), function (inp) {
+    inp.oninput = function (e) { var ct = c.contacts.find(function (x) { return x.id === inp.dataset.ctid; }); if (ct) ct.numbers = e.target.value; };
+    inp.onblur = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpCtShow"), function (chk) {
+    chk.onchange = function (e) { var ct = c.contacts.find(function (x) { return x.id === chk.dataset.ctid; }); if (ct) ct.showInContacts = e.target.checked; afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpCtRemove"), function (btn) {
+    btn.onclick = function () { c.contacts = c.contacts.filter(function (x) { return x.id !== btn.dataset.ctid; }); afterEdit(false); renderInspector(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpCtAudioBtn"), function (btn) {
+    btn.onclick = function () { var f = document.querySelector('.cpCtAudioFile[data-ctid="' + btn.dataset.ctid + '"]'); if (f) f.click(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpCtAudioFile"), function (inp) {
+    inp.onchange = function (e) {
+      var file = e.target.files && e.target.files[0]; if (!file) return;
+      var ct = c.contacts.find(function (x) { return x.id === inp.dataset.ctid; });
+      readImageFileCompressed(file, function (dataUrl) {
+        if (!dataUrl) { toast("Couldn't read that audio file."); return; }
+        if (ct) ct.audioAsset = dataUrl;
+        afterEdit(); renderInspector();
+      });
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpCtAudioClear"), function (btn) {
+    btn.onclick = function () { var ct = c.contacts.find(function (x) { return x.id === btn.dataset.ctid; }); if (ct) ct.audioAsset = ""; afterEdit(); renderInspector(); };
+  });
+  if (byId("btnCpAddContact")) byId("btnCpAddContact").onclick = function () {
+    c.contacts.push({ id: uid("cpct"), name: "New Contact", numbers: "", audioAsset: "", showInContacts: true });
+    afterEdit(false); renderInspector();
+  };
+
+  // Voicemails
+  Array.prototype.forEach.call(document.querySelectorAll(".cpVmName"), function (inp) {
+    inp.oninput = function (e) { var vm = c.voicemails.find(function (x) { return x.id === inp.dataset.vmid; }); if (vm) vm.name = e.target.value; };
+    inp.onblur = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpVmRemove"), function (btn) {
+    btn.onclick = function () { c.voicemails = c.voicemails.filter(function (x) { return x.id !== btn.dataset.vmid; }); afterEdit(false); renderInspector(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpVmAudioBtn"), function (btn) {
+    btn.onclick = function () { var f = document.querySelector('.cpVmAudioFile[data-vmid="' + btn.dataset.vmid + '"]'); if (f) f.click(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpVmAudioFile"), function (inp) {
+    inp.onchange = function (e) {
+      var file = e.target.files && e.target.files[0]; if (!file) return;
+      var vm = c.voicemails.find(function (x) { return x.id === inp.dataset.vmid; });
+      readImageFileCompressed(file, function (dataUrl) {
+        if (!dataUrl) { toast("Couldn't read that audio file."); return; }
+        if (vm) vm.audioAsset = dataUrl;
+        afterEdit(); renderInspector();
+      });
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpVmAudioClear"), function (btn) {
+    btn.onclick = function () { var vm = c.voicemails.find(function (x) { return x.id === btn.dataset.vmid; }); if (vm) vm.audioAsset = ""; afterEdit(); renderInspector(); };
+  });
+  if (byId("btnCpAddVoicemail")) byId("btnCpAddVoicemail").onclick = function () {
+    c.voicemails.push({ id: uid("cpvm"), name: "New Voicemail", audioAsset: "" });
+    afterEdit(false); renderInspector();
+  };
+
+  // SMS threads
+  Array.prototype.forEach.call(document.querySelectorAll(".cpThName"), function (inp) {
+    inp.oninput = function (e) { var th = c.smsThreads.find(function (x) { return x.id === inp.dataset.thid; }); if (th) th.name = e.target.value; };
+    inp.onblur = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpThRemove"), function (btn) {
+    btn.onclick = function () { c.smsThreads = c.smsThreads.filter(function (x) { return x.id !== btn.dataset.thid; }); afterEdit(false); renderInspector(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpMsgSent"), function (sel) {
+    sel.onchange = function (e) {
+      var th = c.smsThreads.find(function (x) { return x.id === sel.dataset.thid; });
+      var m = th && th.messages.find(function (x) { return x.id === sel.dataset.msgid; });
+      if (m) m.sent = e.target.value === "1";
+      afterEdit(false);
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpMsgText"), function (ta) {
+    ta.oninput = function (e) {
+      var th = c.smsThreads.find(function (x) { return x.id === ta.dataset.thid; });
+      var m = th && th.messages.find(function (x) { return x.id === ta.dataset.msgid; });
+      if (m) m.text = e.target.value;
+    };
+    ta.onblur = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpMsgRemove"), function (btn) {
+    btn.onclick = function () {
+      var th = c.smsThreads.find(function (x) { return x.id === btn.dataset.thid; });
+      if (th) th.messages = th.messages.filter(function (x) { return x.id !== btn.dataset.msgid; });
+      afterEdit(false); renderInspector();
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".cpBtnAddMsg"), function (btn) {
+    btn.onclick = function () {
+      var th = c.smsThreads.find(function (x) { return x.id === btn.dataset.thid; });
+      if (th) { th.messages = th.messages || []; th.messages.push({ id: uid("cpmsg"), text: "", sent: th.messages.length ? !th.messages[th.messages.length - 1].sent : false }); }
+      afterEdit(false); renderInspector();
+    };
+  });
+  if (byId("btnCpAddThread")) byId("btnCpAddThread").onclick = function () {
+    c.smsThreads.push({ id: uid("cpth"), name: "New Thread", messages: [] });
+    afterEdit(false); renderInspector();
+  };
 }
 
 /* Category Grid — bespoke inspector: 9 image sections (title, upload, two
@@ -2588,6 +2823,91 @@ function wireConstraintSatisfactionFields(c) {
       afterEdit(false); renderInspector();
     };
   });
+}
+
+/* Lock and Key — the puzzle's own inspector: a player-visible prompt plus
+   a "correct key" picker. The picker is entirely read off the graph
+   (lockAndKeyOptions, shared with engine.js's player runtime — see the
+   comment above NODE_TYPES.lockAndKey there) rather than authored here,
+   so there's nothing to keep in sync by hand: connect a Keychain to this
+   node (auto-tagged as its "keychain supply" the instant that connection
+   is drawn — see Store.addConnection above) and connect that Keychain to
+   whichever Key nodes should be on the ring, and they all just appear as
+   choices below. */
+function buildLockAndKeyFields(n) {
+  var c = n.content, hunt = Store.hunt;
+  var html = playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+
+  var supply = lockAndKeySupplyConnection(hunt, n.id);
+  var keychainNode = supply ? Store.getNode(supply.sourceId) : null;
+
+  if (!keychainNode) {
+    html += '<p style="font-size:11px;color:var(--warn)">⚠ No Keychain is supplying this puzzle yet. Drag a connection from a Keychain node onto this node on the canvas — it\'s automatically marked as this puzzle\'s "keychain supply".</p>';
+  } else {
+    var options = lockAndKeyOptions(hunt, n.id);
+    html += '<p style="font-size:11px;color:var(--text-dim)">Keys supplied by keychain: <b>' + esc(keychainNode.content.name || keychainNode.title) + '</b></p>';
+    if (!options.length) {
+      html += '<p style="font-size:11px;color:var(--warn)">⚠ That keychain isn\'t connected to any Key nodes yet — connect it to at least one.</p>';
+    } else {
+      html += fieldWrap("Correct key", '<select id="fCorrectKey">' +
+        '<option value=""' + (!c.correctKeyNodeId ? " selected" : "") + '>— choose the correct key —</option>' +
+        options.map(function (k) {
+          return '<option value="' + esc(k.id) + '"' + (c.correctKeyNodeId === k.id ? " selected" : "") + '>' + esc(k.content.name || k.title) + '</option>';
+        }).join("") + '</select>');
+    }
+  }
+  return html;
+}
+
+/* Key — name (player-visible, shown in the Inventory tab), a photo upload,
+   and the blade/bow threshold slider. The threshold line drawn over the
+   live preview and the slider are kept in sync live (no re-render needed
+   per drag), same "manipulate the existing preview node live" approach as
+   Image Reveal's zoom/pan controls (wireImageRevealFields above). */
+function buildKeyFields(c) {
+  var html = fieldWrap("Name (shown in the player's inventory)", '<input type="text" id="fKeyName" value="' + esc(c.name || "") + '" />');
+  html += '<div class="field"><label>Key photo — upload with the blade (the part that goes into the lock) at the <b>top</b> of the photo and the bow (the handle) at the <b>bottom</b></label>' +
+    '<input type="file" id="fKeyImage" accept="image/*" style="display:none" />' +
+    '<button class="small-btn" id="btnKeyImageUpload">⬆ Upload image</button>' +
+    (c.imageAsset ? ' <button class="small-btn" id="btnKeyImageClear" style="color:var(--danger)">✕ Remove image</button>' : '') +
+    '</div>';
+  var threshold = isFinite(Number(c.threshold)) ? Number(c.threshold) : 50;
+  if (c.imageAsset) {
+    html += '<div class="field"><label>Blade / bow threshold — drag the slider until the line sits where the blade ends and the bow begins</label>' +
+      '<div class="key-threshold-preview" id="keyThresholdPreview">' +
+        '<img src="' + esc(c.imageAsset) + '" alt="" />' +
+        '<div class="key-threshold-line" id="keyThresholdLine" style="top:' + threshold + '%"></div>' +
+        '<span class="key-threshold-tag key-threshold-tag-blade">Blade</span>' +
+        '<span class="key-threshold-tag key-threshold-tag-bow" id="keyThresholdBowTag" style="top:' + threshold + '%">Bow</span>' +
+      '</div>' +
+      '<input type="range" id="fKeyThreshold" min="5" max="95" step="1" value="' + threshold + '" />' +
+      '</div>';
+  } else {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Upload a photo above to set the blade/bow threshold.</p>';
+  }
+  return html;
+}
+
+/* Keychain — just a display name plus a read-only summary of which Key
+   nodes it's currently wired to (the actual wiring happens by dragging
+   connections on the canvas, same as everywhere else in Studio — this
+   panel doesn't offer its own picker, so there's only ever one place a
+   creator manages it). */
+function buildKeychainFields(n) {
+  var c = n.content;
+  var html = fieldWrap("Name", '<input type="text" id="fKeychainName" value="' + esc(c.name || "") + '" />');
+  var outgoing = Store.hunt.connections.filter(function (cn) { return cn.sourceId === n.id; });
+  var keyNodes = outgoing.map(function (cn) { return Store.getNode(cn.targetId); }).filter(function (kn) { return kn && kn.type === "key"; });
+  html += '<div class="field"><label>Keys on this keychain (' + keyNodes.length + ')</label>';
+  html += keyNodes.length
+    ? '<div>' + keyNodes.map(function (kn) { return '<span class="chip">' + esc(kn.content.name || kn.title) + '</span>'; }).join(" ") + '</div>'
+    : '<p style="font-size:11px;color:var(--text-dim)">No keys connected yet — drag a connection from this node on the canvas to each Key node it should hold.</p>';
+  html += '</div>';
+  var lockAndKeyTargets = outgoing.filter(function (cn) { var t = Store.getNode(cn.targetId); return t && t.type === "lockAndKey"; });
+  if (lockAndKeyTargets.length) {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Supplying: ' + lockAndKeyTargets.map(function (cn) { var t = Store.getNode(cn.targetId); return esc(t ? t.title : "?"); }).join(", ") + '</p>';
+  }
+  return html;
 }
 
 /* Background media — standard on every node type. When set, the node's
@@ -3715,6 +4035,42 @@ function wireNodeInspector(n) {
       bindText("fCspAnswerTitle", "answerTitle");
       wireConstraintSatisfactionFields(c);
       break;
+    case "lockAndKey":
+      bindText("fPrompt", "prompt");
+      bindChange("fCorrectKey", function (v) { c.correctKeyNodeId = v; });
+      break;
+    case "key":
+      bindText("fKeyName", "name");
+      if (byId("btnKeyImageUpload")) byId("btnKeyImageUpload").onclick = function () { byId("fKeyImage").click(); };
+      if (byId("fKeyImage")) byId("fKeyImage").onchange = function (e) {
+        var file = e.target.files && e.target.files[0];
+        if (!file) return;
+        readImageFileCompressed(file, function (dataUrl) {
+          if (!dataUrl) { toast("Couldn't read that image file."); return; }
+          c.imageAsset = dataUrl;
+          afterEdit(); renderInspector();
+          toast("Key photo attached.");
+        });
+      };
+      if (byId("btnKeyImageClear")) byId("btnKeyImageClear").onclick = function () { c.imageAsset = ""; afterEdit(); renderInspector(); };
+      // Threshold slider — manipulates the existing preview line/tag live
+      // (no re-render per drag, same approach as Image Reveal's zoom
+      // slider above), and only commits through afterEdit on release.
+      var keyThresholdEl = byId("fKeyThreshold");
+      var keyThresholdLineEl = byId("keyThresholdLine");
+      var keyThresholdBowTagEl = byId("keyThresholdBowTag");
+      if (keyThresholdEl) {
+        keyThresholdEl.oninput = function (e) {
+          c.threshold = Number(e.target.value);
+          if (keyThresholdLineEl) keyThresholdLineEl.style.top = c.threshold + "%";
+          if (keyThresholdBowTagEl) keyThresholdBowTagEl.style.top = c.threshold + "%";
+        };
+        keyThresholdEl.onchange = function () { afterEdit(); };
+      }
+      break;
+    case "keychain":
+      bindText("fKeychainName", "name");
+      break;
     case "awardItem":
       bindChange("fItemId", function (v) { c.itemId = v; });
       break;
@@ -3751,6 +4107,9 @@ function wireNodeInspector(n) {
       break;
     case "clickableImage":
       wireClickableImageFields(c);
+      break;
+    case "cellPhone":
+      wireCellPhoneFields(c);
       break;
     default:
       wireGenericContentFields(n);

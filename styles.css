@@ -409,6 +409,13 @@ button{font-family:inherit;cursor:pointer;}
 .pv-empty{color:var(--pv-text-dim);text-align:center;padding-top:60px;}
 .pv-info-card{background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text-dim);padding:10px 12px;border-radius:var(--pv-radius);margin-bottom:8px;font-size:13px;font-family:var(--pv-font-body);}
 .pv-image{border-radius:var(--pv-radius);filter:var(--pv-image-filter);max-width:100%;display:block;}
+/* Key nodes' Inventory-tab card (renderLaneOptionsList's "inventory"
+   branch in engine.js) — same .pv-info-card shell as every other
+   auto-type's summary card, just with the key's own photo instead of a
+   generic icon. */
+.pv-key-inv-card{display:flex;align-items:center;gap:10px;}
+.pv-key-inv-thumb{width:34px;height:34px;object-fit:cover;border-radius:5px;flex:none;background:var(--bg3);}
+.pv-key-inv-thumb-empty{display:flex;align-items:center;justify-content:center;font-size:16px;}
 
 /* Scene background media — image/GIF/video fills the entire screen behind
    the text, which is pinned to the bottom as an overlay pane. Positioned
@@ -491,6 +498,28 @@ button{font-family:inherit;cursor:pointer;}
 .pv-lock-style-rusted .pv-lock-arrow{background:linear-gradient(180deg,#8a6a4a,#5a4530);}
 .pv-lock-style-rusted .pv-lock-arrow svg{fill:#2b1a10;}
 .pv-lock-style-rusted .pv-lock-wheel-row{font-family:Impact,'Arial Narrow',Haettenschweiler,sans-serif;letter-spacing:1px;color:#e8d9b0;text-shadow:0 1px 2px rgba(0,0,0,.7), 0 0 4px rgba(120,60,20,.5);}
+
+/* Lock and Key — a simple padlock hanging above a foreshortened metal
+   ring at the bottom of the stage, with the currently-selected key's
+   photo hanging from that ring (see renderPreviewNode's "lockAndKey"
+   branch / wireLockAndKeyInteractions in engine.js). The padlock's `top`
+   is set inline per-attempt (idle/wrong/correct — see lkPadlockTop in
+   engine.js); this stylesheet only owns its fixed geometry, the transition
+   that animates `top` changes, and the shackle-pop-open look on success
+   (same idea as .pv-lock-open above, just renamed for this node type). */
+.pv-lk-stage{position:relative;width:100%;max-width:260px;height:340px;margin:12px auto 6px;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;}
+.pv-lk-ring{position:absolute;left:50%;bottom:-52px;width:150px;height:82px;transform:translateX(-50%);border-radius:50%;border:14px solid #9a9a9a;background:linear-gradient(160deg,rgba(255,255,255,.15),transparent 60%);box-shadow:inset 0 3px 5px rgba(255,255,255,.35), inset 0 -4px 8px rgba(0,0,0,.4), 0 4px 10px rgba(0,0,0,.35);}
+.pv-lk-key-layer{position:absolute;left:50%;bottom:0;width:70px;height:170px;transform:translateX(-50%);z-index:1;}
+.pv-lk-key{width:100%;height:100%;border-radius:6px;background-size:cover;background-position:center;background-color:#3a3a3a;box-shadow:0 6px 14px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;}
+.pv-lk-key-noimg{font-size:11px;line-height:1.4;text-align:center;color:rgba(255,255,255,.75);padding:6px;}
+.pv-lk-padlock{position:absolute;left:50%;top:46px;transform:translateX(-50%);width:84px;height:110px;padding:0;margin:0;border:none;background:none;cursor:pointer;z-index:2;}
+.pv-lk-padlock:disabled{cursor:default;}
+.pv-lk-shackle{position:absolute;top:0;left:50%;transform:translateX(-50%);width:52px;height:38px;border-width:11px;border-style:solid;border-color:#c3cbd1;border-bottom:none;border-radius:30px 30px 0 0;background:linear-gradient(160deg,#eef1f3,#aab0b6 55%,#6f7579);box-shadow:inset 0 2px 3px rgba(255,255,255,.5), inset 0 -2px 3px rgba(0,0,0,.25);transform-origin:left bottom;transition:transform .4s cubic-bezier(.34,1.56,.64,1), top .4s cubic-bezier(.34,1.56,.64,1);}
+.pv-lk-body{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:84px;height:62px;border-radius:12px;background:linear-gradient(180deg,#d7dee3 0%,#8b96a0 55%,#4f5860 100%);border:2px solid #454c52;box-shadow:0 8px 16px rgba(0,0,0,.4), inset 0 2px 3px rgba(255,255,255,.2), inset 0 -3px 6px rgba(0,0,0,.3);}
+.pv-lk-body::after{content:"";position:absolute;left:50%;top:22px;width:10px;height:10px;transform:translateX(-50%);border-radius:50%;background:#2a2e33;box-shadow:0 4px 0 -2px #2a2e33;}
+.pv-lk-padlock.pv-lk-unlocked .pv-lk-shackle{transform:translateX(calc(-50% - 9px)) rotate(-30deg);top:-6px;}
+.pv-lk-feedback{position:absolute;left:0;right:0;top:44%;text-align:center;font-weight:700;font-size:15px;letter-spacing:.03em;color:var(--pv-danger, #ff5c5c);text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none;z-index:3;}
+.pv-lk-hint-row{text-align:center;font-size:11.5px;color:var(--pv-text-dim);margin-top:2px;}
 
 /* Cryptex Dial Lock (3 Letter) — three concentric letter rings rendered as
    inline SVG (see renderCryptexSvg/wireCryptexInteractions in engine.js).
@@ -843,6 +872,17 @@ button{font-family:inherit;cursor:pointer;}
 .csp-totals-row{display:flex;flex-wrap:wrap;gap:6px;}
 .csp-total-chip{font-size:11px;color:var(--text-dim);background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:3px 9px;}
 
+/* Key node's inspector — blade/bow threshold preview (buildKeyFields/the
+   "key" case of wireNodeInspector in app.js). The line and its two tags
+   are positioned by percentage `top` so they track the slider 1:1
+   regardless of the preview image's own aspect ratio. */
+.key-threshold-preview{position:relative;max-width:200px;border-radius:6px;overflow:hidden;border:1px solid var(--line);}
+.key-threshold-preview img{display:block;width:100%;}
+.key-threshold-line{position:absolute;left:0;right:0;height:2px;background:var(--accent);box-shadow:0 0 4px rgba(0,0,0,.6);pointer-events:none;}
+.key-threshold-tag{position:absolute;left:4px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.65);color:#fff;pointer-events:none;}
+.key-threshold-tag-blade{top:4px;}
+.key-threshold-tag-bow{transform:translateY(4px);}
+
 /* Category Grid — player board: an empty 3x3 grid (lines in the active
    style pack's accent colour, per the design spec) with a gallery of the
    9 images below it. Drag-and-drop (gallery <-> grid, grid <-> grid) and
@@ -978,3 +1018,100 @@ button{font-family:inherit;cursor:pointer;}
 .pv-csp-itemmenu-entry{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;}
 .pv-csp-itemmenu-img{width:100%;height:var(--csp-menu-img,24px);object-fit:contain;display:block;}
 .pv-csp-itemmenu-count{font-family:var(--pv-font-mono);font-size:var(--csp-font-count,12px);color:var(--pv-text-dim);}
+
+/* ---------------------------------------------------------------------
+   Cell Phone (NODE_TYPES.cellPhone, engine.js) — a self-contained device
+   silhouette (.pv-phone) with an LCD screen area (.pv-phone-lcd, whatever
+   the current cpNavSt.stack screen renders into) and a fixed D-pad +
+   Back/Menu softkey cluster below it (.pv-phone-controls), same idea as
+   the Lumen/Gear boards being their own little SVG stage inside the node
+   content pane. .pv-lane-back-btn is unrelated to the phone itself — the
+   generic "← Back to …" control ctl.render() prepends above any node
+   opened from a lane list (Leads/Inventory/Hints), which is how a Cell
+   Phone placed in Inventory gets back out to the Inventory list.
+--------------------------------------------------------------------- */
+.pv-lane-back-btn{background:transparent;color:var(--pv-text-dim);margin-bottom:12px;}
+.pv-lane-back-btn:hover{color:var(--pv-text);}
+
+.pv-phone{max-width:260px;margin:0 auto;padding:14px 12px 12px;border-radius:22px;
+  background:linear-gradient(155deg,#3a3f4c 0%,#23262f 60%,#181a20 100%);
+  border:1px solid #101216;box-shadow:0 10px 26px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.06);}
+.pv-phone-lcd{min-height:210px;background:var(--pv-bg);border-radius:8px;border:2px solid #0c0d10;
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.5);padding:12px 10px;margin-bottom:12px;
+  color:var(--pv-text);font-family:var(--pv-font-body);display:flex;flex-direction:column;}
+.pv-phone-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--pv-text-dim);margin-bottom:8px;text-align:center;}
+.pv-phone-empty{color:var(--pv-text-dim);font-size:12px;text-align:center;padding:24px 8px;}
+
+.pv-phone-list{display:flex;flex-direction:column;gap:6px;}
+.pv-phone-row{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:var(--pv-surface);
+  border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text);padding:8px 10px;
+  border-radius:6px;font-size:13px;cursor:pointer;font-family:var(--pv-font-body);}
+.pv-phone-row:hover{border-color:var(--pv-accent);}
+.pv-phone-row-icon{font-size:15px;flex-shrink:0;}
+.pv-phone-row-label{flex:1;}
+.pv-phone-row-chevron{color:var(--pv-text-dim);}
+.pv-phone-row-sms{align-items:flex-start;}
+.pv-phone-row-text{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+.pv-phone-row-preview{font-size:11px;color:var(--pv-text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+.pv-phone-dial-readout{background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);
+  border-radius:6px;padding:10px;text-align:center;font-family:var(--pv-font-mono);font-size:17px;
+  letter-spacing:.08em;margin-bottom:10px;min-height:20px;color:var(--pv-text);}
+.pv-phone-dial-placeholder{color:var(--pv-text-dim);font-size:12px;letter-spacing:normal;font-family:var(--pv-font-body);}
+.pv-phone-keygrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;}
+.pv-phone-key{background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);
+  color:var(--pv-text);border-radius:6px;padding:9px 0;font-size:15px;font-family:var(--pv-font-mono);cursor:pointer;}
+.pv-phone-key:hover{border-color:var(--pv-accent);}
+.pv-phone-keyrow{display:flex;gap:6px;}
+.pv-phone-keyrow .pv-phone-key{flex:1;font-size:12px;font-family:var(--pv-font-body);}
+.pv-phone-key-call{background:var(--pv-ok);border-color:var(--pv-ok);color:#0c1f14;font-weight:700;}
+.pv-phone-key-clear{color:var(--pv-danger);}
+
+.pv-phone-call-status{text-align:center;font-size:15px;font-weight:700;margin-top:16px;}
+.pv-phone-call-sub{text-align:center;font-size:12px;color:var(--pv-text-dim);margin-bottom:14px;}
+.pv-phone-call-icon{font-size:34px;text-align:center;margin-bottom:16px;}
+.pv-phone-call-ringing{display:inline-block;width:100%;animation:pvPhoneRing 1s ease-in-out infinite;}
+@keyframes pvPhoneRing{0%,100%{transform:rotate(0deg);}25%{transform:rotate(-12deg);}75%{transform:rotate(12deg);}}
+.pv-phone-call-busy{opacity:.75;}
+.pv-phone-hangup{margin-top:auto;background:var(--pv-danger);border:1px solid var(--pv-danger);color:#2a0a0a;
+  font-weight:700;border-radius:6px;padding:9px 0;font-size:13px;cursor:pointer;width:100%;}
+.pv-phone-audio{width:100%;margin-top:6px;}
+
+.pv-phone-sms-thread{display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:260px;}
+.pv-phone-sms-bubble{max-width:78%;padding:7px 10px;border-radius:12px;font-size:12.5px;line-height:1.4;word-break:break-word;}
+.pv-phone-sms-bubble.received{align-self:flex-start;background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);color:var(--pv-text);border-bottom-left-radius:3px;}
+.pv-phone-sms-bubble.sent{align-self:flex-end;background:var(--pv-accent);color:#fff;border-bottom-right-radius:3px;}
+
+.pv-phone-controls{display:flex;flex-direction:column;align-items:center;}
+.pv-phone-dpad{display:grid;grid-template-columns:repeat(3,32px);grid-template-rows:repeat(3,32px);gap:2px;margin:0 auto 10px;}
+.pv-phone-dbtn{background:var(--bg3);border:1px solid var(--line);color:var(--pv-text-dim);border-radius:4px;
+  font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+.pv-phone-dbtn:hover{color:var(--pv-text);border-color:var(--pv-accent);}
+.pv-phone-dbtn-up{grid-column:2;grid-row:1;}
+.pv-phone-dbtn-left{grid-column:1;grid-row:2;}
+.pv-phone-dbtn-select{grid-column:2;grid-row:2;border-radius:50%;}
+.pv-phone-dbtn-right{grid-column:3;grid-row:2;}
+.pv-phone-dbtn-down{grid-column:2;grid-row:3;}
+.pv-phone-softkeys{display:flex;justify-content:space-between;width:100%;max-width:170px;gap:8px;}
+.pv-phone-softkey{flex:1;background:var(--bg3);border:1px solid var(--line);color:var(--pv-text-dim);
+  border-radius:5px;padding:6px 4px;font-size:11px;cursor:pointer;}
+.pv-phone-softkey:hover{color:var(--pv-text);border-color:var(--pv-accent);}
+
+/* D-pad-driven keyboard focus (see wireCellPhoneInteractions in
+   engine.js) — highlights whichever [data-cpfocus] element Up/Down/
+   Left/Right last landed on, independent of mouse hover. */
+.pv-phone-focused{outline:2px solid var(--pv-accent);outline-offset:1px;}
+
+/* Studio inspector — Cell Phone's Contacts/Voicemails/SMS Threads list
+   editors (buildCellPhoneFields/wireCellPhoneFields, app.js). Same
+   bordered-block-per-item shape as other list-of-blocks editors in this
+   file (e.g. Fuse Panel's switches), just introduced under its own cp-
+   prefix since it's the first to nest a list inside a list (messages
+   inside a thread). */
+.cp-item-block{border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px;background:var(--bg2);}
+.cp-item-row{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+.cp-inline-check{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-dim);margin-right:14px;}
+.cp-msg-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px;}
+.cp-msg-row{display:flex;gap:6px;align-items:flex-start;}
+.cp-msg-row select{flex:0 0 88px;}
+.cp-msg-row textarea{flex:1;min-height:40px;}

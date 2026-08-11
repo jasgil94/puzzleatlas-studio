@@ -485,6 +485,45 @@ var NODE_TYPES = {
       return items.length + " item(s) — " + recipients.length + " recipient(s)";
     }
   },
+  lockAndKey: {
+    family: "puzzle", label: "Lock and Key", icon: "🔒",
+    defaultTitle: "New Lock and Key Puzzle",
+    // A simple padlock, with a Key node's art hanging below it on a
+    // foreshortened metal ring (the ring is a Keychain node — see the
+    // "key"/"keychain" entries below). Which keys are "on the ring" is
+    // never authored on this node directly: it's resolved live, at both
+    // design-time and player-time, by walking this node's one incoming
+    // "keychain supply" connection back to the Keychain that drew it, then
+    // collecting every Key that Keychain itself connects to (see
+    // lockAndKeySupplyConnection/lockAndKeyOptions further down, shared by
+    // the player runtime and the Studio inspector's "correct key" picker —
+    // buildTypeSpecificFields's "lockAndKey" case in app.js). The
+    // "keychain supply" connection is auto-marked with
+    // condition:{type:"keychainSupply"} the instant a creator drags a
+    // connection from a Keychain node onto this node type (see
+    // Store.addConnection in app.js) — purely a structural pointer, not a
+    // real availability-granting condition (evaluateCondition's default
+    // case returns false for it), so this node still needs its own
+    // ordinary incoming connection from earlier content to ever become
+    // available/reachable, same as any other puzzle node.
+    //
+    // Tapping the padlock (wireLockAndKeyInteractions below) tries
+    // whichever key is currently swiped to the front of the ring against
+    // content.correctKeyNodeId (chosen by the creator in the inspector,
+    // limited to whatever the supplying Keychain offers). A wrong key lets
+    // the padlock travel only as far as the top of the key art before
+    // bouncing back with "Wrong key"; the correct key lets it continue on
+    // down to that key's own blade/bow threshold (content.threshold on the
+    // Key node), at which point the shackle pops open.
+    defaultContent: function () {
+      return { prompt: "Find the right key on the ring and unlock the padlock.", correctKeyNodeId: "", showBackButton: false };
+    },
+    summary: function (c, hunt) {
+      if (!c.correctKeyNodeId) return "No correct key chosen yet";
+      var keyNode = (hunt.nodes || []).find(function (n) { return n.id === c.correctKeyNodeId; });
+      return "Correct key: " + (keyNode ? (keyNode.content.name || keyNode.title) : "(missing key)");
+    }
+  },
   awardItem: {
     family: "state", label: "Award Item", icon: "🎒",
     defaultTitle: "Award Item",
@@ -514,6 +553,41 @@ var NODE_TYPES = {
     defaultTitle: "Trade",
     defaultContent: function () { return { costType: "score", costValue: 1, rewardType: "hint", rewardId: "" }; },
     summary: function (c) { return "Cost " + c.costValue + " " + c.costType; }
+  },
+  key: {
+    family: "state", label: "Key", icon: "🔑",
+    defaultTitle: "New Key",
+    // A single physical key, meant to sit in the Inventory lane like Award
+    // Item. content.name is what the player reads in their Inventory (kept
+    // separate from the node's own title, which is only the creator-facing
+    // canvas label). content.imageAsset is a photo of the key uploaded by
+    // the creator; content.threshold is a 0-100 percentage, set via a
+    // slider over that photo in the inspector (buildKeyFields in app.js),
+    // marking where the blade (always the upper part of the photo) ends
+    // and the bow (always the lower part) begins. Nothing here enforces
+    // photo orientation — the creator is expected to upload the key
+    // blade-up, per the Lock and Key puzzle's own doc comment above. A Key
+    // node only ever matters to the player once a Keychain node connects
+    // to it (see the "keychain" entry directly below) and, through that
+    // keychain, to a Lock and Key puzzle.
+    defaultContent: function () { return { name: "Key", imageAsset: "", threshold: 55, showBackButton: false }; },
+    summary: function (c) { return (c.name || "Key") + (c.imageAsset ? "" : " — no image set yet"); }
+  },
+  keychain: {
+    family: "state", label: "Keychain", icon: "🗝️",
+    defaultTitle: "New Keychain",
+    // Also sits in the Inventory lane. A Keychain has no content of its
+    // own beyond a display name — what it "holds" is entirely read off the
+    // ordinary graph connections drawn out of it on the canvas: one
+    // outgoing connection per Key node it carries, plus (usually) one more
+    // outgoing connection into a Lock and Key puzzle node, which
+    // Store.addConnection (app.js) auto-tags with
+    // condition:{type:"keychainSupply"} the moment it's drawn, so the
+    // puzzle on the other end always knows which keychain (and therefore
+    // which keys) is supplying it. See lockAndKeyOptions further down for
+    // the shared lookup that walks both connections.
+    defaultContent: function () { return { name: "Keychain", showBackButton: false }; },
+    summary: function (c) { return c.name || "Keychain"; }
   },
   branch: {
     family: "control", label: "Branch", icon: "🌿",
@@ -691,6 +765,65 @@ var NODE_TYPES = {
       return n + " hotspot" + (n === 1 ? "" : "s") + (c.hotspotMediaUrl ? "" : " — no image/video set");
     }
   },
+  cellPhone: {
+    family: "media", label: "Cell Phone", icon: "📱",
+    defaultTitle: "New Cell Phone",
+    // A self-contained, replayable prop rather than a one-shot content
+    // reveal or puzzle: unlike every other PLAYER_SCREEN_TYPES entry it
+    // never calls completeNodeInternal/pv_action_* and so never sets
+    // state.completed[n.id] — it's meant to be placed in the Inventory
+    // lane (see SUGGESTED_LANE.cellPhone in app.js), reached once via a
+    // normal "Grant Item" connection into it, and then opened from the
+    // player's Inventory tab as many times as they like for the rest of
+    // the hunt (renderLaneOptionsList's "inventory" branch renders it as
+    // a clickable entry, same [data-lead]/ctl.showNode mechanism as
+    // Leads — see engine.js). Its own screen has fully custom internal
+    // navigation (a D-pad + Back/Menu softkeys drawn as part of the phone
+    // graphic, not the shared showBackButton field every other type uses)
+    // — see the "cellPhone" branch of renderPreviewNode/
+    // wireCellPhoneInteractions below and ctl.phoneNav in
+    // createPreviewController.
+    //
+    // sections: which of the three built-in apps show as icons on the
+    // phone's home screen — a builder can enable just the ones they're
+    // using (e.g. an SMS-only prop doesn't need to show empty Calls/
+    // Voicemails icons).
+    //
+    // contacts: entries in the Calls app. Each is
+    // { id, name, numbers: "comma, separated, digit, strings",
+    //   audioAsset, showInContacts }. numbers is matched against whatever
+    // the player dials on the keypad (see normalizePhoneDigits) — a
+    // contact can also be left out of the browsable contacts list
+    // (showInContacts: false) so it's only reachable by a player who's
+    // found the number elsewhere in the hunt and dials it from memory,
+    // same spirit as a Physical Lock Code's real-world prop. audioAsset
+    // plays after a short ringing tone once the call connects; a dialled
+    // number matching no contact instead gets a busy/engaged tone and
+    // never connects (see playEngagedTone/playRingTone).
+    //
+    // voicemails: entries in the Voicemails app — { id, name, audioAsset }
+    // — a flat list, tap a name to play its clip.
+    //
+    // smsThreads: entries in the SMS app — { id, name, messages }, each
+    // message { id, text, sent } where sent=true renders right-aligned
+    // (player's own outgoing message) and sent=false renders left-aligned
+    // (received) — same left/right convention as a real SMS app.
+    defaultContent: function () {
+      return {
+        sections: { calls: true, voicemails: true, sms: true },
+        contacts: [],
+        voicemails: [],
+        smsThreads: []
+      };
+    },
+    summary: function (c) {
+      var parts = [];
+      parts.push((c.contacts || []).length + " contact(s)");
+      parts.push((c.voicemails || []).length + " voicemail(s)");
+      parts.push((c.smsThreads || []).length + " SMS thread(s)");
+      return parts.join(", ");
+    }
+  },
   photoUploadVerification: {
     family: "input", label: "Photo Upload Verification", icon: "📸",
     defaultTitle: "New Photo Upload",
@@ -775,6 +908,43 @@ var LOCK_STYLES = {
 var LOCK_ROW_H = 50;       // px height of one digit/letter row in a wheel's window — must match .pv-lock-wheel-window/.pv-lock-wheel-row height in styles.css
 var LOCK_REPEATS = 5;      // how many copies of the alphabet are stacked in the track, to give a drag headroom of +/-2 full wheel turns before hitting the end
 var LOCK_CENTER_COPY = 2;  // which copy (0-based) each drag gesture re-centers on
+
+/* Lock and Key — layout constants for the padlock/key-ring stage (shared
+   between the render branch that lays the stage out and
+   wireLockAndKeyInteractions, which animates the padlock along the same
+   vertical axis — kept as one source of truth rather than duplicated
+   literals in both places, same convention as the combination-lock
+   constants just above). Everything is a plain top-offset in pixels
+   within the fixed-size .pv-lk-stage (see styles.css), since the stage,
+   the key art box and the padlock are all fixed dimensions regardless of
+   the uploaded photo's own resolution/aspect ratio (object-fit: cover) —
+   that fixed geometry is what lets this be worked out arithmetically
+   instead of measuring the live DOM. */
+var LK_STAGE_H = 340;         // px height of the whole stage
+var LK_KEY_H = 170;           // px height of the key-art box, bottom-anchored in the stage (so it appears to hang from the ring)
+var LK_PADLOCK_BODY_H = 62;   // px height of the padlock's body (not counting the shackle, which sits above it)
+var LK_PADLOCK_IDLE_TOP = 46; // px top offset of the padlock's resting position, before any attempt
+
+// Resolves the padlock's `top` (px, within .pv-lk-stage) for a given
+// state: "idle" is its resting position; "wrong" stops it the instant its
+// body would touch the top of the key art (it can't go any further in);
+// "correct" (thresholdPct = the attempted key's own content.threshold)
+// seats it exactly on that key's blade/bow line. Shared by the initial
+// render (renderPreviewNode's "lockAndKey" branch, for the idle/solved
+// resting states) and the tap handler's animation (wireLockAndKeyInteractions,
+// for the interactive wrong/correct states).
+function lkPadlockTop(state, thresholdPct) {
+  var keyTop = LK_STAGE_H - LK_KEY_H;
+  if (state === "wrong") return keyTop - LK_PADLOCK_BODY_H;
+  if (state === "correct") {
+    var t = Number(thresholdPct);
+    if (!isFinite(t)) t = 50;
+    t = Math.max(0, Math.min(100, t));
+    var thresholdY = keyTop + (t / 100) * LK_KEY_H;
+    return thresholdY - LK_PADLOCK_BODY_H;
+  }
+  return LK_PADLOCK_IDLE_TOP; // "idle" (and any unrecognized state — fail safe to resting position)
+}
 
 /* ---------------------------------------------------------------------
    Style packs — pluggable, standalone documents that set the
@@ -937,6 +1107,32 @@ function nodeTitle(hunt, id) { var n = (hunt.nodes || []).find(function (x) { re
 function varName(hunt, id) { var v = (hunt.variables || []).find(function (x) { return x.id === id; }); return v ? v.name : "(unset)"; }
 function itemName(hunt, id) { var it = (hunt.items || []).find(function (x) { return x.id === id; }); return it ? it.name : "(unset)"; }
 
+// Lock and Key — the one incoming connection into a Lock and Key puzzle
+// node that's tagged condition:{type:"keychainSupply"} (auto-assigned by
+// Store.addConnection in app.js the moment a creator connects a Keychain
+// node to one — see the "keychainSupply" comment on NODE_TYPES.lockAndKey
+// above), or null if no Keychain currently supplies this puzzle.
+function lockAndKeySupplyConnection(hunt, puzzleNodeId) {
+  return (hunt.connections || []).find(function (c) {
+    return c.targetId === puzzleNodeId && c.condition && c.condition.type === "keychainSupply";
+  }) || null;
+}
+// Every Key node "on the ring" for a given Lock and Key puzzle: find the
+// Keychain feeding it (lockAndKeySupplyConnection, above), then collect
+// every Key that Keychain itself has its own outgoing connection to.
+// Shared by the player runtime (renderPreviewNode/wireLockAndKeyInteractions
+// below) and the Studio inspector's "correct key" picker
+// (buildTypeSpecificFields's "lockAndKey" case in app.js) so the ring's
+// contents and the builder's dropdown of choices can never drift apart.
+function lockAndKeyOptions(hunt, puzzleNodeId) {
+  var supply = lockAndKeySupplyConnection(hunt, puzzleNodeId);
+  if (!supply) return [];
+  var keyIds = (hunt.connections || [])
+    .filter(function (c) { return c.sourceId === supply.sourceId; })
+    .map(function (c) { return c.targetId; });
+  return (hunt.nodes || []).filter(function (n) { return n.type === "key" && keyIds.indexOf(n.id) !== -1; });
+}
+
 // The node directly upstream of `nodeId`, via whichever incoming connection
 // comes first in hunt.connections — used by every node type's optional Back
 // button (both to decide, in the Studio inspector, whether Back makes sense
@@ -1047,6 +1243,18 @@ function validateHunt(hunt) {
       issues.push({ level: "error", title: "Dangling item reference", detail: "Node \"" + n.title + "\" references missing item " + n.content.itemId + ".", nodeId: n.id });
     if (n.type === "setVariable" && n.content.variableId && varIds.indexOf(n.content.variableId) === -1)
       issues.push({ level: "error", title: "Dangling variable reference", detail: "Node \"" + n.title + "\" references missing variable " + n.content.variableId + ".", nodeId: n.id });
+    if (n.type === "lockAndKey") {
+      var lkSupply = lockAndKeySupplyConnection(hunt, n.id);
+      if (!lkSupply) {
+        issues.push({ level: "warning", title: "No keychain supply", detail: "\"" + n.title + "\" has no Keychain connected to it, so it has no keys to offer the player. Drag a connection from a Keychain node onto this node.", nodeId: n.id });
+      } else {
+        var lkOpts = lockAndKeyOptions(hunt, n.id);
+        if (!lkOpts.length) issues.push({ level: "warning", title: "Keychain has no keys", detail: "\"" + n.title + "\"'s supplying keychain isn't connected to any Key nodes yet.", nodeId: n.id });
+        else if (!n.content.correctKeyNodeId) issues.push({ level: "warning", title: "No correct key chosen", detail: "\"" + n.title + "\" hasn't had a correct key chosen yet — pick one in the inspector.", nodeId: n.id });
+        else if (!lkOpts.some(function (k) { return k.id === n.content.correctKeyNodeId; }))
+          issues.push({ level: "error", title: "Correct key not on the ring", detail: "\"" + n.title + "\"'s chosen correct key isn't one of the keys its supplying keychain actually offers.", nodeId: n.id });
+      }
+    }
   });
 
   hunt.entryPointIds.forEach(function (id) {
@@ -1118,7 +1326,16 @@ function validateHunt(hunt) {
    this data. This is what both Studio's Preview/live mockup and the
    standalone Player app run.
    ========================================================================= */
-var AUTO_TYPES = ["branch", "awardItem", "setVariable", "score", "convergence", "ending"];
+// "key"/"keychain" join this list too: like Award Item, neither has a
+// standalone player screen — reaching one (via an ordinary incoming
+// connection, same as any node) just resolves it into the Inventory lane
+// immediately, where renderLaneOptionsList's "inventory" branch below
+// gives Key nodes their own name+photo card. A Keychain's own outgoing
+// connections to its Key nodes then cascade those keys into the
+// Inventory the same instant (same one-recompute-pass cascade as e.g.
+// Convergence -> Award Item chains already do) — finding the keychain
+// reveals every key on it at once.
+var AUTO_TYPES = ["branch", "awardItem", "setVariable", "score", "convergence", "ending", "key", "keychain"];
 function isAutoType(t) { return AUTO_TYPES.indexOf(t) !== -1; }
 
 function evaluateCondition(cond, state, hunt) {
@@ -1718,6 +1935,23 @@ function pv_action_submitGearPulley(session, nodeId, driveConnected) {
   return ok;
 }
 
+// Lock and Key — unlike the other puzzle types above, correctness here
+// isn't derived from the submitted value (there's no free-text or grid
+// state to check) — the caller (wireLockAndKeyInteractions below) already
+// worked out whether the key that was tapped-in matches
+// content.correctKeyNodeId before calling this, since it also needs that
+// same yes/no to decide which animation (wrong-key bounce vs. shackle
+// pop) to play. This function's job is just the usual "record feedback,
+// complete + recompute on success" bookkeeping, same shape as every
+// pv_action_submit* above.
+function pv_action_submitLockAndKey(session, nodeId, mechanicOk) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var ok = nodeCompletionOk(n, session, !!mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+
 function pv_action_revealHint(session, hintNodeId) {
   var cur = session.state.hintProgress[hintNodeId] || 0;
   var n = session.hunt.nodes.find(function (x) { return x.id === hintNodeId; });
@@ -1735,7 +1969,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction"];
+  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey"];
 
 // Node types offering a generic, opt-in "← Back" button — every
 // PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
@@ -1751,7 +1985,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // Studio inspector field.
 var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
-  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction"];
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction", "lockAndKey"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -1850,8 +2084,28 @@ function renderLaneOptionsList(session, laneId, nodes) {
       html += '</div>';
     });
   } else if (laneId === "inventory") {
+    // Auto types (Award Item, Score, Set Variable) resolve instantly and
+    // have no player screen — the Inventory lane's original read-only
+    // "here's what's happened so far" summary card is all there is to
+    // show for them. Anything else placed in this lane (e.g. a Cell
+    // Phone node — see NODE_TYPES.cellPhone) genuinely has a screen to
+    // open, so it gets the same clickable [data-lead] treatment as an
+    // Open Lead — see the [data-lead] wiring in ctl.render() below,
+    // shared across every lane's list view.
     nodes.forEach(function (n) {
-      html += '<div class="pv-info-card">' + NODE_TYPES[n.type].icon + " " + esc(NODE_TYPES[n.type].summary(n.content, hunt)) + '</div>';
+      // Key nodes get their own photo+name card (same "found item" reading
+      // as the plain icon+summary cards below, just with the key's actual
+      // uploaded art instead of a generic icon) — everything else keeps
+      // the existing icon+summary treatment.
+      if (n.type === "key") {
+        html += '<div class="pv-info-card pv-key-inv-card">' +
+          (n.content.imageAsset ? '<img class="pv-key-inv-thumb" src="' + esc(n.content.imageAsset) + '" alt="" />' : '<span class="pv-key-inv-thumb pv-key-inv-thumb-empty">🔑</span>') +
+          '<span>' + esc(n.content.name || n.title) + '</span></div>';
+      } else if (isAutoType(n.type)) {
+        html += '<div class="pv-info-card">' + NODE_TYPES[n.type].icon + " " + esc(NODE_TYPES[n.type].summary(n.content, hunt)) + '</div>';
+      } else {
+        html += '<div class="pv-choice-btn" data-lead="' + n.id + '">' + NODE_TYPES[n.type].icon + " " + esc(n.title) + '</div>';
+      }
     });
   } else {
     nodes.forEach(function (n) {
@@ -2106,6 +2360,109 @@ function pvItemButton(cls, dataAttr, label, fontSize, baseStyle) {
   var style = (baseStyle ? baseStyle + ";" : "") + "font-size:" + fs + "px";
   return '<button class="' + cls + '" ' + dataAttr + ' style="' + style + '">' + esc(label) + '</button>';
 }
+
+/* ---------------------------------------------------------------------
+   Cell Phone — player runtime helpers. A self-contained prop (see the
+   cellPhone entry in NODE_TYPES above): its own internal screen-stack
+   navigation (Home → Calls/Voicemails/SMS → sub-screens), driven by a
+   D-pad (up/down/left/right/select) plus Back/Menu softkeys drawn as
+   part of the phone graphic. Nav state lives in ctl.phoneNav[nodeId]
+   (volatile, like ctl.orderingDraft etc. — see createPreviewController)
+   rather than session.state, since it's just "where in the phone's menus
+   is the player right now", not something that needs to survive a
+   session reload.
+--------------------------------------------------------------------- */
+
+// Lazily creates/returns this node's nav state. focusIndex/focusCols
+// drive the D-pad: the currently-rendered screen's focusable elements
+// are numbered 0..N-1 in DOM order (data-cpfocus="i"), focusCols is how
+// many of them sit in one "row" for the purposes of Up/Down vs
+// Left/Right (1 for plain vertical lists, 3 for the keypad's digit
+// grid) — see wireCellPhoneInteractions' dpad handling below.
+function cpNav(ctl, nodeId) {
+  var nav = ctl.phoneNav[nodeId];
+  if (!nav) {
+    nav = ctl.phoneNav[nodeId] = {
+      stack: ["home"], dialedDigits: "",
+      activeContactId: null, activeVoicemailId: null, activeThreadId: null,
+      callPhase: null, // "ringing" | "connected" | "engaged" while stack top is "inCall"
+      focusIndex: 0, focusCols: 1,
+      ringTimeoutId: null, engagedIntervalId: null // timer handles so hanging up/backing out can cancel them — see cpStopCallAudio
+    };
+  }
+  return nav;
+}
+function cpScreen(nav) { return nav.stack[nav.stack.length - 1]; }
+function cpPush(nav, screen) { nav.stack.push(screen); nav.focusIndex = 0; nav.focusCols = 1; }
+function cpPop(nav) { if (nav.stack.length > 1) nav.stack.pop(); nav.focusIndex = 0; nav.focusCols = 1; }
+function cpGoHome(nav) { nav.stack = ["home"]; nav.focusIndex = 0; nav.focusCols = 1; }
+
+// Cancels any in-flight ring timeout / engaged-tone interval — called
+// whenever the player leaves the "inCall" screen (Hang Up, Back, Menu),
+// so a stale timer never fires a phase change after the player's already
+// moved on, and a busy-tone loop never keeps beeping in the background.
+function cpStopCallAudio(nav) {
+  if (nav.ringTimeoutId) { clearTimeout(nav.ringTimeoutId); nav.ringTimeoutId = null; }
+  if (nav.engagedIntervalId) { clearInterval(nav.engagedIntervalId); nav.engagedIntervalId = null; }
+}
+
+function cpEnabledSections(c) {
+  var s = c.sections || {};
+  var out = [];
+  if (s.calls) out.push({ key: "calls", label: "Calls", icon: "📞" });
+  if (s.voicemails) out.push({ key: "voicemails", label: "Voicemails", icon: "📼" });
+  if (s.sms) out.push({ key: "sms", label: "Messages", icon: "💬" });
+  return out;
+}
+
+// Digits (and * / #) only — used both to render the keypad readout and to
+// compare a dialled number against a contact's saved numbers, so
+// formatting differences ("07911 123 456" vs "07911123456") don't matter.
+function cpNormalizeDigits(s) { return String(s || "").replace(/[^0-9*#]/g, ""); }
+function cpContactNumbers(contact) {
+  return String(contact.numbers || "").split(",").map(cpNormalizeDigits).filter(function (x) { return x.length > 0; });
+}
+function cpFindContactByDigits(c, digits) {
+  var norm = cpNormalizeDigits(digits);
+  if (!norm) return null;
+  return (c.contacts || []).find(function (ct) { return cpContactNumbers(ct).indexOf(norm) !== -1; }) || null;
+}
+
+// ---- Tone synthesis (Web Audio) — no vendored audio files needed for
+// the ring/engaged tones, same "synthesize tiny clicks with an
+// oscillator" approach as telephone-exchange.html's plug/jack sounds.
+// No-ops quietly if Web Audio isn't available (e.g. under Node during
+// export/validation) rather than throwing. ---------------------------
+var _cpAudioCtx = null;
+function cpAudioCtx() {
+  if (typeof window === "undefined") return null;
+  try {
+    if (!_cpAudioCtx) _cpAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return _cpAudioCtx;
+  } catch (e) { return null; }
+}
+function cpBeep(freq, startAt, dur) {
+  var ctx = cpAudioCtx(); if (!ctx) return;
+  try {
+    var o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sine"; o.frequency.value = freq;
+    var t0 = ctx.currentTime + Math.max(0, startAt);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.16, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.03);
+  } catch (e) { /* audio unavailable, ignore */ }
+}
+// Classic two-tone ring cadence (400Hz+450Hz together), ~0.4s on, played
+// twice about a second apart to cover the couple of seconds a Calling…
+// screen sits on before connecting.
+function cpPlayRingCadence() {
+  [0, 1].forEach(function (t) { cpBeep(400, t, 0.4); cpBeep(450, t, 0.4); });
+}
+// Busy/engaged tone — a single 400Hz tone pulsing on/off, looped until
+// cpStopCallAudio clears the interval it's scheduled on.
+function cpPlayEngagedPulse() { cpBeep(400, 0, 0.35); }
 
 function renderPreviewNode(session, n, ctl) {
   var c = n.content, html = "";
@@ -2508,6 +2865,169 @@ function renderPreviewNode(session, n, ctl) {
       html += '</div>'; // .pv-csp-answer
     }
     html += '</div>'; // .pv-csp-wrap
+  } else if (n.type === "cellPhone") {
+    // See the Cell Phone player-runtime helpers just above (cpNav et al.)
+    // and wireCellPhoneInteractions below for the D-pad/softkey wiring
+    // that drives cpNavSt.stack between renders. Every screen below sets
+    // cpNavSt.focusCols so the D-pad's Up/Down vs Left/Right handling
+    // knows whether it's paging a plain vertical list (1 column) or the
+    // keypad's digit grid (3 columns) — see wireCellPhoneInteractions.
+    var cpNavSt = cpNav(ctl, n.id);
+    var cpScr = cpScreen(cpNavSt);
+    var cpInner = "";
+    var cpSections = cpEnabledSections(c);
+
+    if (cpScr === "home") {
+      cpNavSt.focusCols = 1;
+      cpInner = !cpSections.length
+        ? '<div class="pv-phone-empty">This phone has no apps set up yet.</div>'
+        : '<div class="pv-phone-title">My Phone</div><div class="pv-phone-list">' +
+          cpSections.map(function (s, i) {
+            return '<button type="button" class="pv-phone-row" data-cpfocus="' + i + '" data-cpaction="openSection" data-section="' + s.key + '">' +
+              '<span class="pv-phone-row-icon">' + s.icon + '</span><span class="pv-phone-row-label">' + esc(s.label) + '</span>' +
+              '<span class="pv-phone-row-chevron">›</span></button>';
+          }).join("") + '</div>';
+    } else if (cpScr === "callsHome") {
+      cpNavSt.focusCols = 1;
+      cpInner = '<div class="pv-phone-title">📞 Calls</div><div class="pv-phone-list">' +
+        '<button type="button" class="pv-phone-row" data-cpfocus="0" data-cpaction="openContacts"><span class="pv-phone-row-icon">📇</span><span class="pv-phone-row-label">Contacts</span><span class="pv-phone-row-chevron">›</span></button>' +
+        '<button type="button" class="pv-phone-row" data-cpfocus="1" data-cpaction="openKeypad"><span class="pv-phone-row-icon">🔢</span><span class="pv-phone-row-label">Keypad</span><span class="pv-phone-row-chevron">›</span></button>' +
+        '</div>';
+    } else if (cpScr === "contacts") {
+      cpNavSt.focusCols = 1;
+      var cpVisContacts = (c.contacts || []).filter(function (ct) { return ct.showInContacts !== false; });
+      cpInner = '<div class="pv-phone-title">📇 Contacts</div>' + (!cpVisContacts.length
+        ? '<div class="pv-phone-empty">No contacts saved.</div>'
+        : '<div class="pv-phone-list">' + cpVisContacts.map(function (ct, i) {
+            return '<button type="button" class="pv-phone-row" data-cpfocus="' + i + '" data-cpaction="callContact" data-contact="' + esc(ct.id) + '">' +
+              '<span class="pv-phone-row-icon">👤</span><span class="pv-phone-row-label">' + esc(ct.name || "(unnamed)") + '</span></button>';
+          }).join("") + '</div>');
+    } else if (cpScr === "keypad") {
+      cpNavSt.focusCols = 3;
+      var cpKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];
+      cpInner = '<div class="pv-phone-dial-readout">' +
+        (cpNavSt.dialedDigits ? esc(cpNavSt.dialedDigits) : '<span class="pv-phone-dial-placeholder">Enter a number…</span>') + '</div>';
+      cpInner += '<div class="pv-phone-keygrid">' + cpKeys.map(function (k, i) {
+        return '<button type="button" class="pv-phone-key" data-cpfocus="' + i + '" data-cpaction="digit" data-digit="' + k + '">' + k + '</button>';
+      }).join("") + '</div>';
+      cpInner += '<div class="pv-phone-keyrow">' +
+        '<button type="button" class="pv-phone-key pv-phone-key-clear" data-cpfocus="12" data-cpaction="clearDigit">⌫ Clear</button>' +
+        '<button type="button" class="pv-phone-key pv-phone-key-call" data-cpfocus="13" data-cpaction="dial">📞 Call</button>' +
+        '</div>';
+    } else if (cpScr === "inCall") {
+      cpNavSt.focusCols = 1;
+      var cpCallContact = cpNavSt.activeContactId ? (c.contacts || []).find(function (ct) { return ct.id === cpNavSt.activeContactId; }) : null;
+      var cpCallLabel = cpCallContact ? (cpCallContact.name || "(unnamed)") : (cpNavSt.dialedDigits || "Unknown number");
+      if (cpNavSt.callPhase === "engaged") {
+        cpInner = '<div class="pv-phone-call-status">' + esc(cpCallLabel) + '</div><div class="pv-phone-call-sub">Line engaged</div>' +
+          '<div class="pv-phone-call-icon pv-phone-call-busy">📵</div>';
+      } else if (cpNavSt.callPhase === "connected") {
+        cpInner = '<div class="pv-phone-call-status">' + esc(cpCallLabel) + '</div><div class="pv-phone-call-sub">Connected</div>' +
+          '<div class="pv-phone-call-icon">📞</div>' +
+          (cpCallContact && cpCallContact.audioAsset
+            ? '<audio class="pv-phone-audio" src="' + esc(cpCallContact.audioAsset) + '" autoplay controls></audio>'
+            : '<div class="pv-phone-empty">No audio clip attached to this contact yet.</div>');
+      } else {
+        cpInner = '<div class="pv-phone-call-status">' + esc(cpCallLabel) + '</div><div class="pv-phone-call-sub">Calling…</div>' +
+          '<div class="pv-phone-call-icon pv-phone-call-ringing">📞</div>';
+      }
+      cpInner += '<button type="button" class="pv-phone-hangup" data-cpfocus="0" data-cpaction="hangUp">🔴 Hang up</button>';
+    } else if (cpScr === "voicemails") {
+      cpNavSt.focusCols = 1;
+      var cpVms = c.voicemails || [];
+      cpInner = '<div class="pv-phone-title">📼 Voicemails</div>' + (!cpVms.length
+        ? '<div class="pv-phone-empty">No voicemails.</div>'
+        : '<div class="pv-phone-list">' + cpVms.map(function (vm, i) {
+            return '<button type="button" class="pv-phone-row" data-cpfocus="' + i + '" data-cpaction="playVoicemail" data-voicemail="' + esc(vm.id) + '">' +
+              '<span class="pv-phone-row-icon">▶️</span><span class="pv-phone-row-label">' + esc(vm.name || "(untitled)") + '</span></button>';
+          }).join("") + '</div>');
+    } else if (cpScr === "voicemailPlay") {
+      cpNavSt.focusCols = 1;
+      var cpVm2 = (c.voicemails || []).find(function (x) { return x.id === cpNavSt.activeVoicemailId; });
+      cpInner = '<div class="pv-phone-title">' + esc(cpVm2 ? (cpVm2.name || "(untitled)") : "Voicemail") + '</div>' +
+        (cpVm2 && cpVm2.audioAsset
+          ? '<audio class="pv-phone-audio" src="' + esc(cpVm2.audioAsset) + '" autoplay controls></audio>'
+          : '<div class="pv-phone-empty">No audio clip attached yet.</div>');
+    } else if (cpScr === "sms") {
+      cpNavSt.focusCols = 1;
+      var cpThreads = c.smsThreads || [];
+      cpInner = '<div class="pv-phone-title">💬 Messages</div>' + (!cpThreads.length
+        ? '<div class="pv-phone-empty">No message threads.</div>'
+        : '<div class="pv-phone-list">' + cpThreads.map(function (t, i) {
+            var cpLast = (t.messages || [])[t.messages.length - 1];
+            return '<button type="button" class="pv-phone-row pv-phone-row-sms" data-cpfocus="' + i + '" data-cpaction="openThread" data-thread="' + esc(t.id) + '">' +
+              '<span class="pv-phone-row-icon">👤</span><span class="pv-phone-row-text"><span class="pv-phone-row-label">' + esc(t.name || "(unnamed)") + '</span>' +
+              (cpLast ? '<span class="pv-phone-row-preview">' + esc((cpLast.text || "").slice(0, 34)) + '</span>' : '') + '</span></button>';
+          }).join("") + '</div>');
+    } else if (cpScr === "smsThread") {
+      cpNavSt.focusCols = 1;
+      var cpThread = (c.smsThreads || []).find(function (x) { return x.id === cpNavSt.activeThreadId; });
+      cpInner = '<div class="pv-phone-title">' + esc(cpThread ? (cpThread.name || "(unnamed)") : "Messages") + '</div>' +
+        '<div class="pv-phone-sms-thread">' + (cpThread ? (cpThread.messages || []).map(function (m) {
+          return '<div class="pv-phone-sms-bubble ' + (m.sent ? "sent" : "received") + '">' + esc(m.text || "") + '</div>';
+        }).join("") : "") + '</div>';
+    }
+
+    html += '<div class="pv-phone" data-node="' + esc(n.id) + '">' +
+      '<div class="pv-phone-lcd">' + cpInner + '</div>' +
+      '<div class="pv-phone-controls">' +
+        '<div class="pv-phone-dpad">' +
+          '<button type="button" class="pv-phone-dbtn pv-phone-dbtn-up" data-cpnav="up" aria-label="Up">▲</button>' +
+          '<button type="button" class="pv-phone-dbtn pv-phone-dbtn-left" data-cpnav="left" aria-label="Left">◀</button>' +
+          '<button type="button" class="pv-phone-dbtn pv-phone-dbtn-select" data-cpnav="select" aria-label="Select">●</button>' +
+          '<button type="button" class="pv-phone-dbtn pv-phone-dbtn-right" data-cpnav="right" aria-label="Right">▶</button>' +
+          '<button type="button" class="pv-phone-dbtn pv-phone-dbtn-down" data-cpnav="down" aria-label="Down">▼</button>' +
+        '</div>' +
+        '<div class="pv-phone-softkeys">' +
+          '<button type="button" class="pv-phone-softkey" data-cpnav="back">↩ Back</button>' +
+          '<button type="button" class="pv-phone-softkey" data-cpnav="menu">☰ Menu</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  } else if (n.type === "lockAndKey") {
+    // See wireLockAndKeyInteractions further down for the tap/swipe
+    // interaction this markup drives, and the LK_*/lkPadlockTop doc
+    // comment above for the geometry these inline top:…px offsets come
+    // from. This branch only ever paints the *resting* state — idle
+    // (nothing attempted yet) or solved (already completed) — because the
+    // in-between wrong/correct animation is played by directly animating
+    // this same markup's existing DOM nodes in the wire function rather
+    // than by re-rendering mid-animation (a full innerHTML replace, which
+    // is how ctl.render() normally works, can't itself be transitioned).
+    var lkOptions = lockAndKeyOptions(session.hunt, n.id);
+    if (!ctl.lockAndKeyDraft[n.id]) ctl.lockAndKeyDraft[n.id] = { index: 0, busy: false };
+    var lkDraft = ctl.lockAndKeyDraft[n.id];
+    if (lkDraft.index >= lkOptions.length) lkDraft.index = 0;
+    var lkSolved = !!session.state.completed[n.id];
+    var lkCorrectKey = lkOptions.find(function (k) { return k.id === c.correctKeyNodeId; });
+    // Once solved, the node is shown read-only (renderPinnedNode skips
+    // wiring for a completed node), so always settle on the correct key
+    // seated at its own threshold with the shackle open — there's no more
+    // ring to swipe.
+    var lkCur = lkSolved ? (lkCorrectKey || lkOptions[lkDraft.index]) : lkOptions[lkDraft.index];
+
+    html += '<div class="pv-scene-body"' + pvFontStyle(c.promptFontSize) + '>' + esc(c.prompt) + '</div>';
+
+    if (!lkOptions.length) {
+      html += '<div class="pv-empty" style="padding-top:12px">No keys are on offer yet — connect a Keychain node to this puzzle (it\'ll automatically become this puzzle\'s "keychain supply"), then connect at least one Key node to that Keychain.</div>';
+    } else {
+      var lkThreshold = lkCur ? Number(lkCur.content.threshold) : 50;
+      if (!isFinite(lkThreshold)) lkThreshold = 50;
+      var lkTop = lkPadlockTop(lkSolved ? "correct" : "idle", lkThreshold);
+      html += '<div class="pv-lk-stage" id="pvLkStage">';
+      html += '<div class="pv-lk-ring"></div>';
+      html += '<div class="pv-lk-key-layer"><div class="pv-lk-key"' +
+        (lkCur && lkCur.content.imageAsset ? ' style="background-image:url(&quot;' + esc(lkCur.content.imageAsset) + '&quot;)"' : '') + '>' +
+        (lkCur && !lkCur.content.imageAsset ? '<span class="pv-lk-key-noimg">🔑<br>' + esc(lkCur.content.name || lkCur.title) + '</span>' : '') +
+        '</div></div>';
+      html += '<button type="button" class="pv-lk-padlock' + (lkSolved ? ' pv-lk-unlocked' : '') + '" id="pvLkPadlock" style="top:' + lkTop + 'px" aria-label="Try this key"' + (lkSolved ? ' disabled' : '') + '>' +
+        '<span class="pv-lk-shackle"></span><span class="pv-lk-body"></span></button>';
+      html += '<div class="pv-lk-feedback" id="pvLkFeedback"></div>';
+      html += '</div>'; // .pv-lk-stage
+      html += lkSolved
+        ? '<div class="pv-lk-hint-row">🔓 Unlocked with ' + esc(lkCur ? (lkCur.content.name || lkCur.title) : "the right key") + '.</div>'
+        : '<div class="pv-lk-hint-row">↕ Swipe the ring for a different key — key ' + (lkDraft.index + 1) + ' of ' + lkOptions.length + '. Tap the padlock to try it.</div>';
+    }
   }
   // Generic optional Back button — every BACK_BUTTON_TYPES node type gets
   // this same "← Back" affordance as Simple Text's showBackButton, off by
@@ -2532,6 +3052,210 @@ function renderPreviewNode(session, n, ctl) {
     html += '</div>';
   }
   return wrapWithMedia(c, html);
+}
+
+// Cell Phone — wires the D-pad/softkeys and every screen's tappable rows
+// (a real device would only have the D-pad, but everything's also
+// directly clickable since this runs in a browser/touch preview, not on
+// physical hardware — see the "cellPhone" branch of renderPreviewNode
+// above for the corresponding markup). A no-op for every other node
+// type, same "no matching ids/selectors, nothing to wire" pattern as the
+// other wireXInteractions helpers below.
+function wireCellPhoneInteractions(root, ctl, session, n) {
+  if (n.type !== "cellPhone") return;
+  var nav = cpNav(ctl, n.id);
+  var c = n.content;
+
+  var items = Array.prototype.slice.call(root.querySelectorAll(".pv-phone [data-cpfocus]"));
+  if (items.length) {
+    if (nav.focusIndex >= items.length) nav.focusIndex = items.length - 1;
+    if (nav.focusIndex < 0) nav.focusIndex = 0;
+    items.forEach(function (el, i) { el.classList.toggle("pv-phone-focused", i === nav.focusIndex); });
+  }
+
+  function moveFocus(delta) {
+    if (!items.length) return;
+    nav.focusIndex = ((nav.focusIndex + delta) % items.length + items.length) % items.length;
+    ctl.render();
+  }
+  // Left/Right on a plain vertical list (focusCols === 1) are just a
+  // forgiving alias for Up/Down; on the keypad's 3-column digit grid
+  // they step one cell without wrapping into the next/previous row.
+  function moveFocusGrid(delta) {
+    if (nav.focusCols <= 1) { moveFocus(delta); return; }
+    if (!items.length) return;
+    var next = nav.focusIndex + delta;
+    if (next < 0 || next >= items.length) return;
+    nav.focusIndex = next;
+    ctl.render();
+  }
+
+  // Starts a call: contact is the matched Contact object, or null for an
+  // unrecognised number. Always clears any previous call's timers first
+  // (cpStopCallAudio) so re-dialling mid-ring/mid-busy-tone never leaves
+  // two timers running at once. The ring cadence -> "connected" phase
+  // change happens on a timeout rather than immediately so the Calling…
+  // screen and its tones actually get seen/heard before the contact's
+  // clip (or the engaged tone) takes over.
+  function startCall(contact) {
+    cpStopCallAudio(nav);
+    nav.activeContactId = contact ? contact.id : null;
+    cpPush(nav, "inCall");
+    if (contact) {
+      nav.callPhase = "ringing";
+      cpPlayRingCadence();
+      nav.ringTimeoutId = setTimeout(function () {
+        nav.callPhase = "connected";
+        nav.ringTimeoutId = null;
+        ctl.render();
+      }, 1900);
+    } else {
+      nav.callPhase = "engaged";
+      cpPlayEngagedPulse();
+      nav.engagedIntervalId = setInterval(cpPlayEngagedPulse, 750);
+    }
+  }
+
+  Array.prototype.forEach.call(root.querySelectorAll(".pv-phone [data-cpnav]"), function (btn) {
+    btn.onclick = function () {
+      var dir = btn.dataset.cpnav;
+      if (dir === "up") { moveFocus(-nav.focusCols); return; }
+      if (dir === "down") { moveFocus(nav.focusCols); return; }
+      if (dir === "left") { moveFocusGrid(-1); return; }
+      if (dir === "right") { moveFocusGrid(1); return; }
+      if (dir === "select") { var el = items[nav.focusIndex]; if (el) el.click(); return; }
+      if (dir === "back") {
+        if (cpScreen(nav) === "inCall") cpStopCallAudio(nav);
+        cpPop(nav); ctl.render(); return;
+      }
+      if (dir === "menu") { cpStopCallAudio(nav); cpGoHome(nav); ctl.render(); return; }
+    };
+  });
+
+  Array.prototype.forEach.call(root.querySelectorAll(".pv-phone [data-cpaction]"), function (btn) {
+    btn.onclick = function () {
+      var action = btn.dataset.cpaction;
+      if (action === "openSection") {
+        var section = btn.dataset.section;
+        if (section === "calls") cpPush(nav, "callsHome");
+        else if (section === "voicemails") cpPush(nav, "voicemails");
+        else if (section === "sms") cpPush(nav, "sms");
+      } else if (action === "openContacts") {
+        cpPush(nav, "contacts");
+      } else if (action === "openKeypad") {
+        nav.dialedDigits = "";
+        cpPush(nav, "keypad");
+      } else if (action === "callContact") {
+        var contact = (c.contacts || []).find(function (ct) { return ct.id === btn.dataset.contact; });
+        if (contact) {
+          nav.dialedDigits = cpContactNumbers(contact)[0] || "";
+          startCall(contact);
+        }
+      } else if (action === "digit") {
+        if ((nav.dialedDigits || "").length < 20) nav.dialedDigits = (nav.dialedDigits || "") + btn.dataset.digit;
+      } else if (action === "clearDigit") {
+        nav.dialedDigits = (nav.dialedDigits || "").slice(0, -1);
+      } else if (action === "dial") {
+        startCall(cpFindContactByDigits(c, nav.dialedDigits));
+      } else if (action === "hangUp") {
+        cpStopCallAudio(nav);
+        cpPop(nav);
+      } else if (action === "playVoicemail") {
+        nav.activeVoicemailId = btn.dataset.voicemail;
+        cpPush(nav, "voicemailPlay");
+      } else if (action === "openThread") {
+        nav.activeThreadId = btn.dataset.thread;
+        cpPush(nav, "smsThread");
+      }
+      ctl.render();
+    };
+  });
+}
+
+// Lock and Key — swipe the ring up/down to cycle which key is presented
+// at the front (a plain onpointerdown/move/up drag gesture, same shape as
+// wireLockDials' wheel-dragging above, just one axis and no library), tap
+// the padlock to try the key currently at the front.
+//
+// Deliberately bypasses ctl.render() for the animated middle of a tap
+// attempt (see the doc comment on renderPreviewNode's "lockAndKey" branch
+// above for why: a full innerHTML replace can't itself be CSS-transitioned)
+// — it drives the padlock's own `top` and the shackle's "unlocked" class
+// directly, exactly the two properties lkPadlockTop/the .pv-lk-unlocked
+// CSS rule already know how to interpret, and only calls back into
+// pv_action_submitLockAndKey/ctl.render() once the sequence has finished
+// settling into its next *resting* state (same "animate freely, then
+// resync through the normal render pipeline" idea as Gear & Pulley's
+// checkSolved/setTimeout pairing above).
+function wireLockAndKeyInteractions(root, ctl, session, n) {
+  if (n.type !== "lockAndKey") return;
+  var stage = root.querySelector("#pvLkStage");
+  if (!stage) return;
+  var draft = ctl.lockAndKeyDraft[n.id];
+  if (!draft) return;
+  var options = lockAndKeyOptions(session.hunt, n.id);
+  if (!options.length) return;
+  var padlock = stage.querySelector("#pvLkPadlock");
+  var feedbackEl = stage.querySelector("#pvLkFeedback");
+  if (!padlock) return;
+
+  function cycle(delta) {
+    if (draft.busy) return;
+    draft.index = ((draft.index + delta) % options.length + options.length) % options.length;
+    ctl.render();
+  }
+
+  var dragging = false, startY = 0;
+  stage.onpointerdown = function (e) {
+    if (draft.busy) return;
+    if (e.target.closest && e.target.closest("#pvLkPadlock")) return; // the padlock has its own click handler, below
+    dragging = true; startY = e.clientY;
+    try { stage.setPointerCapture(e.pointerId); } catch (err) { /* older browsers: drag still tracks via direct listeners */ }
+  };
+  stage.onpointerup = function (e) {
+    if (!dragging) return;
+    dragging = false;
+    var dy = e.clientY - startY;
+    // Dragging up brings the next key into view (like scrolling a strip of
+    // keys upward past a fixed viewing point); dragging down brings the
+    // previous one back.
+    if (Math.abs(dy) > 24) cycle(dy < 0 ? 1 : -1);
+  };
+  stage.onpointercancel = function () { dragging = false; };
+
+  padlock.onclick = function () {
+    if (draft.busy) return;
+    var cur = options[draft.index];
+    if (!cur) return;
+    draft.busy = true;
+    var correct = cur.id === n.content.correctKeyNodeId;
+    var threshold = Number(cur.content.threshold);
+    if (!isFinite(threshold)) threshold = 50;
+
+    padlock.style.transition = "top .45s cubic-bezier(.3,.7,.4,1)";
+    padlock.style.top = lkPadlockTop(correct ? "correct" : "wrong", threshold) + "px";
+
+    if (correct) {
+      setTimeout(function () {
+        padlock.classList.add("pv-lk-unlocked"); // pops the shackle open — see .pv-lk-unlocked in styles.css, same idea as Physical Lock Code's .pv-lock-open
+        pv_action_submitLockAndKey(session, n.id, true);
+        setTimeout(function () { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; ctl.render(); }, 700);
+      }, 460);
+    } else {
+      setTimeout(function () {
+        if (feedbackEl) feedbackEl.textContent = "Wrong key";
+        setTimeout(function () {
+          if (feedbackEl) feedbackEl.textContent = "";
+          padlock.style.top = lkPadlockTop("idle", threshold) + "px";
+          setTimeout(function () {
+            draft.busy = false;
+            pv_action_submitLockAndKey(session, n.id, false);
+            ctl.render();
+          }, 460);
+        }, 900);
+      }, 460);
+    }
+  };
 }
 
 // Shared wiring for the several puzzle types that are just "one text
@@ -4666,6 +5390,8 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireGearPulleyInteractions(root, ctl, session, n);
   wireCategoryGridInteractions(root, ctl, session, n);
   wireConstraintSatisfactionInteractions(root, ctl, session, n);
+  wireCellPhoneInteractions(root, ctl, session, n);
+  wireLockAndKeyInteractions(root, ctl, session, n);
 
   // Sequence / Pattern — tap swatches in order; auto-validates once the
   // attempt is as long as the target sequence, resetting on a miss.
@@ -4792,6 +5518,9 @@ function createPreviewController(mainEl, sideEl) {
     gearDraft: {}, // node id -> live {tiles:[{id,teeth}], placements: axleId -> tileId, selectedTileId} (see gpInitDraft/wireGearPulleyInteractions)
     cspDraft: {}, // node id -> live {mode:"info"|"answer", alloc: recipientId -> itemId -> count} (see renderPreviewNode's "constraintSatisfaction" branch / wireConstraintSatisfactionInteractions)
     pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
+    phoneNav: {}, // node id -> Cell Phone screen-stack/dial/focus state (see cpNav above and wireCellPhoneInteractions below) — volatile like every other *Draft map here, never persisted to session.state
+    lockAndKeyDraft: {}, // node id -> live {index, busy} — which key on the ring is currently at the front, and whether a tap animation is mid-flight (see renderPreviewNode's "lockAndKey" branch / wireLockAndKeyInteractions)
+    pinnedFromLane: null, // {laneId, sceneId} when the currently-pinned node was opened by tapping it in a lane-list view (e.g. Inventory) rather than jumped to from the canvas — drives the "← Back to …" control in ctl.render()'s pinned branch, see showLaneList/showNode below
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
     laneListId: null, laneListSceneId: null, // set when a lane tab (Leads/Inventory/Hints) asks to show its scene-wide options list instead of a single node
@@ -4819,6 +5548,7 @@ function createPreviewController(mainEl, sideEl) {
     ctl.categoryGridReveal = {};
     ctl.gearDraft = {};
     ctl.cspDraft = {};
+    ctl.lockAndKeyDraft = {};
     ctl.pinnedNodeId = null;
     ctl.peekStack = [];
     ctl.laneListId = null;
@@ -4836,6 +5566,7 @@ function createPreviewController(mainEl, sideEl) {
   // back to that same lane rather than wherever it happened to be before.
   ctl.showNode = function (nodeId) {
     ctl.pinnedNodeId = nodeId; ctl.laneListId = null;
+    ctl.pinnedFromLane = null; // reset here; a lane-list [data-lead] click (see ctl.render() below) sets it right back afterwards, so any other path to showNode (e.g. a canvas click) doesn't leave a stale "← Back to …" control showing
     var node = ctl.session && ctl.session.hunt.nodes.find(function (n) { return n.id === nodeId; });
     if (node) ctl.currentLane = node.lane;
     ctl.render();
@@ -4843,8 +5574,8 @@ function createPreviewController(mainEl, sideEl) {
   // Force the view to show every currently-available option in one lane
   // × scene cell (Leads/Inventory/Hints tab bar taps) instead of jumping
   // straight into a single node.
-  ctl.showLaneList = function (laneId, sceneId) { ctl.laneListId = laneId; ctl.laneListSceneId = sceneId || null; ctl.pinnedNodeId = null; ctl.currentLane = laneId; ctl.render(); };
-  ctl.clearPin = function () { if (ctl.pinnedNodeId || ctl.laneListId) { ctl.pinnedNodeId = null; ctl.laneListId = null; ctl.render(); } };
+  ctl.showLaneList = function (laneId, sceneId) { ctl.laneListId = laneId; ctl.laneListSceneId = sceneId || null; ctl.pinnedNodeId = null; ctl.pinnedFromLane = null; ctl.currentLane = laneId; ctl.render(); };
+  ctl.clearPin = function () { if (ctl.pinnedNodeId || ctl.laneListId) { ctl.pinnedNodeId = null; ctl.laneListId = null; ctl.pinnedFromLane = null; ctl.render(); } };
 
   ctl.render = function () {
     var session = ctl.session;
@@ -4863,6 +5594,20 @@ function createPreviewController(mainEl, sideEl) {
 
     if (pinnedNode) {
       renderPinnedNode(session, pinnedNode, ctl);
+      // A node opened by tapping it in a lane list (e.g. a Cell Phone or
+      // other explorable node sitting in the Inventory lane — see the
+      // "inventory" branch of renderLaneOptionsList above) gets a small
+      // "← Back to …" control prepended above its own content, so there's
+      // always an obvious way back to that list even for node types like
+      // Cell Phone that have no showBackButton/Continue of their own.
+      // Leads/Hints-adjacent nodes reached the same way get it too.
+      if (ctl.pinnedFromLane) {
+        var pfl = ctl.pinnedFromLane;
+        var laneBackLabel = LANE_LIST_TITLES[pfl.laneId] || "list";
+        main.innerHTML = '<button type="button" class="pv-choice-btn pv-lane-back-btn" id="pvLaneBackBtn">← Back to ' + esc(laneBackLabel) + '</button>' + main.innerHTML;
+        var laneBackBtn = main.querySelector("#pvLaneBackBtn");
+        if (laneBackBtn) laneBackBtn.onclick = function () { ctl.showLaneList(pfl.laneId, pfl.sceneId); };
+      }
     } else if (peekNode) {
       // A Back button (Simple Text / Story Block) sent the player to look at
       // an already-completed earlier screen — render it exactly like a live
@@ -4877,7 +5622,12 @@ function createPreviewController(mainEl, sideEl) {
       main.innerHTML = renderLaneOptionsList(session, ctl.laneListId, laneNodes);
       wireHintButtons(session, main, ctl);
       Array.prototype.forEach.call(main.querySelectorAll("[data-lead]"), function (el) {
-        el.onclick = function () { ctl.showNode(el.dataset.lead); };
+        el.onclick = function () {
+          var fromLane = { laneId: ctl.laneListId, sceneId: ctl.laneListSceneId };
+          ctl.showNode(el.dataset.lead); // resets ctl.pinnedFromLane to null internally
+          ctl.pinnedFromLane = fromLane;
+          ctl.render();
+        };
       });
       ctl._activeIds = { expandedId: null, leadIds: laneNodes.map(function (n) { return n.id; }) };
     } else if (state.endingReached) {
@@ -4955,6 +5705,8 @@ return {
   IMAGE_ASPECT_RATIOS: IMAGE_ASPECT_RATIOS,
   IMAGE_FRAME_STYLES: IMAGE_FRAME_STYLES,
   LOCK_STYLES: LOCK_STYLES,
+  lockAndKeySupplyConnection: lockAndKeySupplyConnection,
+  lockAndKeyOptions: lockAndKeyOptions,
 
   STYLE_PACK_SCHEMA_VERSION: STYLE_PACK_SCHEMA_VERSION,
   STYLE_PACKS: STYLE_PACKS,
