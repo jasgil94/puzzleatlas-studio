@@ -336,6 +336,64 @@ var NODE_TYPES = {
       return (c.sources || []).length + " source(s), " + (c.pieces || []).length + " piece(s), " + (c.targets || []).length + " target(s)";
     }
   },
+  gearPulley: {
+    family: "puzzle", label: "Gear & Pulley Builder", icon: "⚙️",
+    defaultTitle: "New Gear & Pulley Puzzle",
+    // A mesh-graph gear puzzle: the creator places one handle and one hoist
+    // (fixed, one-of-a-kind pivots) plus any number of axles between them on
+    // a 900×620 board, and gives every piece a tooth count — two gears
+    // "mesh" (drive each other) when the distance between their centers
+    // exactly equals the sum of their pitch radii (see gpRadiusOf/
+    // gpComputeMesh below), same physical rule as the standalone
+    // gear-pulley-builder.html prototype this was adapted from. A layout is
+    // solved when a chain of meshed gears connects the handle to the hoist
+    // (gpSolveState — a breadth-first reachability walk over the mesh
+    // graph, identical to the prototype's solveState).
+    //
+    // At player-time the positions are fixed exactly as designed, but each
+    // axle's tooth count is hidden: the player only sees an empty socket at
+    // each axle position and a tray of cogs (one per axle's correct tooth
+    // count, plus content.decoyTeeth extra wrong-sized cogs) at the bottom
+    // of the screen. Tapping a tray cog then an empty socket drops it in;
+    // tapping a filled socket lifts it back out. The mesh/clash lines
+    // (green solid / red dashed) redraw live after every placement — the
+    // same visual feedback the creator sees while designing — so working
+    // out which cog fits which post is the whole puzzle. Auto-validates the
+    // instant the handle-to-hoist chain connects — no submit button, same
+    // family as Fuse Panel/Lumen Puzzle/Category Grid (see
+    // pv_action_submitGearPulley below).
+    //
+    // The creator designs the layout using the same select/place/drag-to-
+    // snap board UI as the prototype, embedded directly in the Studio
+    // inspector (see buildTypeSpecificFields/wireNodeInspector's
+    // "gearPulley" case in app.js), and the exact same radius/mesh/solve
+    // math (gpRadiusOf/gpGearPathD/gpComputeMesh/gpSolveState, defined
+    // further down and exported as PAEngine.gp*) drives both that
+    // design-time board and the real player screen (see the "gearPulley"
+    // branch in renderPreviewNode and wireGearPulleyInteractions, below) —
+    // one shared implementation of the geometry rather than two. Unlike
+    // Lumen Puzzle, the player-facing rendering deliberately differs from
+    // the design-time one (axle teeth hidden behind a tray instead of shown
+    // outright), so only the math is shared, not the drawing code.
+    defaultContent: function () {
+      return {
+        prompt: "Fit the right cogs onto the axles so the drive connects the handle to the hoist.",
+        handle: { x: 150, y: 310, teeth: 14 },
+        hoist: { x: 464.4, y: 310, teeth: 14 },
+        axles: [
+          { id: uid("gpax"), x: 254.8, y: 310, teeth: 14 },
+          { id: uid("gpax"), x: 359.6, y: 310, teeth: 14 }
+        ],
+        decoyTeeth: [10, 20],
+        showBackButton: false
+      };
+    },
+    summary: function (c) {
+      var axleCount = (c.axles || []).length;
+      var decoyCount = (c.decoyTeeth || []).length;
+      return axleCount + " axle(s), " + decoyCount + " decoy cog(s) in the tray";
+    }
+  },
   categoryGrid: {
     family: "puzzle", label: "Category Grid (3×3 Image Puzzle)", icon: "🖼️",
     defaultTitle: "New Category Grid",
@@ -1646,6 +1704,20 @@ function pv_action_submitConstraintSatisfaction(session, nodeId, alloc) {
   return ok;
 }
 
+// Gear & Pulley Builder — auto-validates the instant the mesh chain from
+// handle to hoist connects (same "auto-validate, no submit button" family
+// as Fuse Panel/Lumen Puzzle/Category Grid), driven by
+// wireGearPulleyInteractions below, which recomputes gpSolveState after
+// every cog placed/lifted and only calls this once solved becomes true.
+function pv_action_submitGearPulley(session, nodeId, driveConnected) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var mechanicOk = !!driveConnected;
+  var ok = nodeCompletionOk(n, session, mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
+
 function pv_action_revealHint(session, hintNodeId) {
   var cur = session.state.hintProgress[hintNodeId] || 0;
   var n = session.hunt.nodes.find(function (x) { return x.id === hintNodeId; });
@@ -1663,7 +1735,7 @@ function pv_action_revealHint(session, hintNodeId) {
 --------------------------------------------------------------------- */
 var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
-  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "categoryGrid", "constraintSatisfaction"];
+  "imageReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction"];
 
 // Node types offering a generic, opt-in "← Back" button — every
 // PLAYER_SCREEN_TYPES type except Simple Text (its own showBackButton
@@ -1679,7 +1751,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "orde
 // Studio inspector field.
 var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
-  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "categoryGrid", "constraintSatisfaction"];
+  "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "categoryGrid", "constraintSatisfaction"];
 
 // Default primary-action button text per node type, used by
 // renderPreviewNode below unless a creator sets node.buttonLabel to
@@ -2283,6 +2355,14 @@ function renderPreviewNode(session, n, ctl) {
       '<div class="pv-lumen-summary" data-node="' + esc(n.id) + '"></div>';
     var fbLu = session.state.feedback[n.id];
     if (fbLu === "correct") html += '<div class="pv-feedback correct">✓ Beam routed.</div>';
+  } else if (n.type === "gearPulley") {
+    ctl.gearDraft = ctl.gearDraft || {};
+    if (!ctl.gearDraft[n.id]) ctl.gearDraft[n.id] = gpInitDraft(c);
+    if (c.prompt) html += '<div class="pv-scene-body">' + esc(c.prompt) + '</div>';
+    html += renderGearPulleyBoardSvg(n, ctl);
+    html += renderGearPulleyTray(n, ctl);
+    var fbGp = session.state.feedback[n.id];
+    if (fbGp === "correct") html += '<div class="pv-feedback correct">✓ Drive connected — it turns freely.</div>';
   } else if (n.type === "categoryGrid") {
     if (!ctl.categoryGridDraft[n.id]) {
       ctl.categoryGridDraft[n.id] = { cells: [null, null, null, null, null, null, null, null, null], gallery: (c.images || []).map(function (im) { return im.id; }), selected: null };
@@ -3079,6 +3159,360 @@ function wireRopeTyingInteractions(root, ctl, session, n) {
       }, 650);
     }
   };
+}
+
+/* ---------------------------------------------------------------------
+   Gear & Pulley Builder — mesh-graph geometry/solve-check math and SVG
+   markup, ported from the standalone gear-pulley-builder.html prototype.
+   Pure math (gpRadiusOf/gpGearPathD/gpComputeMesh/gpSolveState) is exported
+   as PAEngine.gp* and shared with Studio's inspector-embedded designer
+   (buildTypeSpecificFields/wireNodeInspector's "gearPulley" case in
+   app.js), so a validated layout there stays mechanically identical here.
+   The rendering below (gpNodeMarkup/gpSocketMarkup/render*) is
+   player-runtime only — the design-time board draws differently (teeth
+   always visible, no tray), see NODE_TYPES.gearPulley's comment above.
+--------------------------------------------------------------------- */
+var GP_BASE = 16, GP_PITCH = 2.6;
+var GP_TEETH_MIN = 6, GP_TEETH_MAX = 30, GP_TEETH_DEFAULT = 14;
+var GP_MAX_AXLES = 12;
+var GP_MESH_TOL = 1.5;    // distance tolerance (px) to count as a true mesh
+var GP_SNAP_RANGE = 28;   // while dragging in the designer, snap to this close a candidate mesh
+var GP_VB_W = 900, GP_VB_H = 620;
+
+function gpRadiusOf(teeth) { return GP_BASE + teeth * GP_PITCH; }
+
+// Same tooth-silhouette path generator as the prototype — a closed SVG path
+// string for a gear of pitch radius r with teethCount teeth.
+function gpGearPathD(r, teethCount) {
+  teethCount = Math.max(6, Math.round(teethCount));
+  var step = (Math.PI * 2) / teethCount;
+  var toothH = Math.max(4, r * 0.16);
+  var rOut = r + toothH * 0.5, rIn = r - toothH * 0.5;
+  var d = "";
+  function pt(ang, rad) { return [Math.cos(ang) * rad, Math.sin(ang) * rad]; }
+  for (var i = 0; i < teethCount; i++) {
+    var a0 = i * step, a1 = a0 + step * 0.28, a2 = a0 + step * 0.5, a3 = a0 + step * 0.78, a4 = a0 + step;
+    var p0 = pt(a0, rIn), p1 = pt(a1, rIn), p2 = pt(a1, rOut), p3 = pt(a2, rOut),
+        p4 = pt(a3, rOut), p5 = pt(a3, rIn), p6 = pt(a4, rIn);
+    if (i === 0) d += "M " + p0[0].toFixed(2) + " " + p0[1].toFixed(2) + " ";
+    d += "L " + p1[0].toFixed(2) + " " + p1[1].toFixed(2) +
+         " L " + p2[0].toFixed(2) + " " + p2[1].toFixed(2) +
+         " L " + p3[0].toFixed(2) + " " + p3[1].toFixed(2) +
+         " L " + p4[0].toFixed(2) + " " + p4[1].toFixed(2) +
+         " L " + p5[0].toFixed(2) + " " + p5[1].toFixed(2) +
+         " L " + p6[0].toFixed(2) + " " + p6[1].toFixed(2) + " ";
+  }
+  return d + "Z";
+}
+
+function gpNodeKey(kind, id) { return kind + (id != null ? ":" + id : ""); }
+
+// nodes: [{kind:"handle"|"hoist"|"axle", id, x, y, teeth}, ...] — every
+// currently-visible piece (at player-time, only axles with a cog placed).
+// Returns { nodes, pairs: [{a,b,state:"mesh"|"clash"|"none",dist,sum}] }.
+function gpComputeMesh(nodes) {
+  var pairs = [];
+  for (var i = 0; i < nodes.length; i++) {
+    for (var j = i + 1; j < nodes.length; j++) {
+      var A = nodes[i], B = nodes[j];
+      var dx = A.x - B.x, dy = A.y - B.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var sum = gpRadiusOf(A.teeth) + gpRadiusOf(B.teeth);
+      var state = Math.abs(dist - sum) <= GP_MESH_TOL ? "mesh" : (dist < sum ? "clash" : "none");
+      pairs.push({ a: A, b: B, state: state, dist: dist, sum: sum });
+    }
+  }
+  return { nodes: nodes, pairs: pairs };
+}
+
+// Breadth-first reachability from the handle over "mesh" edges only.
+// Returns { ready, solved, reachableCount, total, graph, depth } — depth is
+// a nodeKey -> hop-count map used to drive the spin-direction/duration of
+// every currently-driven gear (see gpNodeMarkup).
+function gpSolveState(nodes) {
+  var graph = gpComputeMesh(nodes);
+  var handleNode = nodes.find(function (n) { return n.kind === "handle"; });
+  var hoistNode = nodes.find(function (n) { return n.kind === "hoist"; });
+  if (!handleNode || !hoistNode) {
+    return { ready: false, solved: false, reachableCount: 0, total: nodes.length, graph: graph, depth: {} };
+  }
+  var adj = {};
+  nodes.forEach(function (n) { adj[gpNodeKey(n.kind, n.id)] = []; });
+  graph.pairs.forEach(function (p) {
+    if (p.state === "mesh") {
+      var ka = gpNodeKey(p.a.kind, p.a.id), kb = gpNodeKey(p.b.kind, p.b.id);
+      adj[ka].push(kb); adj[kb].push(ka);
+    }
+  });
+  var startKey = gpNodeKey("handle", null);
+  var depth = {}; depth[startKey] = 0;
+  var queue = [startKey], qi = 0;
+  while (qi < queue.length) {
+    var cur = queue[qi++];
+    (adj[cur] || []).forEach(function (next) {
+      if (!(next in depth)) { depth[next] = depth[cur] + 1; queue.push(next); }
+    });
+  }
+  var hoistKey = gpNodeKey("hoist", null);
+  var solved = hoistKey in depth;
+  return { ready: true, solved: solved, reachableCount: queue.length, total: nodes.length, graph: graph, depth: depth };
+}
+
+// Per-node player draft: the shuffled tray of cogs (one per axle's correct
+// tooth count, plus content.decoyTeeth extras) and the live axleId -> tileId
+// placement map. Built once per node per session (see renderPreviewNode's
+// "gearPulley" branch, which lazily creates ctl.gearDraft[n.id]) and mutated
+// in place by wireGearPulleyInteractions as the player drags cogs around —
+// content itself is never touched, same "draft, not the hunt" pattern as
+// ctl.ropeDraft/ctl.lumenDraft.
+function gpInitDraft(c) {
+  var tiles = (c.axles || []).map(function (a) { return { id: uid("gpt"), teeth: a.teeth }; });
+  (c.decoyTeeth || []).forEach(function (t) { tiles.push({ id: uid("gpt"), teeth: t }); });
+  for (var i = tiles.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = tiles[i]; tiles[i] = tiles[j]; tiles[j] = tmp;
+  }
+  return { tiles: tiles, placements: {}, selectedTileId: null };
+}
+
+// The node list gpComputeMesh/gpSolveState actually see at player-time:
+// handle + hoist (always present, teeth as designed) plus only the axles
+// that currently have a cog placed (using that cog's own teeth — right or
+// wrong, whatever the player chose), reflecting the physical mesh exactly.
+function gpLiveNodes(c, draft) {
+  var nodes = [];
+  if (c.handle) nodes.push({ kind: "handle", id: null, x: c.handle.x, y: c.handle.y, teeth: c.handle.teeth });
+  if (c.hoist) nodes.push({ kind: "hoist", id: null, x: c.hoist.x, y: c.hoist.y, teeth: c.hoist.teeth });
+  (c.axles || []).forEach(function (a) {
+    var tileId = draft.placements[a.id];
+    if (!tileId) return;
+    var tile = draft.tiles.find(function (t) { return t.id === tileId; });
+    if (tile) nodes.push({ kind: "axle", id: a.id, x: a.x, y: a.y, teeth: tile.teeth });
+  });
+  return nodes;
+}
+
+function gpDefsMarkup(idp) {
+  return "<defs>" +
+    '<linearGradient id="' + idp + 'steel" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#e2e5e8"/><stop offset="45%" stop-color="#9aa0a6"/><stop offset="100%" stop-color="#54585d"/></linearGradient>' +
+    '<radialGradient id="' + idp + 'hub" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#f0d9a0"/><stop offset="100%" stop-color="#8a6a2c"/></radialGradient>' +
+    '<linearGradient id="' + idp + 'brass" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f6dfa0"/><stop offset="100%" stop-color="#8a6a2c"/></linearGradient>' +
+    "</defs>";
+}
+
+// One handle/hoist/axle piece, player-side. Handle and hoist are always
+// drawn (fixed, non-interactive); axle pieces are only drawn once a cog is
+// placed there (clickableRemovable true), with an invisible larger hit
+// circle (.gp-node-hit) wireGearPulleyInteractions listens for taps on to
+// lift the cog back out. Spins in place via SMIL <animateTransform> when
+// reachable from the handle (sv.depth), same alternating-direction-by-depth
+// trick as the prototype so adjacent meshed gears visibly turn opposite
+// ways.
+function gpNodeMarkup(node, sv, idp, clickableRemovable) {
+  var r = gpRadiusOf(node.teeth);
+  var key = gpNodeKey(node.kind, node.id);
+  var driven = sv.ready && (key in sv.depth);
+  var depth = sv.ready ? (sv.depth[key] || 0) : 0;
+  var cls = "gp-node-group gp-node-" + node.kind + (clickableRemovable ? " gp-node-removable" : "");
+  var s = '<g class="' + cls + '" transform="translate(' + node.x.toFixed(1) + "," + node.y.toFixed(1) + ')">';
+  s += "<g>";
+  if (driven) {
+    var dur = Math.max(1.4, node.teeth * 0.32);
+    var toAngle = (depth % 2 === 0) ? "360" : "-360";
+    s += '<animateTransform attributeName="transform" type="rotate" from="0 0 0" to="' + toAngle + ' 0 0" dur="' + dur.toFixed(2) + 's" repeatCount="indefinite"/>';
+  }
+  if (node.kind === "handle") {
+    s += '<circle cx="0" cy="0" r="' + r + '" fill="url(#' + idp + 'steel)" stroke="#0a0e1a" stroke-width="1.6"/>';
+    for (var sp = 0; sp < 5; sp++) {
+      var ang = sp * (Math.PI * 2 / 5);
+      s += '<line x1="0" y1="0" x2="' + (Math.cos(ang) * r * 0.72).toFixed(1) + '" y2="' + (Math.sin(ang) * r * 0.72).toFixed(1) + '" stroke="#4b4f54" stroke-width="' + Math.max(3, r * 0.09).toFixed(1) + '" stroke-linecap="round"/>';
+    }
+    s += '<line x1="0" y1="0" x2="' + (r + 16) + '" y2="0" stroke="#3a3530" stroke-width="6" stroke-linecap="round"/>';
+    s += '<circle cx="' + (r + 16) + '" cy="0" r="8" fill="url(#' + idp + 'brass)" stroke="#4a3510" stroke-width="1.2"/>';
+    s += '<circle cx="0" cy="0" r="' + (r * 0.22).toFixed(1) + '" fill="url(#' + idp + 'hub)" stroke="#0a0e1a" stroke-width="1"/>';
+  } else if (node.kind === "hoist") {
+    s += '<circle cx="0" cy="0" r="' + r + '" fill="url(#' + idp + 'steel)" stroke="#0a0e1a" stroke-width="1.6"/>';
+    s += '<circle cx="0" cy="0" r="' + (r * 0.82).toFixed(1) + '" fill="none" stroke="#4b4f54" stroke-width="' + (r * 0.14).toFixed(1) + '"/>';
+    s += '<circle cx="0" cy="0" r="' + (r * 0.22).toFixed(1) + '" fill="url(#' + idp + 'hub)" stroke="#0a0e1a" stroke-width="1"/>';
+  } else {
+    s += '<path d="' + gpGearPathD(r, node.teeth) + '" fill="url(#' + idp + 'steel)" stroke="#0a0e1a" stroke-width="1.4" stroke-linejoin="round"/>';
+    s += '<circle cx="0" cy="0" r="' + (r * 0.24).toFixed(1) + '" fill="url(#' + idp + 'hub)" stroke="#0a0e1a" stroke-width="1"/>';
+  }
+  s += "</g>"; // spin group
+
+  var tag = node.kind === "handle" ? "HANDLE" : node.kind === "hoist" ? "HOIST" : "AXLE";
+  s += '<text class="gp-node-label" x="0" y="' + (r + 16) + '">' + tag + "</text>";
+  s += '<circle cx="0" cy="0" r="11" fill="#ffe6a0" opacity="0.92" pointer-events="none"/>';
+  s += '<text class="gp-node-teeth" x="0" y="4">' + node.teeth + "</text>";
+
+  if (clickableRemovable) {
+    s += '<circle class="gp-node-hit" data-axleid="' + esc(String(node.id)) + '" cx="0" cy="0" r="' + (r + 10) + '" fill="transparent" pointer-events="all"/>';
+  }
+  s += "</g>";
+  return s;
+}
+
+// An empty axle post — a fixed, neutral-sized dashed ring (deliberately NOT
+// sized to the correct tooth count, or the radius alone would give the
+// answer away) with an invisible larger hit circle (.gp-socket-hit) for
+// wireGearPulleyInteractions to drop the currently-selected tray cog onto.
+function gpSocketMarkup(axle, idp, armed) {
+  var r = 34;
+  var s = '<g class="gp-socket' + (armed ? " gp-socket-armed" : "") + '" transform="translate(' + axle.x.toFixed(1) + "," + axle.y.toFixed(1) + ')">';
+  s += '<circle r="' + r + '" fill="rgba(255,255,255,0.03)" stroke="#4a5578" stroke-width="2" stroke-dasharray="5 5"/>';
+  s += '<circle r="4" fill="#4a5578"/>';
+  s += '<circle class="gp-socket-hit" data-axleid="' + esc(String(axle.id)) + '" r="' + (r + 8) + '" fill="transparent" pointer-events="all"/>';
+  s += "</g>";
+  return s;
+}
+
+// Full board — mesh/clash lines under everything, then the handle, hoist,
+// and every axle (a real gear if a cog is placed, an empty socket if not).
+function renderGearPulleyBoardSvg(n, ctl) {
+  var c = n.content;
+  var draft = ctl.gearDraft[n.id];
+  var idp = "gp" + n.id.replace(/[^a-zA-Z0-9]/g, "") + "_";
+  var nodes = gpLiveNodes(c, draft);
+  var sv = gpSolveState(nodes);
+  var body = "";
+  sv.graph.pairs.forEach(function (p) {
+    if (p.state === "none") return;
+    body += '<line class="gp-mesh-line ' + p.state + '" x1="' + p.a.x + '" y1="' + p.a.y + '" x2="' + p.b.x + '" y2="' + p.b.y + '"/>';
+  });
+  if (c.handle) body += gpNodeMarkup({ kind: "handle", id: null, x: c.handle.x, y: c.handle.y, teeth: c.handle.teeth }, sv, idp, false);
+  if (c.hoist) body += gpNodeMarkup({ kind: "hoist", id: null, x: c.hoist.x, y: c.hoist.y, teeth: c.hoist.teeth }, sv, idp, false);
+  (c.axles || []).forEach(function (a) {
+    var tileId = draft.placements[a.id];
+    var tile = tileId ? draft.tiles.find(function (t) { return t.id === tileId; }) : null;
+    if (tile) body += gpNodeMarkup({ kind: "axle", id: a.id, x: a.x, y: a.y, teeth: tile.teeth }, sv, idp, true);
+    else body += gpSocketMarkup(a, idp, draft.selectedTileId != null);
+  });
+  return '<div class="pv-gear-wrap" data-node="' + esc(n.id) + '">' +
+    '<svg class="pv-gear-svg" data-node="' + esc(n.id) + '" viewBox="0 0 ' + GP_VB_W + " " + GP_VB_H + '" preserveAspectRatio="xMidYMid meet">' +
+      gpDefsMarkup(idp) + body +
+    "</svg></div>";
+}
+
+// The cog tray — every tile not currently placed on an axle, in one
+// horizontally-scrollable row (see .pv-gear-tray in styles.css; the row
+// never wraps, it scrolls/drags sideways instead, so it stays a single
+// strip at the bottom of the screen even with a dozen cogs in it — see
+// gpWireTrayDragScroll below for the drag-to-scroll behavior). Tapping a
+// tile selects it (highlighted gold, matching the teeth-number halo used on
+// the board); tapping it again deselects it.
+function renderGearPulleyTray(n, ctl) {
+  var draft = ctl.gearDraft[n.id];
+  var placedTileIds = {};
+  Object.keys(draft.placements).forEach(function (axId) { placedTileIds[draft.placements[axId]] = true; });
+  var remaining = draft.tiles.filter(function (t) { return !placedTileIds[t.id]; });
+  var tilesHtml = remaining.map(function (t) {
+    var sel = draft.selectedTileId === t.id;
+    return '<div class="pv-gear-tile' + (sel ? " selected" : "") + '" data-tileid="' + esc(t.id) + '">' +
+      '<svg viewBox="0 0 60 60" class="pv-gear-tile-svg"><path d="' + gpGearPathD(22, t.teeth) + '" transform="translate(30,30)"/></svg>' +
+      '<span class="pv-gear-tile-teeth">' + t.teeth + "</span>" +
+    "</div>";
+  }).join("");
+  return '<div class="pv-gear-tray-wrap">' +
+    '<div class="pv-gear-tray-label">Cogs — drag to see them all, tap one, then tap an axle post</div>' +
+    '<div class="pv-gear-tray" data-node="' + esc(n.id) + '">' +
+      (tilesHtml || '<div class="pv-gear-tray-empty">All cogs placed</div>') +
+    "</div></div>";
+}
+
+// Lets the player click-drag the tray sideways to see cogs past the visible
+// edge (native overflow-x already gives touch/trackpad scrolling; this adds
+// the same for a mouse drag) without that drag also registering as a tap on
+// whatever tile the pointer happened to be over. Re-wired fresh on every
+// render since the tray element itself is rebuilt each time.
+function gpWireTrayDragScroll(trayEl) {
+  var isDown = false, startX = 0, startScroll = 0, moved = false;
+  trayEl.addEventListener("pointerdown", function (e) {
+    isDown = true; moved = false;
+    startX = e.clientX; startScroll = trayEl.scrollLeft;
+    trayEl.classList.add("dragging");
+    try { trayEl.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  trayEl.addEventListener("pointermove", function (e) {
+    if (!isDown) return;
+    var dx = e.clientX - startX;
+    if (Math.abs(dx) > 4) moved = true;
+    trayEl.scrollLeft = startScroll - dx;
+  });
+  function endDrag() { isDown = false; trayEl.classList.remove("dragging"); }
+  trayEl.addEventListener("pointerup", endDrag);
+  trayEl.addEventListener("pointercancel", endDrag);
+  trayEl.addEventListener("pointerleave", endDrag);
+  trayEl.addEventListener("click", function (e) {
+    if (moved) { e.stopPropagation(); moved = false; }
+  }, true);
+}
+
+// Player-runtime interaction — taps a tray tile to select it, taps an empty
+// socket (.gp-socket-hit) to drop the selected tile there, taps a filled
+// axle (.gp-node-hit) to lift its cog back into the tray. Every tap
+// re-renders the whole node (board + tray are plain HTML strings, see
+// render* above), same "select then act, then ctl.render()" shape as
+// wireRopeTyingInteractions/wireCategoryGridInteractions — there's no
+// requestAnimationFrame loop or persistent DOM refs, the mesh/clash lines
+// and spin animations just fall out of whatever gpSolveState says on the
+// next render. Recomputes gpSolveState after every placement and only
+// calls pv_action_submitGearPulley once the handle-hoist chain actually
+// connects (never with a false/incorrect mechanicOk — same "auto-validate,
+// withhold while incomplete" shape as Category Grid).
+function wireGearPulleyInteractions(root, ctl, session, n) {
+  var wrap = root.querySelector('.pv-gear-wrap[data-node="' + n.id + '"]');
+  if (!wrap) return;
+  var c = n.content;
+  ctl.gearDraft = ctl.gearDraft || {};
+  if (!ctl.gearDraft[n.id]) ctl.gearDraft[n.id] = gpInitDraft(c);
+  var draft = ctl.gearDraft[n.id];
+
+  var svg = wrap.querySelector(".pv-gear-svg");
+  if (svg) svg.onclick = function (e) {
+    var t = e.target;
+    if (!t || !t.classList) return;
+    if (t.classList.contains("gp-socket-hit")) {
+      var axleId = t.dataset.axleid;
+      if (!axleId || !draft.selectedTileId) return;
+      draft.placements[axleId] = draft.selectedTileId;
+      draft.selectedTileId = null;
+      checkSolved();
+      return;
+    }
+    if (t.classList.contains("gp-node-hit")) {
+      var axleId2 = t.dataset.axleid;
+      if (!axleId2) return;
+      delete draft.placements[axleId2];
+      draft.selectedTileId = null;
+      ctl.render();
+    }
+  };
+
+  var trayEl = root.querySelector('.pv-gear-tray[data-node="' + n.id + '"]');
+  if (trayEl) {
+    Array.prototype.forEach.call(trayEl.querySelectorAll(".pv-gear-tile"), function (tile) {
+      tile.onclick = function () {
+        var tid = tile.dataset.tileid;
+        draft.selectedTileId = draft.selectedTileId === tid ? null : tid;
+        ctl.render();
+      };
+    });
+    gpWireTrayDragScroll(trayEl);
+  }
+
+  function checkSolved() {
+    var nodes = gpLiveNodes(c, draft);
+    var sv = gpSolveState(nodes);
+    if (sv.solved) {
+      var ok = pv_action_submitGearPulley(session, n.id, true);
+      if (ok) {
+        ctl.render();
+        setTimeout(function () { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; ctl.render(); }, 900);
+        return;
+      }
+    }
+    ctl.render();
+  }
 }
 
 // Category Grid — drag-and-drop (gallery <-> grid, grid <-> grid) plus
@@ -4229,6 +4663,7 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wirePdfReveal(root, ctl, session, n);
   wireRopeTyingInteractions(root, ctl, session, n);
   wireLumenPuzzleInteractions(root, ctl, session, n);
+  wireGearPulleyInteractions(root, ctl, session, n);
   wireCategoryGridInteractions(root, ctl, session, n);
   wireConstraintSatisfactionInteractions(root, ctl, session, n);
 
@@ -4354,6 +4789,7 @@ function createPreviewController(mainEl, sideEl) {
     sequenceDraft: {}, tileDraft: {}, multiPartDraft: {}, lockDialDraft: {}, cryptexDraft: {}, fuseDraft: {}, ropeDraft: {},
     lumenDraft: {}, lumenGeom: {}, // lumenDraft: node id -> live {sources,pieces,targets,walls,cards} the player rotates; lumenGeom: node id -> memoized hex geometry (see wireLumenPuzzleInteractions)
     categoryGridDraft: {}, categoryGridReveal: {}, // categoryGridDraft: node id -> live {cells[9], gallery[], selected}; categoryGridReveal: node id -> {phase:"rows"|"cols", cellIds, names} while the completion graphic plays (see wireCategoryGridInteractions)
+    gearDraft: {}, // node id -> live {tiles:[{id,teeth}], placements: axleId -> tileId, selectedTileId} (see gpInitDraft/wireGearPulleyInteractions)
     cspDraft: {}, // node id -> live {mode:"info"|"answer", alloc: recipientId -> itemId -> count} (see renderPreviewNode's "constraintSatisfaction" branch / wireConstraintSatisfactionInteractions)
     pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
@@ -4381,6 +4817,7 @@ function createPreviewController(mainEl, sideEl) {
     ctl.lumenGeom = {};
     ctl.categoryGridDraft = {};
     ctl.categoryGridReveal = {};
+    ctl.gearDraft = {};
     ctl.cspDraft = {};
     ctl.pinnedNodeId = null;
     ctl.peekStack = [];
@@ -4566,6 +5003,7 @@ return {
   pv_action_submitFusePanel: pv_action_submitFusePanel,
   pv_action_submitRopeTying: pv_action_submitRopeTying,
   pv_action_submitLumenPuzzle: pv_action_submitLumenPuzzle,
+  pv_action_submitGearPulley: pv_action_submitGearPulley,
   pv_action_submitCategoryGrid: pv_action_submitCategoryGrid,
   pv_action_submitConstraintSatisfaction: pv_action_submitConstraintSatisfaction,
   pv_action_revealHint: pv_action_revealHint,
@@ -4611,6 +5049,18 @@ return {
   lumenPointKeyFromPos: lumenPointKeyFromPos,
   lumenSetPieceTargetAngle: lumenSetPieceTargetAngle,
   lumenNorm360: lumenNorm360,
+
+  // Gear & Pulley Builder — mesh-graph geometry/solve-check math, shared
+  // between the player runtime (above) and Studio's inspector-embedded
+  // designer (buildTypeSpecificFields/wireNodeInspector's "gearPulley" case
+  // in app.js).
+  GP_TEETH_MIN: GP_TEETH_MIN, GP_TEETH_MAX: GP_TEETH_MAX, GP_TEETH_DEFAULT: GP_TEETH_DEFAULT,
+  GP_MAX_AXLES: GP_MAX_AXLES, GP_SNAP_RANGE: GP_SNAP_RANGE, GP_MESH_TOL: GP_MESH_TOL,
+  GP_VB_W: GP_VB_W, GP_VB_H: GP_VB_H,
+  gpRadiusOf: gpRadiusOf,
+  gpGearPathD: gpGearPathD,
+  gpComputeMesh: gpComputeMesh,
+  gpSolveState: gpSolveState,
 
   PLAYER_SCREEN_TYPES: PLAYER_SCREEN_TYPES,
   BACK_BUTTON_TYPES: BACK_BUTTON_TYPES,

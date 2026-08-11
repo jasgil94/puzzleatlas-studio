@@ -258,6 +258,53 @@ button{font-family:inherit;cursor:pointer;}
 .lumen-props label{display:block;font-size:11px;color:var(--text-dim);margin-bottom:8px;}
 .lumen-props label input,.lumen-props label select{display:block;width:100%;margin-top:3px;}
 
+/* Gear & Pulley Builder — Studio inspector: same layout shape as the Lumen
+   Puzzle designer above (palette/stage/playtest-summary/props), but the
+   stage is an SVG board at the puzzle's native 900:620 aspect ratio rather
+   than a square hex canvas — getting that ratio right here (and in
+   .gpb-design-svg/.pv-gear-svg below) is what keeps the whole handle-to-
+   hoist layout visible and undistorted both while designing and in the
+   player view. Reuses the same dark/amber palette as the player-facing
+   board (see .pv-gear-* further down) so the creator edits against the
+   same look the player will eventually see. */
+.gp-palette{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin:6px 0 10px;}
+.gp-palette .gpToolBtn{padding:6px 4px;text-align:center;}
+.gp-stage{background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;justify-content:center;margin-bottom:8px;}
+.gp-design-svg{width:100%;max-width:420px;height:auto;aspect-ratio:900/620;border-radius:6px;touch-action:none;cursor:default;display:block;}
+.gp-playtest-summary{font-size:11.5px;color:var(--text-dim);text-align:center;margin:-2px 0 10px;}
+.gp-props{background:var(--bg3);border:1px solid var(--line);border-radius:6px;padding:8px;}
+.gp-props label{display:block;font-size:11px;color:var(--text-dim);margin-bottom:8px;}
+.gp-props label input,.gp-props label select{display:block;width:100%;margin-top:3px;}
+
+/* Shared between the Studio designer (above), the full-screen Gear & Pulley
+   Builder overlay (.gpb-*, below) and the player board (.pv-gear-*,
+   further down) — a piece's tooth-count badge/label and the mesh/clash
+   connector lines look identical in every context, only the surrounding
+   markup differs. */
+.gp-node-label{font:600 10px 'Segoe UI',sans-serif;fill:#c9d3e8;text-anchor:middle;pointer-events:none;}
+.gp-node-teeth{font:700 10.5px 'Segoe UI',sans-serif;fill:#0a0e1a;text-anchor:middle;pointer-events:none;}
+.gp-mesh-line{stroke-width:3;}
+.gp-mesh-line.mesh{stroke:#6bffb0;}
+.gp-mesh-line.clash{stroke:#ff6b6b;stroke-dasharray:4 3;}
+.gp-design-node{cursor:grab;}
+.gp-design-node .gp-design-ring{fill:none;stroke:#7fd8ff;stroke-width:2.4;opacity:0;}
+.gp-design-node.selected .gp-design-ring{opacity:.95;}
+
+/* Gear & Pulley Builder — the inline board designer lives inside a native
+   <details>/<summary> disclosure so it can be collapsed to save inspector
+   space, same expandable-section idea as the palette's family groups
+   (.palette-group-chevron above) — styled to match that chevron look
+   rather than the browser's default triangle marker. Expanded state
+   persists per-node in gpUiState (app.js), since renderInspector() rebuilds
+   this markup from scratch on most edits. */
+.gp-builder-details{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;background:var(--bg2);overflow:hidden;}
+.gp-builder-summary{list-style:none;display:flex;align-items:center;gap:6px;padding:8px 10px;cursor:pointer;font-size:12px;font-weight:700;color:var(--text-dim);user-select:none;}
+.gp-builder-summary::-webkit-details-marker{display:none;}
+.gp-builder-summary:hover{color:var(--text);background:var(--bg3);}
+.gp-builder-chevron{display:inline-block;width:10px;font-size:10px;transition:transform .12s;}
+.gp-builder-details[open] .gp-builder-chevron{transform:rotate(90deg);}
+.gp-builder-body{padding:0 10px 10px;}
+
 .media-adjust-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .section-title{font-size:11.5px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;border-top:1px solid var(--line);padding-top:12px;}
 .section-title:first-child{border-top:none;padding-top:0;margin-top:0;}
@@ -569,6 +616,42 @@ button{font-family:inherit;cursor:pointer;}
 .pv-lumen-toast.show{opacity:1;transform:translate(-50%,4px);}
 .pv-lumen-summary{margin-top:6px;font-size:12px;color:var(--pv-text-dim);text-align:center;}
 
+/* Gear & Pulley Builder — player board + cog tray. The board keeps the
+   puzzle's native 900:620 aspect ratio at any container width (docked live
+   mock, ~260px usable, all the way up to the ~850px-wide full-screen
+   Preview overlay) via width:100%/aspect-ratio rather than a fixed pixel
+   size, so the whole handle-to-hoist layout is always rendered in full and
+   never cropped or squashed — see the viewBox/preserveAspectRatio on the
+   svg itself (renderGearPulleyBoardSvg, engine.js) for the other half of
+   that: the SVG's own coordinate space always shows the entire 900×620
+   board scaled to fit, never just a clipped window onto it. */
+.pv-gear-wrap{width:100%;max-width:480px;margin:10px auto 0;border-radius:var(--pv-radius);background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);border:1px solid #2a3556;box-shadow:0 10px 30px rgba(0,0,0,.4);padding:8px;}
+.pv-gear-svg{display:block;width:100%;height:auto;aspect-ratio:900/620;border-radius:8px;}
+.gp-node-removable{cursor:pointer;}
+.gp-socket{cursor:default;}
+.gp-socket-armed circle:first-child{stroke:#ffe6a0;animation:pvGearSocketPulse 1.1s ease-in-out infinite;}
+.gp-socket-hit, .gp-node-hit{cursor:pointer;}
+@keyframes pvGearSocketPulse{0%,100%{opacity:1;}50%{opacity:.45;}}
+
+/* The cog tray — deliberately a single row that scrolls/drags sideways
+   (flex-wrap:nowrap + overflow-x:auto) rather than wrapping onto multiple
+   lines, so it stays one strip pinned to the bottom of the player view even
+   with a dozen cogs in it; .dragging (toggled by gpWireTrayDragScroll in
+   engine.js) just swaps the cursor while a mouse-drag scroll is in
+   progress — native touch/trackpad scrolling works for free via
+   overflow-x. */
+.pv-gear-tray-wrap{width:100%;max-width:480px;margin:10px auto 0;}
+.pv-gear-tray-label{font-size:11px;color:var(--pv-text-dim);text-align:center;margin-bottom:6px;}
+.pv-gear-tray{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;padding:10px 12px;border-radius:var(--pv-radius);background:rgba(0,0,0,.18);border:var(--pv-border-width) var(--pv-border-style) var(--line);cursor:grab;-webkit-overflow-scrolling:touch;scrollbar-width:thin;}
+.pv-gear-tray.dragging{cursor:grabbing;user-select:none;}
+.pv-gear-tray-empty{flex:1;text-align:center;font-size:12px;color:var(--pv-text-dim);padding:6px 0;}
+.pv-gear-tile{flex:0 0 auto;width:56px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;border-radius:8px;background:var(--pv-surface);border:var(--pv-border-width) var(--pv-border-style) var(--line);cursor:pointer;user-select:none;}
+.pv-gear-tile-svg{width:34px;height:34px;}
+.pv-gear-tile-svg path{fill:#9aa0a6;stroke:#0a0e1a;stroke-width:1.2;}
+.pv-gear-tile.selected{border-color:#ffe6a0;box-shadow:0 0 0 1px #ffe6a0,0 0 10px rgba(255,230,160,.5);}
+.pv-gear-tile.selected .pv-gear-tile-svg path{fill:#ffe6a0;}
+.pv-gear-tile-teeth{font-size:11px;font-weight:700;color:var(--pv-text);}
+
 /* Image Reveal — framed/cropped display of the node's own uploaded image
    (c.imageAsset). Deliberately built as normal-flow content (not an inset
    overlay) so when a node also has background media set, the background
@@ -709,6 +792,14 @@ button{font-family:inherit;cursor:pointer;}
 .lb-canvas-wrap{flex-direction:column;gap:10px;}
 .lb-design-canvas{width:100%;max-width:720px;height:auto;aspect-ratio:1/1;border-radius:8px;touch-action:none;cursor:default;display:block;background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);}
 .lb-summary{font-size:12px;color:var(--text-dim);text-align:center;}
+
+/* Gear & Pulley Builder overlay — the full-screen counterpart of the inline
+   board designer (opened via "⛶ Open in Larger Pane"), same window chrome
+   as the Lumen Puzzle Builder above (.hb-window/.lb-window) but its own
+   board sizing at the puzzle's native 900:620 ratio instead of Lumen's
+   square hex canvas. */
+.gpb-window{width:min(1300px,97vw);height:min(820px,92vh);}
+.gpb-design-svg{width:100%;max-width:760px;height:auto;aspect-ratio:900/620;border-radius:8px;touch-action:none;cursor:default;display:block;background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent);color:var(--text);padding:8px 16px;border-radius:8px;z-index:200;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.4);}
 

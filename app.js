@@ -103,6 +103,18 @@ var lumenPointKeyFromPos = PAEngine.lumenPointKeyFromPos;
 var lumenSetPieceTargetAngle = PAEngine.lumenSetPieceTargetAngle;
 var lumenNorm360 = PAEngine.lumenNorm360;
 
+// Gear & Pulley Builder — mesh-graph geometry/solve-check math shared with
+// engine.js's player runtime (see the comment above NODE_TYPES.gearPulley
+// in engine.js) and used by the inspector-embedded designer below
+// (wireGearPulleyDesigner).
+var GP_TEETH_MIN = PAEngine.GP_TEETH_MIN, GP_TEETH_MAX = PAEngine.GP_TEETH_MAX, GP_TEETH_DEFAULT = PAEngine.GP_TEETH_DEFAULT;
+var GP_MAX_AXLES = PAEngine.GP_MAX_AXLES, GP_SNAP_RANGE = PAEngine.GP_SNAP_RANGE;
+var GP_VB_W = PAEngine.GP_VB_W, GP_VB_H = PAEngine.GP_VB_H;
+var gpRadiusOf = PAEngine.gpRadiusOf;
+var gpGearPathD = PAEngine.gpGearPathD;
+var gpComputeMesh = PAEngine.gpComputeMesh;
+var gpSolveState = PAEngine.gpSolveState;
+
 var PLAYER_SCREEN_TYPES = PAEngine.PLAYER_SCREEN_TYPES;
 var DEFAULT_BUTTON_LABEL = PAEngine.DEFAULT_BUTTON_LABEL;
 var BUTTON_LABEL_TYPES = PAEngine.BUTTON_LABEL_TYPES;
@@ -517,7 +529,7 @@ var SUGGESTED_LANE = {
   // puzzles in Leads; state-family goes to Inventory; the new Support
   // type goes to Hints, same as the existing Hint node.
   cipher: "leads", mathLogic: "leads", anagram: "leads", sequencePattern: "leads", slidingTile: "leads",
-  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads", lumenPuzzle: "leads", categoryGrid: "leads", constraintSatisfaction: "leads",
+  multiPartAnswer: "leads", physicalLockCode: "leads", cryptexLock: "leads", crossReferenceLookup: "leads", fusePanel: "leads", ropeTying: "leads", lumenPuzzle: "leads", gearPulley: "leads", categoryGrid: "leads", constraintSatisfaction: "leads",
   gate: "leads", randomizer: "leads", teamSplitMerge: "leads", metaPuzzleCombine: "leads",
   timer: "leads", attemptLimiter: "leads",
   combineCraftItem: "inventory", trade: "inventory",
@@ -2067,6 +2079,28 @@ function buildTypeSpecificFields(n) {
       html += '<button type="button" class="small-btn" id="btnOpenLumenBuilder" style="margin-bottom:8px">⛶ Open in Larger Pane</button>';
       html += '<button type="button" class="small-btn" style="color:var(--danger)" id="lumenBtnClear">Clear level</button>';
       break;
+    case "gearPulley":
+      html += playerTextField("Prompt (player-visible)", "fPrompt", "promptFontSize", c.prompt, c.promptFontSize);
+      var gpExpanded = gpUiState(n).expanded !== false; // expanded by default; collapsed state persists across inspector re-renders (see the "toggle" listener in wireNodeInspector)
+      html += '<details class="gp-builder-details"' + (gpExpanded ? " open" : "") + ' id="gpBuilderDetails">' +
+        '<summary class="gp-builder-summary"><span class="gp-builder-chevron">▸</span>⚙️ Board Designer — handle, hoist &amp; axles</summary>' +
+        '<div class="gp-builder-body">';
+      html += '<p style="font-size:11px;color:var(--text-dim);margin:8px 0 8px">Place the handle and hoist once each, then drop axles between them and give each a tooth count. Drag any piece to reposition it — it snaps when a nearby mesh distance is close, and the mesh/clash lines (green solid / red dashed) update live. At player-time the axle positions stay exactly as designed here, but every axle\'s tooth count is hidden: the player drags cogs from a tray onto the empty posts and uses the same mesh/clash feedback to work out which cog fits where.</p>';
+      html += '<div class="gp-palette">' +
+        [["select", "Select / Move"], ["handle", "Place Handle"], ["hoist", "Place Hoist"], ["axle", "Place Axle"]].map(function (t) {
+          return '<button type="button" class="small-btn gpToolBtn' + (t[0] === "select" ? " active" : "") + '" data-tool="' + t[0] + '">' + esc(t[1]) + '</button>';
+        }).join("") + '</div>';
+      html += '<div class="gp-stage"><svg id="gpDesignSvg" class="gp-design-svg" viewBox="0 0 ' + GP_VB_W + ' ' + GP_VB_H + '" preserveAspectRatio="xMidYMid meet"></svg></div>';
+      html += '<div id="gpPlaytestSummary" class="gp-playtest-summary"></div>';
+      html += '<div class="field"><label>Selected piece</label><div id="gpPropsPanel" class="gp-props"></div></div>';
+      html += '<div class="field"><label>Decoy cogs — extra tray tiles at player-time that don\'t correctly fit any axle</label><div id="gpDecoyList">' +
+        (c.decoyTeeth || []).map(function (t, i) {
+          return '<div class="list-item"><input type="number" min="' + GP_TEETH_MIN + '" max="' + GP_TEETH_MAX + '" value="' + t + '" data-idx="' + i + '" class="gpDecoyInput" /><button class="small-btn gpDecoyRemove" data-idx="' + i + '">✕</button></div>';
+        }).join("") + '</div><button type="button" class="small-btn" id="gpBtnAddDecoy">+ Add decoy cog</button></div>';
+      html += '<button type="button" class="small-btn" id="btnOpenGearPulleyBuilder" style="margin:8px 0">⛶ Open in Larger Pane</button>';
+      html += '<button type="button" class="small-btn" style="color:var(--danger)" id="gpBtnClear">Clear board</button>';
+      html += '</div></details>';
+      break;
     case "categoryGrid":
       html += buildCategoryGridFields(c);
       break;
@@ -3141,6 +3175,294 @@ function wireLumenDesigner(n, prefix) {
 // same content via wireLumenDesigner(n, "lb") — Done just closes it and
 // refreshes the inspector so the inline copy shows whatever was last edited
 // here.
+// Gear & Pulley Builder — per-node UI-only designer state (current tool,
+// current selection). Kept outside n.content since it's pure Studio
+// authoring state, not part of the saved hunt, but it does need to survive
+// the full renderInspector() rebuilds a tool change or piece add/remove
+// triggers (those tear down and recreate #gpDesignSvg), so it lives at
+// module scope rather than as a wireGearPulleyDesigner-local variable.
+var gpDesignerUiState = {};
+function gpUiState(n) {
+  if (!gpDesignerUiState[n.id]) gpDesignerUiState[n.id] = { tool: "select", selectedKind: null, selectedId: null, expanded: true };
+  return gpDesignerUiState[n.id];
+}
+
+// Gear & Pulley Builder — the inspector-embedded board designer. Adapted
+// from the standalone gear-pulley-builder.html prototype's placement UI
+// (palette + SVG board + properties panel), reusing the exact same
+// radius/mesh/solve math engine.js exports as PAEngine.gp* (aliased at the
+// top of this file) — see the comment above NODE_TYPES.gearPulley in
+// engine.js. Unlike the player-side wireGearPulleyInteractions (which
+// tracks the player's live cog placements as transient draft state), every
+// edit here writes straight into n.content — the creator's edits ARE the
+// saved layout, same as every other node type's inspector fields.
+//
+// Designed to be wired twice for the same node: once against the compact
+// inline copy embedded in the main inspector (prefix "gp", the original
+// element ids), and once against the full-screen Gear & Pulley Builder
+// overlay (prefix "gpb" — see openGearPulleyBuilder/closeGearPulleyBuilder
+// below, mirroring wireLumenDesigner/openLumenBuilder). Every element id and
+// the toolbar buttons' selector class are derived from `prefix` so the two
+// copies never collide even though both can be present in the DOM at once —
+// the inline copy stays mounted, just visually covered, while the overlay
+// is open.
+function wireGearPulleyDesigner(n, prefix) {
+  prefix = prefix || "gp";
+  var eid = function (suffix) { return prefix + suffix; };
+  var c = n.content;
+  c.axles = c.axles || [];
+  var svg = document.getElementById(eid("DesignSvg"));
+  if (!svg) return;
+  var ui = gpUiState(n);
+  var idp = prefix + "Des_";
+  var summaryEl = document.getElementById(eid("PlaytestSummary"));
+  var propsPanel = document.getElementById(eid("PropsPanel"));
+
+  function gpKey(kind, id) { return kind + (id != null ? ":" + id : ""); }
+
+  function allNodes() {
+    var out = [];
+    if (c.handle) out.push({ kind: "handle", id: null, x: c.handle.x, y: c.handle.y, teeth: c.handle.teeth });
+    if (c.hoist) out.push({ kind: "hoist", id: null, x: c.hoist.x, y: c.hoist.y, teeth: c.hoist.teeth });
+    c.axles.forEach(function (a) { out.push({ kind: "axle", id: a.id, x: a.x, y: a.y, teeth: a.teeth }); });
+    return out;
+  }
+  function nodeRef(kind, id) {
+    if (kind === "handle") return c.handle;
+    if (kind === "hoist") return c.hoist;
+    return c.axles.find(function (a) { return a.id === id; }) || null;
+  }
+  function selectedRef() { return ui.selectedKind ? nodeRef(ui.selectedKind, ui.selectedId) : null; }
+
+  // Same visual pieces as the player-side gpNodeMarkup in engine.js, but
+  // teeth are always shown (nothing is hidden behind a tray at design
+  // time) and every piece carries data-kind/data-id for the pointerdown
+  // hit-test below, rather than a removable-cog hit circle.
+  function designNodeMarkup(node) {
+    var r = gpRadiusOf(node.teeth);
+    var selected = ui.selectedKind === node.kind && ui.selectedId === node.id;
+    var s = '<g class="gp-design-node' + (selected ? ' selected' : '') + '" data-kind="' + node.kind + '"' + (node.id != null ? ' data-id="' + esc(String(node.id)) + '"' : '') + ' transform="translate(' + node.x.toFixed(1) + ',' + node.y.toFixed(1) + ')">';
+    if (node.kind === "handle") {
+      s += '<circle cx="0" cy="0" r="' + r + '" fill="url(#' + idp + 'steel)" stroke="#0a0e1a" stroke-width="1.6"/>';
+      for (var sp = 0; sp < 5; sp++) {
+        var ang = sp * (Math.PI * 2 / 5);
+        s += '<line x1="0" y1="0" x2="' + (Math.cos(ang) * r * 0.72).toFixed(1) + '" y2="' + (Math.sin(ang) * r * 0.72).toFixed(1) + '" stroke="#4b4f54" stroke-width="' + Math.max(3, r * 0.09).toFixed(1) + '" stroke-linecap="round"/>';
+      }
+      s += '<line x1="0" y1="0" x2="' + (r + 16) + '" y2="0" stroke="#3a3530" stroke-width="6" stroke-linecap="round"/>';
+      s += '<circle cx="' + (r + 16) + '" cy="0" r="8" fill="url(#' + idp + 'brass)" stroke="#4a3510" stroke-width="1.2"/>';
+      s += '<circle cx="0" cy="0" r="' + (r * 0.22).toFixed(1) + '" fill="url(#' + idp + 'hub)" stroke="#0a0e1a" stroke-width="1"/>';
+    } else if (node.kind === "hoist") {
+      s += '<circle cx="0" cy="0" r="' + r + '" fill="url(#' + idp + 'steel)" stroke="#0a0e1a" stroke-width="1.6"/>';
+      s += '<circle cx="0" cy="0" r="' + (r * 0.82).toFixed(1) + '" fill="none" stroke="#4b4f54" stroke-width="' + (r * 0.14).toFixed(1) + '"/>';
+      s += '<circle cx="0" cy="0" r="' + (r * 0.22).toFixed(1) + '" fill="url(#' + idp + 'hub)" stroke="#0a0e1a" stroke-width="1"/>';
+    } else {
+      s += '<path d="' + gpGearPathD(r, node.teeth) + '" fill="url(#' + idp + 'steel)" stroke="#0a0e1a" stroke-width="1.4" stroke-linejoin="round"/>';
+      s += '<circle cx="0" cy="0" r="' + (r * 0.24).toFixed(1) + '" fill="url(#' + idp + 'hub)" stroke="#0a0e1a" stroke-width="1"/>';
+    }
+    s += '<circle class="gp-design-ring" cx="0" cy="0" r="' + (r + 7) + '" fill="none"/>';
+    s += '<circle cx="0" cy="0" r="' + (r + 10) + '" fill="transparent" pointer-events="all"/>';
+    var tag = node.kind === "handle" ? "HANDLE" : node.kind === "hoist" ? "HOIST" : "AXLE";
+    s += '<text class="gp-node-label" x="0" y="' + (r + 16) + '">' + tag + '</text>';
+    s += '<circle cx="0" cy="0" r="11" fill="#ffe6a0" opacity="0.92" pointer-events="none"/>';
+    s += '<text class="gp-node-teeth" x="0" y="4">' + node.teeth + '</text>';
+    s += '</g>';
+    return s;
+  }
+
+  function redraw() {
+    var nodes = allNodes();
+    var sv = gpSolveState(nodes);
+    var body = '<defs>' +
+      '<linearGradient id="' + idp + 'steel" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#e2e5e8"/><stop offset="45%" stop-color="#9aa0a6"/><stop offset="100%" stop-color="#54585d"/></linearGradient>' +
+      '<radialGradient id="' + idp + 'hub" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#f0d9a0"/><stop offset="100%" stop-color="#8a6a2c"/></radialGradient>' +
+      '<linearGradient id="' + idp + 'brass" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f6dfa0"/><stop offset="100%" stop-color="#8a6a2c"/></linearGradient>' +
+    '</defs>';
+    sv.graph.pairs.forEach(function (p) {
+      if (p.state === "none") return;
+      body += '<line class="gp-mesh-line ' + p.state + '" x1="' + p.a.x + '" y1="' + p.a.y + '" x2="' + p.b.x + '" y2="' + p.b.y + '"/>';
+    });
+    nodes.forEach(function (node) { body += designNodeMarkup(node); });
+    svg.innerHTML = body;
+
+    if (summaryEl) {
+      if (!sv.ready) summaryEl.textContent = "Place a handle and a hoist to begin.";
+      else if (sv.solved) summaryEl.textContent = "✅ Solved — the drive reaches the hoist in " + sv.depth[gpKey("hoist")] + " mesh" + (sv.depth[gpKey("hoist")] === 1 ? "" : "es") + ".";
+      else summaryEl.textContent = sv.reachableCount + " of " + sv.total + " piece(s) reachable from the handle — hoist not yet connected.";
+    }
+  }
+
+  function renderProps() {
+    if (!propsPanel) return;
+    var sel = selectedRef();
+    if (!sel) { propsPanel.innerHTML = '<p style="font-size:11px;color:var(--text-dim)">Select a piece, or choose a tool above to place a new one.</p>'; return; }
+    var title = ui.selectedKind === "handle" ? "Handle" : ui.selectedKind === "hoist" ? "Hoist" : "Axle";
+    var html = '<div style="font-size:11.5px;font-weight:700;color:var(--text-dim);margin-bottom:6px">' + title + '</div>';
+    html += '<label style="font-size:11px;color:var(--text-dim)">Teeth (gear size): <span id="' + eid("TeethVal") + '">' + sel.teeth + '</span><input type="range" id="' + eid("TeethSlider") + '" min="' + GP_TEETH_MIN + '" max="' + GP_TEETH_MAX + '" step="1" value="' + sel.teeth + '" /></label>';
+    html += '<p style="font-size:10.5px;color:var(--text-dim);margin:-4px 0 8px">Radius: ' + gpRadiusOf(sel.teeth).toFixed(1) + 'px</p>';
+    html += '<div style="display:flex;gap:6px"><label style="font-size:11px;color:var(--text-dim);flex:1">X<input type="number" step="1" id="' + eid("PosX") + '" value="' + Math.round(sel.x) + '" /></label><label style="font-size:11px;color:var(--text-dim);flex:1">Y<input type="number" step="1" id="' + eid("PosY") + '" value="' + Math.round(sel.y) + '" /></label></div>';
+    html += '<button type="button" class="small-btn" style="color:var(--danger);margin-top:8px" id="' + eid("DeleteSel") + '">Remove this piece</button>';
+    propsPanel.innerHTML = html;
+    wireProps(sel);
+  }
+
+  function wireProps(sel) {
+    var byId = function (id) { return document.getElementById(id); };
+    var slider = byId(eid("TeethSlider")), val = byId(eid("TeethVal"));
+    if (slider) {
+      slider.oninput = function (e) {
+        sel.teeth = Math.max(GP_TEETH_MIN, Math.min(GP_TEETH_MAX, parseInt(e.target.value, 10) || GP_TEETH_DEFAULT));
+        if (val) val.textContent = sel.teeth;
+        redraw();
+      };
+      slider.onchange = function () { afterEdit(false); renderProps(); };
+    }
+    var px = byId(eid("PosX")), py = byId(eid("PosY"));
+    if (px) { px.oninput = function (e) { var v = parseFloat(e.target.value); if (isFinite(v)) sel.x = Math.max(0, Math.min(GP_VB_W, v)); redraw(); }; px.onblur = function () { afterEdit(false); }; }
+    if (py) { py.oninput = function (e) { var v = parseFloat(e.target.value); if (isFinite(v)) sel.y = Math.max(0, Math.min(GP_VB_H, v)); redraw(); }; py.onblur = function () { afterEdit(false); }; }
+    if (byId(eid("DeleteSel"))) byId(eid("DeleteSel")).onclick = function () {
+      if (ui.selectedKind === "handle") c.handle = null;
+      else if (ui.selectedKind === "hoist") c.hoist = null;
+      else c.axles = c.axles.filter(function (a) { return a.id !== ui.selectedId; });
+      ui.selectedKind = null; ui.selectedId = null;
+      afterEdit(false); redraw(); renderProps();
+    };
+  }
+
+  var toolBtnClass = eid("ToolBtn");
+  Array.prototype.forEach.call(document.querySelectorAll("." + toolBtnClass), function (btn) {
+    btn.onclick = function () {
+      Array.prototype.forEach.call(document.querySelectorAll("." + toolBtnClass), function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      ui.tool = btn.dataset.tool;
+      if (ui.tool !== "select") { ui.selectedKind = null; ui.selectedId = null; renderProps(); redraw(); }
+    };
+  });
+
+  var clearBtn = document.getElementById(eid("BtnClear"));
+  if (clearBtn) clearBtn.onclick = function () {
+    if (!confirm("Clear the handle, hoist and all axles from this board?")) return;
+    c.handle = null; c.hoist = null; c.axles = [];
+    ui.selectedKind = null; ui.selectedId = null;
+    afterEdit(false); redraw(); renderProps();
+  };
+
+  function svgPoint(evt) {
+    var rect = svg.getBoundingClientRect();
+    var x = (evt.clientX - rect.left) / rect.width * GP_VB_W;
+    var y = (evt.clientY - rect.top) / rect.height * GP_VB_H;
+    return { x: Math.max(0, Math.min(GP_VB_W, x)), y: Math.max(0, Math.min(GP_VB_H, y)) };
+  }
+
+  function findSnap(kind, id, x, y, teeth) {
+    var best = null;
+    allNodes().forEach(function (nd) {
+      if (nd.kind === kind && nd.id === id) return;
+      var idealDist = gpRadiusOf(teeth) + gpRadiusOf(nd.teeth);
+      var dx = x - nd.x, dy = y - nd.y;
+      var d = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+      var diff = Math.abs(d - idealDist);
+      if (diff < GP_SNAP_RANGE && (!best || diff < best.diff)) best = { x: nd.x, y: nd.y, ux: dx / d, uy: dy / d, idealDist: idealDist, diff: diff };
+    });
+    if (!best) return null;
+    return { x: best.x + best.ux * best.idealDist, y: best.y + best.uy * best.idealDist };
+  }
+
+  var dragState = null, dragMoved = false;
+  svg.onpointerdown = function (evt) {
+    var target = evt.target.closest && evt.target.closest(".gp-design-node");
+    var pt = svgPoint(evt);
+    if (ui.tool === "handle") {
+      c.handle = { x: pt.x, y: pt.y, teeth: (c.handle ? c.handle.teeth : GP_TEETH_DEFAULT) };
+      ui.selectedKind = "handle"; ui.selectedId = null;
+      afterEdit(false); redraw(); renderProps();
+      return;
+    }
+    if (ui.tool === "hoist") {
+      c.hoist = { x: pt.x, y: pt.y, teeth: (c.hoist ? c.hoist.teeth : GP_TEETH_DEFAULT) };
+      ui.selectedKind = "hoist"; ui.selectedId = null;
+      afterEdit(false); redraw(); renderProps();
+      return;
+    }
+    if (ui.tool === "axle") {
+      if (c.axles.length >= GP_MAX_AXLES) return;
+      var a = { id: uid("gpax"), x: pt.x, y: pt.y, teeth: GP_TEETH_DEFAULT };
+      c.axles.push(a);
+      ui.selectedKind = "axle"; ui.selectedId = a.id;
+      afterEdit(false); redraw(); renderProps();
+      return;
+    }
+    // select tool
+    if (target) {
+      var kind = target.dataset.kind;
+      var id = target.dataset.id || null;
+      ui.selectedKind = kind; ui.selectedId = id;
+      dragState = { kind: kind, id: id }; dragMoved = false;
+      try { svg.setPointerCapture(evt.pointerId); } catch (e) {}
+      redraw(); renderProps();
+    } else {
+      ui.selectedKind = null; ui.selectedId = null;
+      redraw(); renderProps();
+    }
+  };
+  svg.onpointermove = function (evt) {
+    if (!dragState) return;
+    dragMoved = true;
+    var pt = svgPoint(evt);
+    var ref = nodeRef(dragState.kind, dragState.id);
+    if (!ref) return;
+    var snap = findSnap(dragState.kind, dragState.id, pt.x, pt.y, ref.teeth);
+    if (snap) { ref.x = snap.x; ref.y = snap.y; } else { ref.x = pt.x; ref.y = pt.y; }
+    redraw();
+  };
+  function endDrag(evt) {
+    if (!dragState) return;
+    try { svg.releasePointerCapture(evt.pointerId); } catch (e) {}
+    dragState = null;
+    if (dragMoved) afterEdit(false);
+  }
+  svg.onpointerup = endDrag;
+  svg.onpointercancel = endDrag;
+
+  redraw();
+  renderProps();
+}
+
+// Gear & Pulley Builder — the full-screen counterpart of the inline board
+// designer, opened from a Gear & Pulley Builder node's inspector ("⛶ Open
+// in Larger Pane"), mirroring openLumenBuilder's overlay for Lumen Puzzle.
+// There's no working-copy/save/discard step: the inline designer already
+// writes straight into n.content on every edit (see the comment above
+// wireGearPulleyDesigner), and this overlay is wired against that same
+// content via wireGearPulleyDesigner(n, "gpb") — Done just closes it and
+// refreshes the inspector so the inline copy shows whatever was last
+// edited here.
+var GearPulleyBuilder = { nodeId: null };
+
+function openGearPulleyBuilder(nodeId) {
+  var n = Store.getNode(nodeId);
+  if (!n || n.type !== "gearPulley") return;
+  GearPulleyBuilder.nodeId = nodeId;
+  document.getElementById("gpbTitle").textContent = "Gear & Pulley Builder — " + n.title;
+  document.getElementById("gearPulleyBuilderOverlay").classList.remove("hidden");
+  renderGearPulleyBuilderOverlay();
+}
+
+function closeGearPulleyBuilder() {
+  document.getElementById("gearPulleyBuilderOverlay").classList.add("hidden");
+  GearPulleyBuilder.nodeId = null;
+  renderInspector();
+}
+
+function renderGearPulleyBuilderOverlay() {
+  var n = Store.getNode(GearPulleyBuilder.nodeId);
+  if (!n) return;
+  var ui = gpUiState(n);
+  Array.prototype.forEach.call(document.querySelectorAll(".gpbToolBtn"), function (btn) {
+    btn.classList.toggle("active", btn.dataset.tool === ui.tool);
+  });
+  wireGearPulleyDesigner(n, "gpb");
+}
+
 var LumenBuilder = { nodeId: null };
 
 function openLumenBuilder(nodeId) {
@@ -3365,6 +3687,24 @@ function wireNodeInspector(n) {
       bindText("fPrompt", "prompt");
       wireLumenDesigner(n);
       if (byId("btnOpenLumenBuilder")) byId("btnOpenLumenBuilder").onclick = function () { openLumenBuilder(n.id); };
+      break;
+    case "gearPulley":
+      bindText("fPrompt", "prompt");
+      wireGearPulleyDesigner(n);
+      if (byId("btnOpenGearPulleyBuilder")) byId("btnOpenGearPulleyBuilder").onclick = function () { openGearPulleyBuilder(n.id); };
+      if (byId("gpBuilderDetails")) byId("gpBuilderDetails").addEventListener("toggle", function (e) { gpUiState(n).expanded = e.target.open; });
+      c.decoyTeeth = c.decoyTeeth || [];
+      Array.prototype.forEach.call(document.querySelectorAll(".gpDecoyInput"), function (inp) {
+        inp.oninput = function (e) {
+          var v = Math.max(GP_TEETH_MIN, Math.min(GP_TEETH_MAX, parseInt(e.target.value, 10) || GP_TEETH_DEFAULT));
+          c.decoyTeeth[+inp.dataset.idx] = v;
+        };
+        inp.onblur = function () { afterEdit(false); renderInspector(); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".gpDecoyRemove"), function (btn) {
+        btn.onclick = function () { c.decoyTeeth.splice(+btn.dataset.idx, 1); afterEdit(false); renderInspector(); };
+      });
+      if (byId("gpBtnAddDecoy")) byId("gpBtnAddDecoy").onclick = function () { c.decoyTeeth.push(GP_TEETH_DEFAULT); afterEdit(false); renderInspector(); };
       break;
     case "categoryGrid":
       bindText("fBody", "body");
@@ -5302,6 +5642,7 @@ function init() {
   });
 
   document.getElementById("lbBtnDone").onclick = closeLumenBuilder;
+  document.getElementById("gpbBtnDone").onclick = closeGearPulleyBuilder;
 
   // Library screen controls
   document.getElementById("btnNewHunt").onclick = createNewHuntAndOpen;

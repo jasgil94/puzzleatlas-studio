@@ -249,6 +249,44 @@
       </div>
     </div>
 
+    <!-- Gear & Pulley Builder overlay — the same board designer as the inline
+         inspector copy (prefix "gpb" vs. "gp", see wireGearPulleyDesigner in
+         app.js), opened for room to work in from a Gear & Pulley Builder
+         node's inspector ("⛶ Open in Larger Pane"), same idea as the Lumen
+         Puzzle Builder above. Edits write straight into the node, same as
+         the inline copy — there's no separate save/discard step, just Done. -->
+    <div id="gearPulleyBuilderOverlay" class="overlay hidden">
+      <div class="hb-window lb-window gpb-window">
+        <div class="hb-header lb-header">
+          <div class="hb-toolbar lb-toolbar">
+            <button type="button" class="btn small hb-tool-btn gpbToolBtn active" data-tool="select">🖱️ Select / Move</button>
+            <button type="button" class="btn small hb-tool-btn gpbToolBtn" data-tool="handle">⚙️ Place Handle</button>
+            <button type="button" class="btn small hb-tool-btn gpbToolBtn" data-tool="hoist">🪝 Place Hoist</button>
+            <button type="button" class="btn small hb-tool-btn gpbToolBtn" data-tool="axle">🔩 Place Axle</button>
+          </div>
+          <div class="hb-title" id="gpbTitle">Gear & Pulley Builder</div>
+          <div>
+            <button class="btn small primary-btn" id="gpbBtnDone">✓ Done</button>
+          </div>
+        </div>
+        <div class="hb-body lb-body">
+          <aside class="hb-side lb-side-left">
+            <div class="hb-side-title">Board</div>
+            <p style="font-size:11px;color:var(--text-dim);line-height:1.5">Place the handle and hoist once each, then drop axles between them and give each a tooth count. Drag a piece to reposition it — it snaps when a nearby mesh distance is close. At player-time axle teeth are hidden behind a cog tray; the player works out which cog fits which post from the same mesh/clash feedback shown here.</p>
+            <button type="button" class="small-btn" style="color:var(--danger)" id="gpbBtnClear">Clear board</button>
+          </aside>
+          <div class="hb-canvas-wrap lb-canvas-wrap" id="gpbCanvasWrap">
+            <svg id="gpbDesignSvg" class="gpb-design-svg" viewBox="0 0 900 620" preserveAspectRatio="xMidYMid meet"></svg>
+            <div id="gpbPlaytestSummary" class="lb-summary"></div>
+          </div>
+          <aside class="hb-side lb-side-right">
+            <div class="hb-side-title">Selected piece</div>
+            <div id="gpbPropsPanel" class="lumen-props"></div>
+          </aside>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Style Builder screen: craft/edit a style pack, separate from the Hunt canvas -->
