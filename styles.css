@@ -145,9 +145,6 @@ button{font-family:inherit;cursor:pointer;}
 .node:active{cursor:grabbing;}
 .node.selected{border-color:var(--accent);box-shadow:0 0 0 3px rgba(108,140,255,.3);}
 .node.unreachable{outline:2px dashed var(--danger);outline-offset:3px;}
-.node.lane-mismatch{outline:2px dashed var(--warn);outline-offset:3px;}
-.node.unreachable.lane-mismatch{outline-color:var(--danger);}
-.node-lane-warn{margin-left:auto;font-size:11px;flex-shrink:0;}
 /* Live Player mockup sync — marks whichever node the docked mobile
    preview is currently showing (player-here), and any other open leads
    the player could go to next (player-open). */

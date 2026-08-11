@@ -1106,15 +1106,6 @@ function deleteScene(id) {
 function studioIssues(hunt) {
   var issues = [];
   hunt.nodes.forEach(function (n) {
-    var suggested = SUGGESTED_LANE[n.type];
-    if (suggested && n.lane && n.lane !== suggested) {
-      issues.push({
-        level: "warning",
-        title: "Lane placement",
-        detail: '"' + n.title + '" is in the ' + LANE_BY_ID[n.lane].label + ' lane, but ' + NODE_TYPES[n.type].label + ' nodes are usually placed in ' + LANE_BY_ID[suggested].label + '.',
-        nodeId: n.id
-      });
-    }
     if (n.type === "storyBlock") {
       (n.content.buttons || []).forEach(function (b) {
         if (b.kind !== "back" && !b.connectionId) {
@@ -1254,8 +1245,7 @@ function renderNodes() {
     var def = NODE_TYPES[n.type];
     var div = document.createElement("div");
     var selected = Store.multiSelectNodeIds.indexOf(n.id) !== -1;
-    var mismatch = SUGGESTED_LANE[n.type] && n.lane && n.lane !== SUGGESTED_LANE[n.type];
-    div.className = "node fam-" + def.family + (selected ? " selected" : "") + (mismatch ? " lane-mismatch" : "");
+    div.className = "node fam-" + def.family + (selected ? " selected" : "");
     div.dataset.nodeId = n.id;
     div.style.left = n.position.x + "px";
     div.style.top = n.position.y + "px";
@@ -1266,7 +1256,6 @@ function renderNodes() {
     div.innerHTML =
       '<div class="node-head">' + nodeIconSpan(n.type) +
         '<span class="node-type">' + def.icon + " " + esc(def.label) + (isEntry ? " · ENTRY" : "") + '</span>' +
-        (mismatch ? '<span class="node-lane-warn" title="Usually placed in the ' + esc(LANE_BY_ID[SUGGESTED_LANE[n.type]].label) + ' lane">⚠</span>' : '') +
       '</div>' +
       '<div class="node-title">' + esc(n.title) + '</div>' +
       '<div class="node-sub">' + esc(def.summary(n.content, Store.hunt)) + '</div>' +
@@ -2114,9 +2103,6 @@ function buildNodeInspector(n) {
   var sceneOpts = '<option value=""' + (!n.sceneId ? " selected" : "") + '>Unassigned</option>' +
     (Store.hunt.scenes || []).map(function (s) { return '<option value="' + s.id + '"' + (n.sceneId === s.id ? " selected" : "") + '>' + esc(s.title) + '</option>'; }).join("");
   html += fieldWrap("Scene column", '<select id="fSceneId">' + sceneOpts + '</select>');
-  if (SUGGESTED_LANE[n.type] && n.lane && SUGGESTED_LANE[n.type] !== n.lane) {
-    html += '<p class="lane-warn-note">⚠ ' + esc(NODE_TYPES[n.type].label) + ' nodes are usually placed in the <b>' + esc(LANE_BY_ID[SUGGESTED_LANE[n.type]].label) + '</b> lane.</p>';
-  }
   html += buildTypeSpecificFields(n);
   if (n.type !== "hint") html += buildCompletionEditor(n);
   html += '<div class="section-title">Effects (applied when node completes)</div>';
