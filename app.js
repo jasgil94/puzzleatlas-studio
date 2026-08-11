@@ -8093,6 +8093,11 @@ function init() {
         .then(function (index) { return reconcileCloudSync(index); })
         .then(function () { toast("Cloud backup re-synced."); });
     } else {
+      // Force a fresh prompt on retry — without this, a rejected key from
+      // an earlier click stays in CloudSync.key and connectCloudSync()
+      // silently reuses it instead of asking again (it only prompts when
+      // there's no key in memory yet).
+      CloudSync.key = null;
       connectCloudSync(null);
     }
   };
