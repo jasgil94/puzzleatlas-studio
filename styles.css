@@ -861,6 +861,14 @@ button{font-family:inherit;cursor:pointer;}
 .pv-video-frame.pv-video-playing .pv-video-playpause{opacity:0;transform:translate(-50%,-50%) scale(.85);}
 .pv-video-frame:hover .pv-video-playpause,.pv-video-frame.pv-video-playing:hover .pv-video-playpause{opacity:1;transform:translate(-50%,-50%) scale(1);}
 
+/* Video Story — a bit more cinematic presence than Video Reveal's bounded
+   content card, since it's meant to read as a "level complete"-style
+   cutscene beat rather than browsable content. Same frame/element classes,
+   just a taller cap and a heavier shadow. */
+.pv-video-story{max-width:420px;}
+.pv-video-story .pv-video-frame,.pv-video-story .pv-video-el{max-height:68vh;}
+.pv-video-story .pv-video-frame{box-shadow:0 8px 28px rgba(0,0,0,.45);}
+
 /* PDF Document Reader — player screen. .pv-pdf-viewport is the fixed-ratio
    "book" frame; .pv-pdf-sheet holds the live <iframe> onto the PDF (the
    browser's own built-in viewer — see renderPdfRevealBlock in engine.js)

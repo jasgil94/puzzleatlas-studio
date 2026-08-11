@@ -107,6 +107,24 @@ var NODE_TYPES = {
     },
     summary: function (c) { return c.body ? c.body.slice(0, 60) : ""; }
   },
+  videoStory: {
+    family: "narrative", label: "Video Story", icon: "🎞️",
+    defaultTitle: "New Video Story",
+    // Video Reveal's narrative-family sibling, purpose-built for cutscene /
+    // "level complete" style beats rather than a content reveal the player
+    // browses at their own pace: the video starts playing itself the
+    // instant this node becomes the active screen (no tap-to-play needed)
+    // and the node completes itself the moment the video ends, advancing
+    // straight into whatever connects out of it — no Continue button, no
+    // player action required at all (see renderVideoStoryBlock/
+    // wireVideoStoryPlayback below). Same videoAsset/caption/showControls
+    // shape as Video Reveal, deliberately minus Video Reveal's `loop`
+    // field — a looping video never fires the browser's "ended" event, so
+    // it would never auto-advance, defeating the whole point of this node
+    // type.
+    defaultContent: function () { return { videoAsset: "", caption: "", showControls: false }; },
+    summary: function (c) { return c.videoAsset ? "Video Story" + (c.caption ? " — " + c.caption : "") : "No video uploaded"; }
+  },
   answerEntry: {
     family: "puzzle", label: "Answer Entry (text match)", icon: "🔑",
     defaultTitle: "New Puzzle",
@@ -2460,7 +2478,7 @@ function pv_action_revealHint(session, hintNodeId) {
    only ever queries inside its own root element, so several can be on
    screen at once without id clashes.
 --------------------------------------------------------------------- */
-var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
+var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "videoStory", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
   "imageReveal", "videoReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey", "controlPanel"];
 
@@ -2834,6 +2852,79 @@ function wireVideoRevealPlayback(root, c) {
   sync();
 }
 
+// Video Story — same fit-to-screen markup as Video Reveal (reuses the
+// .pv-video-frame/.pv-video-el classes, plus a .pv-video-story modifier for
+// slightly more cinematic framing — see styles.css) but always carries the
+// autoplay attribute, and its tap-to-play fallback button starts hidden —
+// it's only revealed by wireVideoStoryPlayback below if the browser's
+// autoplay policy actually blocks playback, so it's never shown for no
+// reason during normal (successful) autoplay.
+function renderVideoStoryBlock(c) {
+  c = c || {};
+  var html = '<div class="pv-video-reveal pv-video-story">';
+  if (!c.videoAsset) {
+    html += '<div class="pv-video-frame pv-video-empty">No video uploaded</div>';
+  } else {
+    html += '<div class="pv-video-frame">' +
+      '<video class="pv-video-el" id="pvVideoEl" src="' + esc(c.videoAsset) + '" playsinline autoplay' +
+      (c.showControls ? " controls" : "") + '></video>' +
+      '<button type="button" class="pv-video-playpause" id="pvVideoToggle" aria-label="Play video" style="display:none">▶</button>' +
+      '</div>';
+  }
+  if (c.caption) html += '<div class="pv-image-caption">' + esc(c.caption) + '</div>';
+  html += '</div>';
+  return html;
+}
+
+// Wires a Video Story node's fully-automatic playback (see the videoStory
+// entry in NODE_TYPES above): attempts to start the video the instant it
+// renders — the autoplay attribute alone is sometimes silently ignored by
+// browser autoplay policy, so a direct .play() call, made synchronously
+// here as part of the same render pass that's already inside the player's
+// last tap/click handler, backs it up — and only reveals the fallback
+// tap-to-play button if that attempt is actually blocked. The node
+// completes itself the instant the video ends, popping straight into
+// whatever connects out of it — no Continue button, no player action
+// required. When the player is peeking back at an already-completed Video
+// Story (e.g. via a later node's Back button pointing at this one — see
+// ctl.peekStack), it doesn't re-complete the node (which could double up
+// effects) — it just pops the peek stack once the replay finishes, same
+// "forward action returns instead of re-completing" treatment pvContinue
+// gives every other peeked node type. Guarded on the element actually
+// being present, same convention as every other wireX helper here — and
+// on the node actually being a Video Story, since Video Reveal's hidden-
+// controls markup reuses the exact same #pvVideoEl/#pvVideoToggle ids and
+// would otherwise get double-wired by both this and wireVideoRevealPlayback.
+function wireVideoStoryPlayback(root, ctl, session, n) {
+  var video = root.querySelector("#pvVideoEl");
+  if (!video) return;
+  var toggle = root.querySelector("#pvVideoToggle");
+  var peeking = !!(ctl.peekStack && ctl.peekStack.length && ctl.peekStack[ctl.peekStack.length - 1] === n.id);
+  var advanced = false;
+  var advance = function () {
+    if (advanced) return;
+    advanced = true;
+    if (peeking) { ctl.peekStack.pop(); ctl.render(); return; }
+    var ok = pv_action_continueScene(session, n.id);
+    if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+    ctl.render();
+  };
+  video.addEventListener("ended", advance);
+  if (toggle) {
+    toggle.onclick = function () { video.play(); };
+    video.addEventListener("play", function () { toggle.style.display = "none"; });
+  }
+  var playAttempt = video.play();
+  if (playAttempt && typeof playAttempt.catch === "function") {
+    playAttempt.catch(function () {
+      // Autoplay was blocked (e.g. an unmuted video with no fresh enough
+      // user gesture) — fall back to a tap-to-play button rather than
+      // leaving the player stuck on a frozen first frame.
+      if (toggle) toggle.style.display = "";
+    });
+  }
+}
+
 // PDF Document Reader — shows the node's uploaded PDF (c.pdfAsset, a data
 // URI) via the browser's own built-in PDF viewer, one page at a time. There's
 // no rasterizing/parsing library vendored in this zero-dependency app (see
@@ -3177,6 +3268,16 @@ function renderPreviewNode(session, n, ctl) {
     html += pvPrimaryButton(n, "pvContinue", "max-width:200px");
     var fbVr = session.state.feedback[n.id];
     if (fbVr === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
+  } else if (n.type === "videoStory") {
+    // No Continue button — this node type completes itself when the video
+    // ends (see wireVideoStoryPlayback below). The feedback line only ever
+    // shows if a creator has added a completion override condition (see
+    // nodeCompletionOk) that wasn't actually met the moment the video
+    // finished — wireVideoStoryPlayback re-renders either way, so the
+    // player sees this note and a freshly replayed video to try again.
+    html += renderVideoStoryBlock(c);
+    var fbVs = session.state.feedback[n.id];
+    if (fbVs === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
   } else if (n.type === "pdfReveal") {
     var pdfPage = ctl.pdfPageDraft[n.id] || 1;
     var pdfEnterCls = ctl.pdfEnterAnim[n.id] || "";
@@ -6373,7 +6474,11 @@ function wirePreviewNodeInteractions(session, n, ctl) {
   wireCryptexInteractions(root, ctl, session, n);
   wireTextSubmitAction(root, ctl, session, n, "pvCrossRefInput", "pvSubmitCrossRef", pv_action_submitCrossReferenceAnswer);
   wirePdfReveal(root, ctl, session, n);
-  wireVideoRevealPlayback(root, n.content);
+  // Gated by type — Video Reveal and Video Story render the exact same
+  // #pvVideoEl/#pvVideoToggle ids, so calling both unconditionally would
+  // double-wire whichever one is actually on screen.
+  if (n.type === "videoReveal") wireVideoRevealPlayback(root, n.content);
+  if (n.type === "videoStory") wireVideoStoryPlayback(root, ctl, session, n);
   wireRopeTyingInteractions(root, ctl, session, n);
   wireLumenPuzzleInteractions(root, ctl, session, n);
   wireGearPulleyInteractions(root, ctl, session, n);
@@ -6870,6 +6975,7 @@ return {
   mediaAdjustFilterCss: mediaAdjustFilterCss,
   renderImageRevealBlock: renderImageRevealBlock,
   renderVideoRevealBlock: renderVideoRevealBlock,
+  renderVideoStoryBlock: renderVideoStoryBlock,
   renderPdfRevealBlock: renderPdfRevealBlock,
   renderClickableImageBlock: renderClickableImageBlock,
   renderPreviewNode: renderPreviewNode,

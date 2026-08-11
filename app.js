@@ -27,6 +27,7 @@ var IMAGE_FRAME_STYLES = PAEngine.IMAGE_FRAME_STYLES;
 var LOCK_STYLES = PAEngine.LOCK_STYLES;
 var renderImageRevealBlock = PAEngine.renderImageRevealBlock;
 var renderVideoRevealBlock = PAEngine.renderVideoRevealBlock;
+var renderVideoStoryBlock = PAEngine.renderVideoStoryBlock;
 var renderPdfRevealBlock = PAEngine.renderPdfRevealBlock;
 var mediaBrightnessOf = PAEngine.mediaBrightnessOf;
 var mediaAdjustFilterCss = PAEngine.mediaAdjustFilterCss;
@@ -689,7 +690,7 @@ var SUGGESTED_LANE = {
   lockAndKey: "leads", key: "inventory", keychain: "inventory",
   // Media nodes are content reveals like Scene, so they default to Story;
   // Map Display is the one exception since it's literally a map.
-  imageReveal: "story", audioReveal: "story", videoReveal: "story", documentReveal: "story", gallery: "story", pdfReveal: "story",
+  imageReveal: "story", audioReveal: "story", videoReveal: "story", videoStory: "story", documentReveal: "story", gallery: "story", pdfReveal: "story",
   mapDisplay: "map",
   // Clickable Image is an interactive decision point (the player's click
   // picks a route, like Choice/Story Block), not a passive content reveal,
@@ -2388,6 +2389,9 @@ function buildTypeSpecificFields(n) {
     case "videoReveal":
       html += buildVideoRevealFields(c);
       break;
+    case "videoStory":
+      html += buildVideoStoryFields(c);
+      break;
     case "pdfReveal":
       html += buildPdfRevealFields(c);
       break;
@@ -2526,6 +2530,61 @@ function wireVideoRevealFields(c) {
   if (byId("fVideoCaption")) {
     byId("fVideoCaption").oninput = function (e) { c.caption = e.target.value; };
     byId("fVideoCaption").onblur = function () { afterEdit(); };
+  }
+}
+
+/* Video Story — Video Reveal's narrative-family sibling for cutscene /
+   "level complete" style beats (see the videoStory entry in NODE_TYPES in
+   engine.js). Same upload/preview/controls-toggle/caption shape as Video
+   Reveal, using its own field ids (fVideoStory…) so the two never collide
+   if both happened to be present in the DOM at once — but deliberately no
+   Loop toggle: this node type completes itself when the video's "ended"
+   event fires (see wireVideoStoryPlayback in engine.js), and a looping
+   video never fires that event, so looping would silently strand the
+   player on this screen forever. A short note explains that trade-off
+   in place of the missing field. */
+function buildVideoStoryFields(c) {
+  var html = '<div class="field"><label>Video file</label>' +
+    '<input type="file" id="fVideoStoryAsset" accept="video/*" style="display:none" />' +
+    '<button class="small-btn" id="btnVideoStoryAssetUpload">⬆ Upload video</button>' +
+    (c.videoAsset ? ' <button class="small-btn" id="btnVideoStoryAssetClear" style="color:var(--danger)">✕ Remove video</button>' : '') +
+    '</div>';
+
+  if (c.videoAsset) {
+    html += '<div class="field"><label>Preview</label><div style="max-width:260px">' + renderVideoStoryBlock(c) + '</div></div>';
+  } else {
+    html += '<p style="font-size:11px;color:var(--text-dim)">Upload a video above to preview it here.</p>';
+  }
+
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Plays automatically the moment the player reaches this node, fit to the full screen, and moves on to the next node the instant it finishes — no Continue button, and no Loop option, since a looping video would never finish.</p>';
+
+  html += fieldWrap("Video controls (menu)", '<select id="fVideoStoryShowControls"><option value="0"' + (c.showControls !== true ? " selected" : "") + '>Hide — plays automatically with no controls</option><option value="1"' + (c.showControls === true ? " selected" : "") + '>Show — play/pause, scrub bar and volume</option></select>');
+  html += fieldWrap("Caption (optional)", '<input type="text" id="fVideoStoryCaption" value="' + esc(c.caption || "") + '" />');
+  return html;
+}
+
+function wireVideoStoryFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+  if (byId("btnVideoStoryAssetUpload")) byId("btnVideoStoryAssetUpload").onclick = function () { byId("fVideoStoryAsset").click(); };
+  if (byId("fVideoStoryAsset")) byId("fVideoStoryAsset").onchange = function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    readImageFileCompressed(file, function (dataUrl) {
+      if (!dataUrl) { toast("Couldn't read that video file."); return; }
+      c.videoAsset = dataUrl;
+      afterEdit(); renderInspector();
+      toast("Video attached.");
+    });
+  };
+  if (byId("btnVideoStoryAssetClear")) byId("btnVideoStoryAssetClear").onclick = function () {
+    c.videoAsset = ""; afterEdit(); renderInspector();
+  };
+
+  if (byId("fVideoStoryShowControls")) byId("fVideoStoryShowControls").onchange = function (e) { c.showControls = e.target.value === "1"; afterEdit(); renderInspector(); };
+
+  if (byId("fVideoStoryCaption")) {
+    byId("fVideoStoryCaption").oninput = function (e) { c.caption = e.target.value; };
+    byId("fVideoStoryCaption").onblur = function () { afterEdit(); };
   }
 }
 
@@ -5391,6 +5450,9 @@ function wireNodeInspector(n) {
     case "videoReveal":
       wireVideoRevealFields(c);
       break;
+    case "videoStory":
+      wireVideoStoryFields(c);
+      break;
     case "pdfReveal":
       wirePdfRevealFields(c);
       break;
@@ -5537,6 +5599,7 @@ function defaultCompletionSummary(n) {
   if (n.type === "choice") return "the player picks an option";
   if (n.type === "storyBlock") return "the player presses one of its buttons";
   if (n.type === "clickableImage") return "the player clicks a hotspot or presses a button";
+  if (n.type === "videoStory") return "its video finishes playing (fires automatically)";
   if (BUTTON_LABEL_TYPES[n.type] && (n.type === "scene" || n.type === "imageReveal" || n.type === "videoReveal" || n.type === "pdfReveal" || n.type === "locationPlaceholder")) return "the player presses the button";
   return "the player submits a correct answer/solution";
 }
