@@ -935,7 +935,7 @@ var LOCK_CENTER_COPY = 2;  // which copy (0-based) each drag gesture re-centers 
 var LK_STAGE_H = 380;          // px height of the whole stage
 var LK_KEY_H = 110;            // px height of the key-art box, bottom-anchored in the stage (so it appears to hang from the ring)
 var LK_PADLOCK_BODY_H = 140;   // px height of the padlock's body box (not counting the shackle, which overflows above it) — must match .pv-lk-padlock/.pv-lk-body height in styles.css; kept > LK_KEY_H so the body always fully covers the blade once seated (see comment above)
-var LK_PADLOCK_IDLE_TOP = 76;  // px top offset of the padlock's resting position, before any attempt — leaves room above for the shackle's overhang (see .pv-lk-shackle's `top` offset in styles.css)
+var LK_PADLOCK_IDLE_TOP = 100; // px top offset of the padlock's resting position, before any attempt — leaves room above for the shackle's overhang (see .pv-lk-shackle's `top` offset in styles.css) and sits a bit further down the stage than a bare minimum idle position would, so it doesn't read as pinned to the very top of the screen
 
 // Resolves the padlock's `top` (px, within .pv-lk-stage) for a given
 // state: "idle" is its resting position; "wrong" stops it the instant its
@@ -3043,7 +3043,7 @@ function renderPreviewNode(session, n, ctl) {
       html += '</div>'; // .pv-lk-stage
       html += lkSolved
         ? '<div class="pv-lk-hint-row">🔓 Unlocked with ' + esc(lkCur ? (lkCur.content.name || lkCur.title) : "the right key") + '.</div>'
-        : '<div class="pv-lk-hint-row">↕ Swipe the ring for a different key — key ' + (lkDraft.index + 1) + ' of ' + lkOptions.length + '. Tap the padlock to try it.</div>';
+        : '<div class="pv-lk-hint-row">↔ Swipe the ring for a different key — key ' + (lkDraft.index + 1) + ' of ' + lkOptions.length + '. Tap the padlock to try it.</div>';
     }
   }
   // Generic optional Back button — every BACK_BUTTON_TYPES node type gets
@@ -3189,10 +3189,11 @@ function wireCellPhoneInteractions(root, ctl, session, n) {
   });
 }
 
-// Lock and Key — swipe the ring up/down to cycle which key is presented
-// at the front (a plain onpointerdown/move/up drag gesture, same shape as
-// wireLockDials' wheel-dragging above, just one axis and no library), tap
-// the padlock to try the key currently at the front.
+// Lock and Key — swipe the ring left/right to cycle which key is
+// presented at the front (a plain onpointerdown/move/up drag gesture,
+// same shape as wireLockDials' wheel-dragging above, just the horizontal
+// axis and no library), tap the padlock to try the key currently at the
+// front.
 //
 // Deliberately bypasses ctl.render() for the animated middle of a tap
 // attempt (see the doc comment on renderPreviewNode's "lockAndKey" branch
@@ -3222,21 +3223,22 @@ function wireLockAndKeyInteractions(root, ctl, session, n) {
     ctl.render();
   }
 
-  var dragging = false, startY = 0;
+  var dragging = false, startX = 0;
   stage.onpointerdown = function (e) {
     if (draft.busy) return;
     if (e.target.closest && e.target.closest("#pvLkPadlock")) return; // the padlock has its own click handler, below
-    dragging = true; startY = e.clientY;
+    dragging = true; startX = e.clientX;
     try { stage.setPointerCapture(e.pointerId); } catch (err) { /* older browsers: drag still tracks via direct listeners */ }
   };
   stage.onpointerup = function (e) {
     if (!dragging) return;
     dragging = false;
-    var dy = e.clientY - startY;
-    // Dragging up brings the next key into view (like scrolling a strip of
-    // keys upward past a fixed viewing point); dragging down brings the
-    // previous one back.
-    if (Math.abs(dy) > 24) cycle(dy < 0 ? 1 : -1);
+    var dx = e.clientX - startX;
+    // Dragging left brings the next key into view (like scrolling a strip
+    // of keys leftward past a fixed viewing point); dragging right brings
+    // the previous one back — same left=forward/right=back convention as
+    // a normal horizontal photo swipe.
+    if (Math.abs(dx) > 24) cycle(dx < 0 ? 1 : -1);
   };
   stage.onpointercancel = function () { dragging = false; };
 
