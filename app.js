@@ -130,6 +130,7 @@ var ctpKnobArc = PAEngine.ctpKnobArc;
 var ctpIsNamedKnob = PAEngine.ctpIsNamedKnob;
 var ctpOpsForKind = PAEngine.ctpOpsForKind;
 var ctpNewComponent = PAEngine.ctpNewComponent;
+var ctpLiveValue = PAEngine.ctpLiveValue;
 var ctpDefaultValuesById = PAEngine.ctpDefaultValuesById;
 var ctpEvalRules = PAEngine.ctpEvalRules;
 var ctpWinConditionsMet = PAEngine.ctpWinConditionsMet;
@@ -3903,6 +3904,10 @@ function buildControlPanelFields(n) {
 function buildCtpDesignerMarkup(prefix) {
   var eid = function (suffix) { return prefix + suffix; };
   var html = '<p style="font-size:11px;color:var(--text-dim);margin:8px 0 8px">Pick a tool below, then click the board to place a component — it drops into whichever section you click. With Select active: drag a component to move it, drag its bottom-right handle to resize, or drag its top handle to rotate.</p>';
+  html += '<div style="display:flex;gap:6px;margin-bottom:8px">' +
+    '<button type="button" class="small-btn" id="' + eid("TestToggle") + '" title="Click switches/knobs/sliders on the board to try them, and watch lights/gauges/digital displays react live — the fastest way to check your rules actually do what you want.">🧪 Test rules</button>' +
+    '<button type="button" class="small-btn" id="' + eid("TestReset") + '" style="display:none">↺ Reset test</button>' +
+  '</div>';
   html += '<div class="ctp-palette">';
   html += '<button type="button" class="small-btn ' + eid("ToolBtn") + ' active" data-tool="select">🖱️ Select / Move</button>';
   ["interactive", "conditional", "static"].forEach(function (group) {
@@ -3969,18 +3974,20 @@ function buildCtpPointOptions(d, curValue) {
 function buildCtpRulesEditor(comp, eid, outputField, allComponents) {
   var interactiveComps = allComponents.filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; });
   var rules = comp.data.rules || [];
-  var html = '<div class="section-title" style="margin-top:10px">Rules (checked top to bottom — first match wins)</div>';
+  var html = '<div class="section-title" style="margin-top:10px">Rules</div>';
   if (!interactiveComps.length) {
     html += '<p style="font-size:11px;color:var(--text-dim)">Add an interactive component to the board first, then come back here to set rules for this one.</p>';
     return html;
   }
+  html += '<p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">Each rule can require <b>several conditions at once</b> — use "+ Add condition" inside a rule for an AND (e.g. Switch A is ON <i>and</i> Switch B is ON <i>and</i> Switch C is ON). Use "+ Add rule" instead only when you want a different, alternative way to trigger this — rules are checked top to bottom and the first one that fully matches wins. Use the 🧪 Test Rules button above the board to try it live.</p>';
   var condPrefix = eid("RuleCond");
   html += '<div>' + rules.map(function (rule, ri) {
     var attrs = ' data-compid="' + esc(comp.id) + '" data-ruleidx="' + ri + '"';
     var rhtml = '<div class="ctp-rule-block">';
     rhtml += '<div style="display:flex;align-items:center;justify-content:space-between"><span class="chip">Rule ' + (ri + 1) + '</span><button type="button" class="small-btn ' + eid("RuleRemoveBtn") + '"' + attrs + '>✕ Remove rule</button></div>';
     rhtml += (rule.conditions || []).map(function (cond, ci) { return buildCtpConditionRow(cond, ci, interactiveComps, condPrefix, attrs); }).join("");
-    rhtml += '<button type="button" class="small-btn ' + eid("RuleAddCondBtn") + '"' + attrs + ' style="margin:2px 0 8px">+ Add condition</button>';
+    if ((rule.conditions || []).length > 1) rhtml += '<p style="font-size:10px;color:var(--text-dim);margin:-4px 0 6px">All of the above must be true together (AND).</p>';
+    rhtml += '<button type="button" class="small-btn ' + eid("RuleAddCondBtn") + '"' + attrs + ' style="margin:2px 0 8px">+ Add condition (AND)</button>';
     if (outputField === "on") {
       rhtml += fieldWrap("Then turn light", '<select class="' + eid("RuleOutSelect") + '"' + attrs + '><option value="1"' + (rule.output && rule.output.on ? " selected" : "") + '>On</option><option value="0"' + (!(rule.output && rule.output.on) ? " selected" : "") + '>Off</option></select>');
     } else if (outputField === "value") {
@@ -4082,7 +4089,7 @@ function buildCtpTypeFields(comp, eid, allComponents) {
 // resolveArray(el) reads back whatever data-* attributes the row's own
 // controls carry (data-compid/data-ruleidx for rule conditions, nothing
 // extra for win conditions) to find the live conditions array to mutate.
-function wireCtpConditionRows(classPrefix, resolveArray) {
+function wireCtpConditionRows(classPrefix, resolveArray, getComponents) {
   function mutate(el, fn) {
     var arr = resolveArray(el);
     if (!arr) return;
@@ -4090,8 +4097,27 @@ function wireCtpConditionRows(classPrefix, resolveArray) {
     if (!cond) return;
     fn(cond);
   }
+  // Changing which component a condition points at can change its "kind"
+  // (boolean/index/numeric), which in turn changes which operators are even
+  // valid (see ctpOpsForKind) — e.g. a leftover op of "on" from a switch
+  // condition is meaningless once repointed at a slider. Without this reset
+  // the condition would silently keep an operator its own UI no longer even
+  // offers, so it could never actually match (this was the root cause of
+  // rules that looked configured correctly but never fired).
   Array.prototype.forEach.call(document.querySelectorAll("." + classPrefix + "CompSelect"), function (sel) {
-    sel.onchange = function () { mutate(sel, function (cond) { cond.componentId = sel.value; delete cond.value; delete cond.min; delete cond.max; }); afterEdit(false); renderInspector(); };
+    sel.onchange = function () {
+      mutate(sel, function (cond) {
+        cond.componentId = sel.value;
+        delete cond.value; delete cond.min; delete cond.max;
+        var comps = getComponents ? getComponents() : [];
+        var comp = comps.find(function (x) { return x.id === sel.value; });
+        var kind = comp ? ctpComponentKind(comp.type) : null;
+        var validOps = kind ? ctpOpsForKind(kind) : [];
+        if (validOps.length && validOps.indexOf(cond.op) === -1) cond.op = validOps[0];
+        if (kind === "index") cond.value = 0;
+      });
+      afterEdit(false); renderInspector();
+    };
   });
   Array.prototype.forEach.call(document.querySelectorAll("." + classPrefix + "OpSelect"), function (sel) {
     sel.onchange = function () { mutate(sel, function (cond) { cond.op = sel.value; }); afterEdit(false); renderInspector(); };
@@ -4123,7 +4149,7 @@ function wireCtpWinConditions(n) {
   var c = n.content;
   c.winConditions = c.winConditions || [];
   var interactiveComps = (c.components || []).filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; });
-  wireCtpConditionRows("ctpWin", function () { return c.winConditions; });
+  wireCtpConditionRows("ctpWin", function () { return c.winConditions; }, function () { return c.components || []; });
   if (document.getElementById("btnAddCtpWin")) document.getElementById("btnAddCtpWin").onclick = function () {
     var first = interactiveComps[0];
     c.winConditions.push({ componentId: first ? first.id : "", op: first ? ctpOpsForKind(ctpComponentKind(first.type))[0] : "on" });
@@ -4137,11 +4163,12 @@ function wireCtpWinConditions(n) {
 function wireCtpRulesEditor(comp, eid, outputField, c) {
   var d = comp.data;
   d.rules = d.rules || [];
+  var interactiveComps = (c.components || []).filter(function (x) { var k = ctpComponentKind(x.type); return k === "boolean" || k === "index" || k === "numeric"; });
   wireCtpConditionRows(eid("RuleCond"), function (el) {
     var target = c.components.find(function (x) { return x.id === el.dataset.compid; });
     var rule = target && target.data.rules[+el.dataset.ruleidx];
     return rule ? (rule.conditions = rule.conditions || []) : null;
-  });
+  }, function () { return c.components || []; });
   var addBtn = document.getElementById(eid("RuleAddBtn"));
   if (addBtn) addBtn.onclick = function () {
     d.rules.push({ conditions: [], output: outputField === "on" ? { on: true } : outputField === "value" ? { value: 0 } : { text: "" } });
@@ -4158,7 +4185,16 @@ function wireCtpRulesEditor(comp, eid, outputField, c) {
     btn.onclick = function () {
       var target = c.components.find(function (x) { return x.id === btn.dataset.compid; });
       var rule = target && target.data.rules[+btn.dataset.ruleidx];
-      if (rule) { rule.conditions = rule.conditions || []; rule.conditions.push({ componentId: "", op: "on" }); }
+      if (rule) {
+        rule.conditions = rule.conditions || [];
+        // Default the new condition to the first available interactive
+        // component with a valid operator for its kind, same as "Add
+        // requirement" in the completion-requirements list — never leaves
+        // a blank/invalid componentId+op combination that could silently
+        // never match (see wireCtpConditionRows' CompSelect handler).
+        var first = interactiveComps[0];
+        rule.conditions.push({ componentId: first ? first.id : "", op: first ? ctpOpsForKind(ctpComponentKind(first.type))[0] : "on" });
+      }
       afterEdit(false); renderInspector();
     };
   });
@@ -4188,7 +4224,7 @@ function wireCtpRulesEditor(comp, eid, outputField, c) {
 // tears down and rebuilds the stage's DOM on every structural edit).
 var ctpDesignerUiState = {};
 function ctpUiState(n) {
-  if (!ctpDesignerUiState[n.id]) ctpDesignerUiState[n.id] = { tool: "select", selectedId: null, expanded: true };
+  if (!ctpDesignerUiState[n.id]) ctpDesignerUiState[n.id] = { tool: "select", selectedId: null, expanded: true, testMode: false, testValues: {} };
   return ctpDesignerUiState[n.id];
 }
 
@@ -4215,11 +4251,26 @@ function wireControlPanelDesigner(n, prefix) {
     Array.prototype.forEach.call(document.querySelectorAll("." + eid("ToolBtn")), function (b) { b.classList.toggle("active", b.dataset.tool === ui.tool); });
   }
 
+  // Test Rules mode — every interactive component's *saved* starting value
+  // (comp.data.on/value, set via the props panel) stays untouched; while
+  // testing, ui.testValues holds a live override per component id so the
+  // creator can click switches/buttons and drag sliders/knobs right on the
+  // board and watch lights/gauges/digital displays react, without having to
+  // hand-edit each component's Starting Position to "prove" a rule works.
+  function testValuesMerged() {
+    var vals = ctpDefaultValuesById(c);
+    var overrides = ui.testValues || {};
+    Object.keys(overrides).forEach(function (id) { vals[id] = overrides[id]; });
+    return vals;
+  }
+
   function zoneCompsHtml(zone, previewValues, previewOutputs) {
     return c.components.filter(function (x) { return x.zone === zone; }).map(function (comp) {
       var selected = comp.id === ui.selectedId;
+      var kind = ctpComponentKind(comp.type);
+      var isInteractive = kind === "boolean" || kind === "index" || kind === "numeric";
       var val = ctpResolvedValue(comp, previewValues, previewOutputs);
-      var html = '<div class="ctp-comp ctp-comp-' + comp.type + (selected ? ' selected' : '') + '" data-compid="' + esc(comp.id) + '" style="' + ctpComponentWrapStyle(comp) + '" title="' + esc(comp.name || "") + '">' +
+      var html = '<div class="ctp-comp ctp-comp-' + comp.type + (isInteractive ? ' ctp-comp-interactive' : '') + (selected ? ' selected' : '') + '" data-compid="' + esc(comp.id) + '" style="' + ctpComponentWrapStyle(comp) + '" title="' + esc(comp.name || "") + '">' +
         ctpComponentInnerHtml(comp, val);
       if (selected) {
         html += '<div class="ctp-handle ctp-handle-rotate" data-handle="rotate" title="Drag to rotate"></div>';
@@ -4235,7 +4286,7 @@ function wireControlPanelDesigner(n, prefix) {
     var upperH = Math.max(0, Number(board.upperHeight) || 0);
     var lowerH = Math.max(0, Number(board.lowerHeight) || 0);
     var width = Math.max(CTP_BOARD_MIN_W, Math.min(CTP_BOARD_MAX_W, Number(board.width) || 640));
-    var previewValues = ctpDefaultValuesById(c);
+    var previewValues = testValuesMerged();
     var previewOutputs = ctpComputeOutputs(c, previewValues);
     var html = '<div class="ctp-board" style="width:' + width + 'px">';
     if (upperH > 0) html += '<div class="ctp-zone ctp-zone-upper" data-zone="upper" style="height:' + upperH + 'px">' + zoneCompsHtml("upper", previewValues, previewOutputs) + '</div>';
@@ -4243,8 +4294,58 @@ function wireControlPanelDesigner(n, prefix) {
     if (upperH <= 0 && lowerH <= 0) html += '<div class="ctp-zone-empty-note">No sections have height — set a wall/desk height above.</div>';
     html += '</div>';
     stage.innerHTML = html;
+    stage.classList.toggle("testing", !!ui.testMode);
     setActiveToolBtn();
+    var testBtn = document.getElementById(eid("TestToggle"));
+    if (testBtn) { testBtn.textContent = ui.testMode ? "✓ Testing — click to exit" : "🧪 Test rules"; testBtn.classList.toggle("active", !!ui.testMode); }
+    var resetBtn = document.getElementById(eid("TestReset"));
+    if (resetBtn) resetBtn.style.display = ui.testMode ? "" : "none";
     wireStagePointer();
+  }
+
+  // Lightweight re-render used while testing (and while dragging in edit
+  // mode) — updates only the specific [data-compid] elements' own inner
+  // markup in place, never touching .ctp-zone's innerHTML, so an in-flight
+  // pointer capture on the zone (mid-drag) survives. Same shape as the real
+  // player's wireControlPanelInteractions redraw() in engine.js.
+  function testRedrawLive() {
+    var values = testValuesMerged();
+    var outputs = ctpComputeOutputs(c, values);
+    Array.prototype.forEach.call(stage.querySelectorAll("[data-compid]"), function (el) {
+      var comp = c.components.find(function (x) { return x.id === el.dataset.compid; });
+      if (!comp) return;
+      el.innerHTML = ctpComponentInnerHtml(comp, ctpResolvedValue(comp, values, outputs));
+    });
+  }
+
+  function setSliderTestValue(comp, evt) {
+    var el = stage.querySelector('.ctp-comp[data-compid="' + comp.id + '"]');
+    if (!el) return;
+    var rect = el.getBoundingClientRect();
+    var vertical = comp.type === "vSlider";
+    var min = Number(comp.data.min) || 0, max = Number(comp.data.max) || 10, step = Number(comp.data.step) || 1;
+    var pct = vertical ? 1 - (evt.clientY - rect.top) / rect.height : (evt.clientX - rect.left) / rect.width;
+    pct = Math.max(0, Math.min(1, pct));
+    var raw = min + pct * (max - min);
+    var stepped = step > 0 ? Math.round(raw / step) * step : raw;
+    ui.testValues[comp.id] = Math.max(min, Math.min(max, stepped));
+  }
+
+  function setKnobTestValue(comp, evt) {
+    var el = stage.querySelector('.ctp-comp[data-compid="' + comp.id + '"]');
+    if (!el) return;
+    var rect = el.getBoundingClientRect();
+    var cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    var a = Math.atan2(evt.clientX - cx, -(evt.clientY - cy)) * 180 / Math.PI; // 0° = up, clockwise positive
+    if (comp.type === "knobFull") {
+      ui.testValues[comp.id] = ((a % 360) + 360) % 360;
+    } else {
+      var arc = ctpKnobArc(comp.type);
+      var points = Math.max(2, Number(comp.data.points) || 5);
+      a = Math.max(-arc / 2, Math.min(arc / 2, a));
+      var idx = points > 1 ? Math.round((a + arc / 2) / (arc / (points - 1))) : 0;
+      ui.testValues[comp.id] = Math.max(0, Math.min(points - 1, idx));
+    }
   }
 
   function redrawWrapOnly(comp) {
@@ -4270,11 +4371,37 @@ function wireControlPanelDesigner(n, prefix) {
 
   function wireStagePointer() {
     var dragInfo = null; // { compId, mode: "move"|"resize"|"rotate", startClientX, startClientY, orig:{x,y,w,h,rot}, centerClientX, centerClientY }
+    var testDrag = null; // { compId } — Test Rules mode's slider/knob drag, kept separate from dragInfo above
 
     Array.prototype.forEach.call(stage.querySelectorAll(".ctp-zone"), function (zoneEl) {
       zoneEl.onpointerdown = function (evt) {
         var handleEl = evt.target.closest && evt.target.closest(".ctp-handle");
         var compEl = evt.target.closest && evt.target.closest(".ctp-comp");
+
+        // Test Rules mode — interact with components the same way a player
+        // would (toggle switches/buttons, drag sliders/knobs) instead of
+        // placing/moving/resizing them; never touches the saved Starting
+        // Position, only the transient ui.testValues overlay.
+        if (ui.testMode) {
+          var testCompEl = evt.target.closest && evt.target.closest(".ctp-comp-interactive");
+          if (!testCompEl) return;
+          var tcomp = c.components.find(function (x) { return x.id === testCompEl.dataset.compid; });
+          if (!tcomp) return;
+          ui.testValues = ui.testValues || {};
+          var tkind = ctpComponentKind(tcomp.type);
+          if (tkind === "boolean") {
+            var cur = ui.testValues[tcomp.id] != null ? ui.testValues[tcomp.id] : ctpLiveValue(tcomp.type, tcomp.data);
+            ui.testValues[tcomp.id] = cur ? 0 : 1;
+            testRedrawLive();
+            return;
+          }
+          testDrag = { compId: tcomp.id };
+          try { zoneEl.setPointerCapture(evt.pointerId); } catch (e) {}
+          if (tcomp.type === "vSlider" || tcomp.type === "hSlider") setSliderTestValue(tcomp, evt); else setKnobTestValue(tcomp, evt);
+          testRedrawLive();
+          evt.preventDefault();
+          return;
+        }
 
         if (ui.tool !== "select") {
           var rect = zoneEl.getBoundingClientRect();
@@ -4319,6 +4446,14 @@ function wireControlPanelDesigner(n, prefix) {
       };
 
       zoneEl.onpointermove = function (evt) {
+        if (testDrag) {
+          var tcomp2 = c.components.find(function (x) { return x.id === testDrag.compId; });
+          if (tcomp2) {
+            if (tcomp2.type === "vSlider" || tcomp2.type === "hSlider") setSliderTestValue(tcomp2, evt); else setKnobTestValue(tcomp2, evt);
+            testRedrawLive();
+          }
+          return;
+        }
         if (!dragInfo) return;
         var comp = c.components.find(function (x) { return x.id === dragInfo.compId; });
         if (!comp) return;
@@ -4337,6 +4472,11 @@ function wireControlPanelDesigner(n, prefix) {
       };
 
       function endDrag(evt) {
+        if (testDrag) {
+          try { zoneEl.releasePointerCapture(evt.pointerId); } catch (e) {}
+          testDrag = null;
+          return;
+        }
         if (!dragInfo) return;
         try { zoneEl.releasePointerCapture(evt.pointerId); } catch (e) {}
         dragInfo = null;
@@ -4347,9 +4487,20 @@ function wireControlPanelDesigner(n, prefix) {
       zoneEl.onpointercancel = endDrag;
     });
 
+    var testToggleBtn = document.getElementById(eid("TestToggle"));
+    if (testToggleBtn) testToggleBtn.onclick = function () {
+      ui.testMode = !ui.testMode;
+      ui.testValues = {};
+      if (ui.testMode) { ui.selectedId = null; }
+      redraw(); renderProps();
+    };
+    var testResetBtn = document.getElementById(eid("TestReset"));
+    if (testResetBtn) testResetBtn.onclick = function () { ui.testValues = {}; redraw(); };
+
     var toolBtnClass = eid("ToolBtn");
     Array.prototype.forEach.call(document.querySelectorAll("." + toolBtnClass), function (btn) {
       btn.onclick = function () {
+        if (ui.testMode) return;
         ui.tool = btn.dataset.tool;
         setActiveToolBtn();
         if (ui.tool !== "select") { ui.selectedId = null; updateSelectionVisuals(); renderProps(); }
@@ -4359,6 +4510,7 @@ function wireControlPanelDesigner(n, prefix) {
 
   function renderProps() {
     if (!propsPanel) return;
+    if (ui.testMode) { propsPanel.innerHTML = '<p style="font-size:11px;color:var(--text-dim)">🧪 Test mode is on — click switches/buttons and drag sliders/knobs on the board above to try your rules. Click "🧪 Test rules" again to go back to editing.</p>'; return; }
     var comp = selectedComp();
     if (!comp) { propsPanel.innerHTML = '<p style="font-size:11px;color:var(--text-dim)">Select a placed component, or choose one from the palette above to place a new one.</p>'; return; }
     var meta = CTP_COMPONENT_TYPES[comp.type] || {};

@@ -866,6 +866,7 @@ button{font-family:inherit;cursor:pointer;}
 .ctp-palette-buttons .small-btn{padding:6px 4px;text-align:left;font-size:10.5px;}
 
 .ctp-stage{background:radial-gradient(1200px 700px at 50% -10%,#1a2544 0%,#0a0e1a 55%,#060811 100%);border:1px solid var(--line);border-radius:8px;padding:16px 10px;display:flex;justify-content:center;margin-bottom:8px;overflow:auto;}
+.ctp-stage.testing{border-color:#3ddc7a;box-shadow:0 0 0 1px #3ddc7a,0 0 16px rgba(61,220,122,.25);}
 .ctp-board{position:relative;margin:0 auto;background:#1b1e26;border:1px solid #0a0c11;border-radius:8px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.5);}
 .ctp-zone{position:relative;touch-action:none;}
 .ctp-zone-upper{background:linear-gradient(180deg,#2e323d 0%,#20232c 100%);border-bottom:2px solid #0a0c11;}
