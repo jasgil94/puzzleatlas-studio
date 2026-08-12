@@ -1416,7 +1416,7 @@ function initCanvasInteraction() {
 
   document.getElementById("btnZoomIn").onclick = function () { setZoom(Store.view.zoom * 1.2); };
   document.getElementById("btnZoomOut").onclick = function () { setZoom(Store.view.zoom / 1.2); };
-  document.getElementById("btnZoomReset").onclick = function () { Store.view = { x: 40, y: 40, zoom: 1 }; applyViewportTransform(); };
+  document.getElementById("btnZoomReset").onclick = function () { Store.view = { x: 130, y: 40, zoom: 1 }; applyViewportTransform(); };
 
   dom.canvasWrap.addEventListener("mousedown", function (e) {
     if (e.button !== 0) return;
@@ -2411,6 +2411,9 @@ function buildTypeSpecificFields(n) {
       break;
     case "locationPlaceholder":
       html += '<p style="font-size:12px;color:var(--text-dim)">' + esc(c.placeholderNote) + '</p>';
+      break;
+    case "geolocationCheckIn":
+      html += buildGeolocationCheckInFields(c);
       break;
     case "imageReveal":
       html += buildImageRevealFields(c);
@@ -3655,6 +3658,23 @@ function buildGenericContentFields(n) {
     }
   });
   html += '<p style="font-size:11px;color:var(--text-dim);margin-top:6px">This node type doesn’t have a custom editor yet, so fields are shown generically. List/object fields are edited as raw JSON.</p>';
+  return html;
+}
+// Geolocation Check-in's inspector fields — target lat/lng + a radius in
+// metres, plus a "Use my current location" convenience button (reads the
+// creator's own device via navigator.geolocation, same browser API the
+// player-side check uses — see pv_action_submitGeoCheckIn/
+// wirePreviewNodeInteractions' "geolocationCheckIn" branch in engine.js).
+// Handy when the creator is standing at the real target location while
+// building the hunt; otherwise lat/lng can just be typed in from a map.
+function buildGeolocationCheckInFields(c) {
+  var html = '<div class="field-row">' +
+    fieldWrap("Latitude", '<input type="number" step="0.000001" id="fGeoLat" value="' + esc(c.lat) + '" />') +
+    fieldWrap("Longitude", '<input type="number" step="0.000001" id="fGeoLng" value="' + esc(c.lng) + '" />') +
+    '</div>';
+  html += fieldWrap("Radius (metres)", '<input type="number" min="1" step="1" id="fGeoRadius" value="' + esc(c.radiusMeters) + '" />');
+  html += '<button type="button" class="small-btn" id="btnGeoUseMyLocation">📍 Use my current location</button>';
+  html += '<p id="geoLocateStatus" style="font-size:11px;color:var(--text-dim);margin-top:6px">A player passes this node once their device reports being within the radius above of this point.</p>';
   return html;
 }
 function wireGenericContentFields(n) {
@@ -5415,6 +5435,26 @@ function wireNodeInspector(n) {
           afterEdit(false);
         };
       });
+      break;
+    case "geolocationCheckIn":
+      if (byId("fGeoLat")) { byId("fGeoLat").oninput = function (e) { c.lat = e.target.value === "" ? "" : Number(e.target.value); }; byId("fGeoLat").onblur = function () { afterEdit(false); }; }
+      if (byId("fGeoLng")) { byId("fGeoLng").oninput = function (e) { c.lng = e.target.value === "" ? "" : Number(e.target.value); }; byId("fGeoLng").onblur = function () { afterEdit(false); }; }
+      // Own (non-false) afterEdit() call, unlike the lat/lng fields above —
+      // radius shows up in the node card's own summary text on the canvas
+      // (see geolocationCheckIn's summary() in engine.js), so it needs the
+      // canvas refresh a plain afterEdit(false) skips.
+      if (byId("fGeoRadius")) { byId("fGeoRadius").oninput = function (e) { c.radiusMeters = e.target.value === "" ? "" : Number(e.target.value); }; byId("fGeoRadius").onblur = function () { afterEdit(); }; }
+      if (byId("btnGeoUseMyLocation")) byId("btnGeoUseMyLocation").onclick = function () {
+        var statusEl = byId("geoLocateStatus");
+        if (!navigator.geolocation) { if (statusEl) statusEl.textContent = "Geolocation isn't available in this browser."; return; }
+        if (statusEl) statusEl.textContent = "Locating…";
+        navigator.geolocation.getCurrentPosition(function (pos) {
+          c.lat = pos.coords.latitude; c.lng = pos.coords.longitude;
+          afterEdit(); renderInspector();
+        }, function () {
+          if (statusEl) statusEl.textContent = "Couldn't get your location — check location permissions and try again.";
+        }, { enableHighAccuracy: true, timeout: 15000 });
+      };
       break;
     case "physicalLockCode":
       // Own onchange (not the shared bindChange helper) because switching
@@ -8003,7 +8043,13 @@ function init() {
 
   loadCustomStylePacksIntoRegistry();
 
-  Store.view = { x: 60, y: 60, zoom: 1 };
+  // x must clear the lane-label column, which sits at left:-108px/width:100px
+  // relative to the grid's own origin (see renderGrid()'s ".lane-label" —
+  // and .lane-label{left:-108px;width:100px} in styles.css) — canvasWrap
+  // clips anything with negative screen-x (overflow:hidden), so an x below
+  // ~108 clips the "Story/Leads/Map/…" row labels for a freshly opened
+  // hunt, making the lanes look like they never rendered at all.
+  Store.view = { x: 130, y: 60, zoom: 1 };
   Store.init();
 
   Preview = createPreviewController(document.getElementById("previewMain"), document.getElementById("previewSide"));

@@ -2019,6 +2019,41 @@ function pv_action_submitMathAnswer(session, nodeId, text) {
   if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
   return ok;
 }
+// Great-circle distance between two lat/lng points, in metres (haversine
+// formula, Earth radius ~6,371,008m) — the same distance math a real phone's
+// "how far to the pin" reading would use. Shared by pv_action_submitGeoCheckIn
+// (below) and the Studio inspector's live "distance from here" preview (see
+// the "geolocationCheckIn" case in buildTypeSpecificFields/app.js).
+function geoDistanceMeters(lat1, lng1, lat2, lng2) {
+  var R = 6371008;
+  var toRad = function (d) { return d * Math.PI / 180; };
+  var dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+// Geolocation Check-in — mechanicOk is true once the player's reported
+// coordinates land within content.radiusMeters of the node's target point.
+// playerLat/playerLng are whatever the browser's Geolocation API (or the
+// Studio preview's manual "simulate arrival" control — see
+// wirePreviewNodeInteractions' "geolocationCheckIn" branch below) reported;
+// this function only ever does the distance math, never talks to
+// navigator.geolocation itself, same separation as every other pv_action_*
+// (mechanic check in engine.js, DOM/browser-API glue in the branch that
+// calls it).
+function pv_action_submitGeoCheckIn(session, nodeId, playerLat, playerLng) {
+  var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
+  var c = n.content;
+  var dist = geoDistanceMeters(playerLat, playerLng, Number(c.lat) || 0, Number(c.lng) || 0);
+  var radius = Number(c.radiusMeters) || 25;
+  var mechanicOk = dist <= radius;
+  var ok = nodeCompletionOk(n, session, mechanicOk);
+  session.state.feedback[nodeId] = ok ? "correct" : "incorrect";
+  session.state.geoLastDistance = session.state.geoLastDistance || {};
+  session.state.geoLastDistance[nodeId] = Math.round(dist);
+  if (ok) { completeNodeInternal(n, session.hunt, session.state); recompute(session); }
+  return ok;
+}
 function pv_action_submitAnagramAnswer(session, nodeId, text) {
   var n = session.hunt.nodes.find(function (x) { return x.id === nodeId; });
   var mechanicOk = checkTextAnswer(n.content, text);
@@ -2804,7 +2839,7 @@ function pv_action_revealHint(session, hintNodeId) {
    only ever queries inside its own root element, so several can be on
    screen at once without id clashes.
 --------------------------------------------------------------------- */
-var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "videoStory", "answerEntry", "ordering", "matching", "locationPlaceholder", "ending",
+var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "videoStory", "answerEntry", "ordering", "matching", "locationPlaceholder", "geolocationCheckIn", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
   "imageReveal", "videoReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey", "controlPanel"];
 
@@ -2820,7 +2855,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "videoStory", "answe
 // block at the end of renderPreviewNode's node-type if/else chain, and
 // buildTypeSpecificFields/wireNodeInspector in app.js for the matching
 // Studio inspector field.
-var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder",
+var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder", "geolocationCheckIn",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
   "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "videoReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "lockAndKey", "controlPanel"];
 
@@ -2835,7 +2870,7 @@ var DEFAULT_BUTTON_LABEL = {
   scene: "Continue →", imageReveal: "Continue →", videoReveal: "Continue →", locationPlaceholder: "Continue →", pdfReveal: "Continue →",
   answerEntry: "Submit", cipher: "Submit", mathLogic: "Submit", anagram: "Submit", crossReferenceLookup: "Submit",
   ordering: "Submit order", matching: "Submit matches",
-  multiPartAnswer: "Submit all parts", physicalLockCode: "Unlock", ropeTying: "Hoist"
+  multiPartAnswer: "Submit all parts", physicalLockCode: "Unlock", ropeTying: "Hoist", geolocationCheckIn: "📍 Check my location"
 };
 var BUTTON_LABEL_TYPES = DEFAULT_BUTTON_LABEL; // same key set — presence in this map is the "supports a custom label" flag
 function buttonLabelFor(n) {
@@ -3404,6 +3439,22 @@ function pvPrimaryButton(n, idAttr, baseStyle) {
   return '<button class="pv-choice-btn" id="' + idAttr + '" style="' + style + '">' + esc(buttonLabelFor(n)) + '</button>';
 }
 
+// The status line shown above a Geolocation Check-in's "Check my location"
+// button — see renderPreviewNode's "geolocationCheckIn" branch, above,
+// which is the only caller. lastDistance is session.state.geoLastDistance[nodeId]
+// (metres, rounded) from the most recent check, if any.
+function geoStatusMessage(status, lastDistance, radius) {
+  if (status === "unsupported") return "This browser/device doesn’t support geolocation, so this check-in can’t be verified here.";
+  if (status === "denied") return "Location permission was denied — allow location access and try again.";
+  if (status === "locating") return "Getting your current location…";
+  if (lastDistance != null) {
+    return lastDistance <= radius
+      ? "✓ You’re " + lastDistance + "m from the target — within range."
+      : "You’re about " + lastDistance + "m from the target — get within " + radius + "m and check in again.";
+  }
+  return "Not checked in yet.";
+}
+
 // Choice options and Story Block buttons are each their own independent
 // text field in the inspector (one per option/button), so each gets its
 // own font size too, read off the option/button object itself.
@@ -3616,6 +3667,30 @@ function renderPreviewNode(session, n, ctl) {
     html += '<div class="pv-scene-body">' + esc(c.placeholderNote) + '</div>' + pvPrimaryButton(n, "pvContinue", "max-width:200px");
     var fbLp = session.state.feedback[n.id];
     if (fbLp === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
+  } else if (n.type === "geolocationCheckIn") {
+    // Real geolocation check — see pv_action_submitGeoCheckIn (mechanic
+    // math) and wirePreviewNodeInteractions' "geolocationCheckIn" branch
+    // below (talks to navigator.geolocation, then calls that action). The
+    // status line below reflects ctl.geoStatus[n.id], a small state
+    // machine ("idle" | "locating" | "denied" | "unsupported" | "checked")
+    // set by that wiring — this render only ever reads it.
+    var geoStatus = (ctl.geoStatus && ctl.geoStatus[n.id]) || "idle";
+    var geoRadius = Number(c.radiusMeters) || 25;
+    html += '<div class="pv-scene-body">Head to the marked location, then check in — you’ll need to be within ' + geoRadius + 'm of the target point.</div>';
+    html += '<div class="pv-info-card" id="pvGeoStatus">' + geoStatusMessage(geoStatus, session.state.geoLastDistance && session.state.geoLastDistance[n.id], geoRadius) + '</div>';
+    html += geoStatus === "locating"
+      ? '<button type="button" class="pv-choice-btn" id="pvGeoCheck" style="max-width:220px" disabled>Locating…</button>'
+      : pvPrimaryButton(n, "pvGeoCheck", "max-width:220px");
+    var fbGeo = session.state.feedback[n.id];
+    if (fbGeo === "incorrect") html += '<div class="pv-feedback incorrect">Too far away — get closer and check in again.</div>';
+    // Real GPS rarely lines up with the target while testing from a desk,
+    // so offer a manual stand-in for "I've arrived" instead of forcing
+    // every playtest out into the field — gated behind ctl.previewOnly
+    // (see createPreviewController, below) so a future standalone player
+    // build can turn this off and require the real check.
+    if (ctl.previewOnly) {
+      html += '<button type="button" class="pv-choice-btn pv-back-btn" id="pvGeoSimulate" style="max-width:260px;margin-top:8px">🧪 Simulate arrival (preview only)</button>';
+    }
   } else if (n.type === "cipher") {
     html += '<div class="pv-mono-block">' + esc(c.ciphertext) + '</div>';
     html += '<div class="pv-info-card">Cipher: ' + esc(c.cipherType || "cipher") + (c.key ? " · Key: " + esc(c.key) : "") + '</div>';
@@ -6982,6 +7057,41 @@ function wirePreviewNodeInteractions(session, n, ctl) {
     ctl.render();
   };
 
+  // Geolocation Check-in — talks to the real browser Geolocation API, then
+  // hands the coordinates it got back to pv_action_submitGeoCheckIn (engine
+  // math only, see above) for the actual within-radius check. ctl.geoStatus
+  // just tracks which message renderPreviewNode's "geolocationCheckIn"
+  // branch should show while a request is in flight/denied/unsupported —
+  // it's re-read fresh on every ctl.render(), never assumed still current.
+  if (byId("pvGeoCheck")) {
+    byId("pvGeoCheck").onclick = function () {
+      if (!navigator.geolocation) {
+        ctl.geoStatus[n.id] = "unsupported";
+        ctl.render();
+        return;
+      }
+      ctl.geoStatus[n.id] = "locating";
+      ctl.render();
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        ctl.geoStatus[n.id] = "checked";
+        var ok = pv_action_submitGeoCheckIn(session, n.id, pos.coords.latitude, pos.coords.longitude);
+        if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+        ctl.render();
+      }, function () {
+        ctl.geoStatus[n.id] = "denied";
+        ctl.render();
+      }, { enableHighAccuracy: true, timeout: 15000 });
+    };
+  }
+  if (byId("pvGeoSimulate")) {
+    byId("pvGeoSimulate").onclick = function () {
+      var ok = pv_action_submitGeoCheckIn(session, n.id, Number(n.content.lat) || 0, Number(n.content.lng) || 0);
+      ctl.geoStatus[n.id] = "checked";
+      if (ok) { ctl.expandedNodeId = null; ctl.pinnedNodeId = null; }
+      ctl.render();
+    };
+  }
+
   // Simple text-answer puzzle variants (Cipher, Math/Logic, Anagram,
   // Physical Lock Code, Cross-Reference Lookup) — each a no-op unless its
   // own markup is what's currently on screen.
@@ -7137,6 +7247,8 @@ function createPreviewController(mainEl, sideEl) {
     pdfPageDraft: {}, pdfEnterAnim: {}, // pdfPageDraft: node id -> current page number; pdfEnterAnim: node id -> one-shot entrance-animation class for the page that just turned in (see wirePdfReveal/renderPdfRevealBlock)
     phoneNav: {}, // node id -> Cell Phone screen-stack/dial/focus state (see cpNav above and wireCellPhoneInteractions below) — volatile like every other *Draft map here, never persisted to session.state
     lockAndKeyDraft: {}, // node id -> live {index, busy} — which key on the ring is currently at the front, and whether a tap animation is mid-flight (see renderPreviewNode's "lockAndKey" branch / wireLockAndKeyInteractions)
+    geoStatus: {}, // node id -> "idle" | "locating" | "denied" | "unsupported" | "checked", set by wirePreviewNodeInteractions' "geolocationCheckIn" branch as it talks to navigator.geolocation (see renderPreviewNode's matching branch, which only ever reads this)
+    previewOnly: true, // both of Studio's controllers (Preview and the canvas's LiveMock — see app.js) are previews, never a deployed player; lets renderPreviewNode offer preview-only affordances like Geolocation Check-in's "simulate arrival" button
     pinnedFromLane: null, // {laneId, sceneId} when the currently-pinned node was opened by tapping it in a lane-list view (e.g. Inventory) rather than jumped to from the canvas — drives the "← Back to …" control in ctl.render()'s pinned branch, see showLaneList/showNode below
     pinnedNodeId: null, // set when an outside selection (e.g. the canvas) asks to force-show a node
     peekStack: [], // node ids the player has stepped back through via a Simple Text/Story Block Back button — see the peek branch in ctl.render() and wirePreviewNodeInteractions' pv-back-btn handling. Last entry is the node currently shown; its own forward button pops one level instead of re-completing it.
@@ -7368,6 +7480,8 @@ return {
   pv_action_submitCipherAnswer: pv_action_submitCipherAnswer,
   pv_action_submitMathAnswer: pv_action_submitMathAnswer,
   pv_action_submitAnagramAnswer: pv_action_submitAnagramAnswer,
+  pv_action_submitGeoCheckIn: pv_action_submitGeoCheckIn,
+  geoDistanceMeters: geoDistanceMeters,
   pv_action_submitSequence: pv_action_submitSequence,
   pv_action_submitSlidingTile: pv_action_submitSlidingTile,
   pv_action_submitMultiPartAnswer: pv_action_submitMultiPartAnswer,
