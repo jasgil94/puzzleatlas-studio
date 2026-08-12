@@ -673,7 +673,7 @@ function connectionKindLabel(laneId) {
 // a different lane is allowed (lane is a manual, per-node placement) but
 // is flagged as a soft validation warning — see studioIssues().
 var SUGGESTED_LANE = {
-  scene: "story", ending: "story", storyBlock: "story",
+  scene: "story", ending: "story", storyBlock: "story", hyperlinks: "story", freeDesign: "story",
   choice: "leads", answerEntry: "leads", ordering: "leads", matching: "leads", branch: "leads", convergence: "leads",
   locationPlaceholder: "map",
   awardItem: "inventory", score: "inventory", setVariable: "inventory",
@@ -2177,6 +2177,12 @@ function buildTypeSpecificFields(n) {
       html += playerTextField("Body text (player-visible)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
       html += '<p style="font-size:11px;color:var(--text-dim)">Completion buttons (added, ordered and connected) are set up below, in the Completion section.</p>';
       break;
+    case "hyperlinks":
+      html += buildHyperlinksFields(c);
+      break;
+    case "freeDesign":
+      html += buildFreeDesignFields(n);
+      break;
     case "choice":
       html += playerTextField("Prompt text (player-visible)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
       html += '<div class="field"><label>Options</label><div id="optList">' +
@@ -3549,6 +3555,301 @@ function wireImageRevealFields(c) {
       document.addEventListener("mouseup", up);
     };
   }
+}
+
+/* Hyperlinks — bespoke inspector: player-visible body text (same
+   component Scene/Story Block use) plus up to 10 hyperlink-button cards,
+   each with its own text/URL/color/style (solid/outline/pill — see
+   pvLinkStyleClass in engine.js). Follows the same add/remove list pattern
+   as Choice's options and Story Block's buttons (buildStoryBlockButtonsEditor
+   above), just with more fields per row than a single label input. */
+function buildHyperlinksFields(c) {
+  c.links = c.links || [];
+  var html = playerTextField("Body text (player-visible)", "fBody", "bodyFontSize", c.body, c.bodyFontSize);
+  html += '<div class="field"><label>Hyperlink buttons (up to 10, shown in a 2-column grid)</label>';
+  html += '<div id="linkList">' + c.links.map(function (l) {
+    return '<div class="link-edit-card" data-lid="' + l.id + '">' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+        '<input type="text" placeholder="Button text" value="' + esc(l.text || "") + '" data-lid="' + l.id + '" class="lnkTextInput" style="flex:1" />' +
+        '<button class="small-btn lnkRemoveBtn" data-lid="' + l.id + '">✕</button>' +
+      '</div>' +
+      '<input type="text" placeholder="https://…" value="' + esc(l.url || "") + '" data-lid="' + l.id + '" class="lnkUrlInput" />' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+        '<input type="color" value="' + esc(l.color || "#5b8def") + '" data-lid="' + l.id + '" class="lnkColorInput" title="Button colour" />' +
+        '<select data-lid="' + l.id + '" class="lnkStyleSelect" style="flex:1">' +
+          '<option value="solid"' + (l.style === "outline" || l.style === "pill" ? "" : " selected") + '>Solid</option>' +
+          '<option value="outline"' + (l.style === "outline" ? " selected" : "") + '>Outline</option>' +
+          '<option value="pill"' + (l.style === "pill" ? " selected" : "") + '>Pill</option>' +
+        '</select>' +
+      '</div>' +
+    '</div>';
+  }).join("") + '</div>';
+  html += c.links.length < 10
+    ? '<button class="small-btn" id="btnAddLink">+ Add link (' + c.links.length + '/10)</button>'
+    : '<p style="font-size:11px;color:var(--text-dim)">Maximum of 10 links reached.</p>';
+  html += '</div>';
+  return html;
+}
+
+function wireHyperlinksFields(c) {
+  var byId = function (id) { return document.getElementById(id); };
+  c.links = c.links || [];
+  function findLink(id) { return c.links.find(function (x) { return x.id === id; }); }
+
+  Array.prototype.forEach.call(document.querySelectorAll(".lnkTextInput"), function (inp) {
+    inp.oninput = function (e) { var l = findLink(inp.dataset.lid); if (l) l.text = e.target.value; };
+    inp.onblur = function () { afterEdit(); renderNodes(); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".lnkUrlInput"), function (inp) {
+    inp.oninput = function (e) { var l = findLink(inp.dataset.lid); if (l) l.url = e.target.value; };
+    inp.onblur = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".lnkColorInput"), function (inp) {
+    inp.oninput = function (e) { var l = findLink(inp.dataset.lid); if (l) l.color = e.target.value; };
+    inp.onchange = function () { afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".lnkStyleSelect"), function (sel) {
+    sel.onchange = function (e) { var l = findLink(sel.dataset.lid); if (l) l.style = e.target.value; afterEdit(false); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".lnkRemoveBtn"), function (btn) {
+    btn.onclick = function () { c.links = c.links.filter(function (x) { return x.id !== btn.dataset.lid; }); afterEdit(); renderInspector(); };
+  });
+  if (byId("btnAddLink")) byId("btnAddLink").onclick = function () {
+    if (c.links.length >= 10) return;
+    c.links.push({ id: uid("lnk"), text: "New link", url: "", color: "#5b8def", style: "solid" });
+    afterEdit(); renderInspector();
+  };
+}
+
+/* Free Design — bespoke inspector: an expandable pane (collapsed by
+   default, tracked per-node in fdPaneOpen since it's pure UI state, not
+   part of the saved hunt) containing a scaled-down drag-and-drop mockup of
+   the player canvas (buildFreeDesignFields/wireFreeDesignFields' "fd-canvas"
+   below) plus a property panel for whichever element is currently selected
+   (fdSelectedEl, same "transient UI state lives outside content" pattern as
+   Gear & Pulley's ui.selectedId — see wireGearPulleyDesigner). Elements are
+   added via the toolbar (+Text/+Image/+Link), dragged directly on the
+   mockup with pointer events to set their x/y (stored as % of the canvas),
+   and resized/restyled via the property panel underneath. */
+var fdPaneOpen = {};
+var fdSelectedEl = {};
+
+function fdCanvasScale(c) {
+  var w = c.canvasWidth || 320;
+  return { w: w, h: c.canvasHeight || 480 };
+}
+
+function buildFreeDesignFields(n) {
+  var c = n.content;
+  c.elements = c.elements || [];
+  var open = !!fdPaneOpen[n.id];
+  var html = '<div class="field">';
+  html += '<button type="button" class="fd-toggle" id="btnFdToggle">' + (open ? "▾" : "▸") + ' Design canvas (' + c.elements.length + ' element' + (c.elements.length === 1 ? "" : "s") + ')</button>';
+  if (open) {
+    html += '<div class="fd-pane">';
+    html += fieldWrap("Canvas size (px, sets the aspect ratio)", '<div style="display:flex;gap:8px;align-items:center">' +
+      '<input type="number" id="fFdWidth" value="' + (c.canvasWidth || 320) + '" min="100" max="1200" style="width:80px" /> ×' +
+      '<input type="number" id="fFdHeight" value="' + (c.canvasHeight || 480) + '" min="100" max="2000" style="width:80px" /></div>');
+    html += fieldWrap("Background colour", '<input type="color" id="fFdBg" value="' + esc(c.backgroundColor || "#141821") + '" />' +
+      ' <button class="small-btn" id="btnFdBgClear" style="margin-left:6px">Clear</button>');
+
+    html += '<div class="fd-toolbar">' +
+      '<button class="small-btn" id="btnFdAddText">+ Text box</button>' +
+      '<button class="small-btn" id="btnFdAddImage">+ Image</button>' +
+      '<button class="small-btn" id="btnFdAddLink">+ Hyperlink button</button>' +
+      '</div>';
+
+    var dims = fdCanvasScale(c);
+    html += '<div class="fd-canvas-wrap"><div class="fd-canvas" id="fdCanvas" style="aspect-ratio:' + dims.w + '/' + dims.h + ';background:' + esc(c.backgroundColor || "#141821") + '">';
+    c.elements.forEach(function (el) {
+      var sel = fdSelectedEl[n.id] === el.id;
+      var pos = 'left:' + (el.x || 0) + '%;top:' + (el.y || 0) + '%;width:' + (el.width || 30) + '%;height:' + (el.height || 12) + '%;';
+      var inner = el.type === "image"
+        ? (el.imageAsset ? '' : '🖼')
+        : esc((el.text || (el.type === "link" ? "Link" : "Text")).slice(0, 24));
+      var bg = el.type === "image" && el.imageAsset ? 'background-image:url(&quot;' + esc(el.imageAsset) + '&quot;);' : '';
+      html += '<div class="fd-el' + (el.type === "image" ? " fd-el-image" : "") + (sel ? " selected" : "") + '" data-elid="' + el.id + '" style="' + pos + bg + '">' + inner + '</div>';
+    });
+    html += '</div></div>';
+
+    var selId = fdSelectedEl[n.id];
+    var selEl = selId ? c.elements.find(function (x) { return x.id === selId; }) : null;
+    html += '<div class="fd-props">';
+    if (!c.elements.length) {
+      html += '<p style="font-size:11px;color:var(--text-dim)">Add an element above, then drag it into place on the canvas.</p>';
+    } else if (!selEl) {
+      html += '<p style="font-size:11px;color:var(--text-dim)">Click an element on the canvas to edit and position it.</p>';
+    } else {
+      html += '<div class="field"><label>Selected: ' + (selEl.type === "text" ? "Text box" : selEl.type === "image" ? "Image" : "Hyperlink button") + '</label>' +
+        '<button class="small-btn" id="btnFdRemoveEl" style="color:var(--danger)">✕ Remove element</button></div>';
+      html += fieldWrap("Position / size (%)", '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">' +
+        '<input type="number" id="fFdElX" value="' + Math.round(selEl.x || 0) + '" title="X" />' +
+        '<input type="number" id="fFdElY" value="' + Math.round(selEl.y || 0) + '" title="Y" />' +
+        '<input type="number" id="fFdElW" value="' + Math.round(selEl.width || 30) + '" title="Width" />' +
+        '<input type="number" id="fFdElH" value="' + Math.round(selEl.height || 12) + '" title="Height" /></div>');
+      if (selEl.type === "text") {
+        html += fieldWrap("Text", '<textarea id="fFdElText" rows="2">' + esc(selEl.text || "") + '</textarea>');
+        html += fieldWrap("Colour / size / weight / align", '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+          '<input type="color" id="fFdElColor" value="' + esc(selEl.color || "#ffffff") + '" />' +
+          '<input type="number" id="fFdElFontSize" value="' + (selEl.fontSize || 15) + '" min="8" max="60" style="width:60px" title="Font size (px)" />' +
+          '<select id="fFdElWeight"><option value="normal"' + (selEl.fontWeight !== "bold" ? " selected" : "") + '>Normal</option><option value="bold"' + (selEl.fontWeight === "bold" ? " selected" : "") + '>Bold</option></select>' +
+          '<select id="fFdElAlign"><option value="left"' + ((!selEl.align || selEl.align === "left") ? " selected" : "") + '>Left</option><option value="center"' + (selEl.align === "center" ? " selected" : "") + '>Center</option><option value="right"' + (selEl.align === "right" ? " selected" : "") + '>Right</option></select>' +
+          '</div>');
+      } else if (selEl.type === "image") {
+        html += '<div class="field"><label>Image</label>' +
+          '<input type="file" id="fFdElImage" accept="image/*" style="display:none" />' +
+          (selEl.imageAsset ? '<img src="' + esc(selEl.imageAsset) + '" style="max-width:100px;max-height:100px;display:block;border-radius:6px;margin-bottom:6px" />' : '') +
+          '<button class="small-btn" id="btnFdElImageUpload">⬆ Upload</button>' +
+          (selEl.imageAsset ? ' <button class="small-btn" id="btnFdElImageClear" style="color:var(--danger)">✕ Clear</button>' : '') +
+          '</div>';
+      } else if (selEl.type === "link") {
+        html += fieldWrap("Button text", '<input type="text" id="fFdElText" value="' + esc(selEl.text || "") + '" />');
+        html += fieldWrap("Destination URL", '<input type="text" id="fFdElUrl" value="' + esc(selEl.url || "") + '" placeholder="https://…" />');
+        html += fieldWrap("Colour / style", '<div style="display:flex;gap:8px;align-items:center">' +
+          '<input type="color" id="fFdElColor" value="' + esc(selEl.color || "#5b8def") + '" />' +
+          '<select id="fFdElStyle" style="flex:1">' +
+            '<option value="solid"' + (selEl.style === "outline" || selEl.style === "pill" ? "" : " selected") + '>Solid</option>' +
+            '<option value="outline"' + (selEl.style === "outline" ? " selected" : "") + '>Outline</option>' +
+            '<option value="pill"' + (selEl.style === "pill" ? " selected" : "") + '>Pill</option>' +
+          '</select></div>');
+      }
+    }
+    html += '</div>'; // .fd-props
+    html += '</div>'; // .fd-pane
+  }
+  html += '</div>'; // .field
+  return html;
+}
+
+function wireFreeDesignFields(n) {
+  var byId = function (id) { return document.getElementById(id); };
+  var c = n.content;
+  c.elements = c.elements || [];
+
+  if (byId("btnFdToggle")) byId("btnFdToggle").onclick = function () {
+    fdPaneOpen[n.id] = !fdPaneOpen[n.id];
+    renderInspector();
+  };
+  if (!fdPaneOpen[n.id]) return;
+
+  function addElement(type) {
+    var el = { id: uid("fde"), type: type, x: 10, y: 10, width: type === "text" ? 60 : 30, height: type === "text" ? 15 : 15 };
+    if (type === "text") { el.text = "New text"; el.color = "#ffffff"; el.fontSize = 15; el.fontWeight = "normal"; el.align = "left"; }
+    else if (type === "link") { el.text = "New link"; el.url = ""; el.color = "#5b8def"; el.style = "solid"; }
+    else if (type === "image") { el.imageAsset = ""; }
+    c.elements.push(el);
+    fdSelectedEl[n.id] = el.id;
+    afterEdit(); renderInspector();
+  }
+  if (byId("btnFdAddText")) byId("btnFdAddText").onclick = function () { addElement("text"); };
+  if (byId("btnFdAddImage")) byId("btnFdAddImage").onclick = function () { addElement("image"); };
+  if (byId("btnFdAddLink")) byId("btnFdAddLink").onclick = function () { addElement("link"); };
+
+  if (byId("fFdWidth")) byId("fFdWidth").onchange = function (e) { c.canvasWidth = Math.max(100, +e.target.value || 320); afterEdit(); renderInspector(); };
+  if (byId("fFdHeight")) byId("fFdHeight").onchange = function (e) { c.canvasHeight = Math.max(100, +e.target.value || 480); afterEdit(); renderInspector(); };
+  if (byId("fFdBg")) byId("fFdBg").oninput = function (e) { c.backgroundColor = e.target.value; };
+  if (byId("fFdBg")) byId("fFdBg").onchange = function () { afterEdit(false); renderInspector(); };
+  if (byId("btnFdBgClear")) byId("btnFdBgClear").onclick = function () { c.backgroundColor = ""; afterEdit(); renderInspector(); };
+
+  // Selecting / dragging elements directly on the mockup canvas. Drag
+  // updates x/y live via direct style writes (cheap, no rerender) and
+  // commits to content + history once on pointerup — same "update DOM
+  // during drag, afterEdit(false) once at the end" pattern as the Gear &
+  // Pulley board designer (wireGearPulleyDesigner in app.js).
+  var canvas = byId("fdCanvas");
+  if (canvas) {
+    var dragId = null, dragMoved = false, offX = 0, offY = 0;
+    canvas.onpointerdown = function (evt) {
+      var target = evt.target.closest && evt.target.closest(".fd-el");
+      if (!target) { fdSelectedEl[n.id] = null; renderInspector(); return; }
+      var elid = target.dataset.elid;
+      if (fdSelectedEl[n.id] !== elid) { fdSelectedEl[n.id] = elid; renderInspector(); return; }
+      dragId = elid; dragMoved = false;
+      var rect = canvas.getBoundingClientRect();
+      var el = c.elements.find(function (x) { return x.id === elid; });
+      var elLeftPx = (el.x || 0) / 100 * rect.width, elTopPx = (el.y || 0) / 100 * rect.height;
+      offX = (evt.clientX - rect.left) - elLeftPx;
+      offY = (evt.clientY - rect.top) - elTopPx;
+      try { canvas.setPointerCapture(evt.pointerId); } catch (e) {}
+    };
+    canvas.onpointermove = function (evt) {
+      if (!dragId) return;
+      dragMoved = true;
+      var rect = canvas.getBoundingClientRect();
+      var el = c.elements.find(function (x) { return x.id === dragId; });
+      if (!el) return;
+      var xPx = evt.clientX - rect.left - offX, yPx = evt.clientY - rect.top - offY;
+      el.x = Math.max(0, Math.min(100 - (el.width || 30), xPx / rect.width * 100));
+      el.y = Math.max(0, Math.min(100 - (el.height || 12), yPx / rect.height * 100));
+      var domEl = canvas.querySelector('.fd-el[data-elid="' + dragId + '"]');
+      if (domEl) { domEl.style.left = el.x + "%"; domEl.style.top = el.y + "%"; }
+    };
+    function endDrag(evt) {
+      if (!dragId) return;
+      try { canvas.releasePointerCapture(evt.pointerId); } catch (e) {}
+      var moved = dragMoved;
+      dragId = null; dragMoved = false;
+      if (moved) afterEdit(false);
+    }
+    canvas.onpointerup = endDrag;
+    canvas.onpointercancel = endDrag;
+  }
+
+  var selId = fdSelectedEl[n.id];
+  var selEl = selId ? c.elements.find(function (x) { return x.id === selId; }) : null;
+  if (!selEl) return;
+
+  if (byId("btnFdRemoveEl")) byId("btnFdRemoveEl").onclick = function () {
+    c.elements = c.elements.filter(function (x) { return x.id !== selEl.id; });
+    fdSelectedEl[n.id] = null;
+    afterEdit(); renderInspector();
+  };
+
+  function bindNum(id, prop, min, max) {
+    var el = byId(id); if (!el) return;
+    el.onchange = function (e) {
+      var v = +e.target.value;
+      if (isNaN(v)) return;
+      if (min != null) v = Math.max(min, v);
+      if (max != null) v = Math.min(max, v);
+      selEl[prop] = v;
+      afterEdit(); renderInspector();
+    };
+  }
+  bindNum("fFdElX", "x", 0, 100);
+  bindNum("fFdElY", "y", 0, 100);
+  bindNum("fFdElW", "width", 2, 100);
+  bindNum("fFdElH", "height", 2, 100);
+
+  if (byId("fFdElText")) {
+    byId("fFdElText").oninput = function (e) { selEl.text = e.target.value; };
+    byId("fFdElText").onblur = function () { afterEdit(); renderInspector(); };
+  }
+  if (byId("fFdElUrl")) {
+    byId("fFdElUrl").oninput = function (e) { selEl.url = e.target.value; };
+    byId("fFdElUrl").onblur = function () { afterEdit(false); };
+  }
+  if (byId("fFdElColor")) {
+    byId("fFdElColor").oninput = function (e) { selEl.color = e.target.value; };
+    byId("fFdElColor").onchange = function () { afterEdit(false); };
+  }
+  if (byId("fFdElFontSize")) byId("fFdElFontSize").onchange = function (e) { selEl.fontSize = +e.target.value || 15; afterEdit(false); };
+  if (byId("fFdElWeight")) byId("fFdElWeight").onchange = function (e) { selEl.fontWeight = e.target.value; afterEdit(false); renderInspector(); };
+  if (byId("fFdElAlign")) byId("fFdElAlign").onchange = function (e) { selEl.align = e.target.value; afterEdit(false); renderInspector(); };
+  if (byId("fFdElStyle")) byId("fFdElStyle").onchange = function (e) { selEl.style = e.target.value; afterEdit(false); renderInspector(); };
+
+  if (byId("btnFdElImageUpload")) byId("btnFdElImageUpload").onclick = function () { byId("fFdElImage").click(); };
+  if (byId("fFdElImage")) byId("fFdElImage").onchange = function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    readImageFileCompressed(file, function (dataUrl) {
+      if (!dataUrl) { toast("Couldn't read that image file."); return; }
+      selEl.imageAsset = dataUrl;
+      afterEdit(); renderInspector();
+      toast("Image attached.");
+    });
+  };
+  if (byId("btnFdElImageClear")) byId("btnFdElImageClear").onclick = function () { selEl.imageAsset = ""; afterEdit(); renderInspector(); };
 }
 
 /* Clickable Image (Hotspots) — bespoke inspector: an optional body text
@@ -5365,6 +5666,13 @@ function wireNodeInspector(n) {
       break;
     case "storyBlock":
       bindText("fBody", "body");
+      break;
+    case "hyperlinks":
+      bindText("fBody", "body");
+      wireHyperlinksFields(c);
+      break;
+    case "freeDesign":
+      wireFreeDesignFields(n);
       break;
     case "choice":
       bindText("fBody", "body");

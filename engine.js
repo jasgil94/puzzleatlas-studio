@@ -107,6 +107,39 @@ var NODE_TYPES = {
     },
     summary: function (c) { return c.body ? c.body.slice(0, 60) : ""; }
   },
+  hyperlinks: {
+    family: "narrative", label: "Hyperlinks", icon: "🌐",
+    defaultTitle: "New Hyperlinks",
+    // body/bodyFontSize behave like Simple Text's content text. links: an
+    // ordered list of up to 10 hyperlink buttons, laid out in a 2-column x
+    // 5-row grid (see .pv-hyperlink-grid in styles.css) — each is a
+    // {id, text, url, color, style}, style being "solid"/"outline"/"pill"
+    // (see pvLinkStyleClass/renderHyperlinkGrid below). Links open in a new
+    // tab and don't advance the node themselves — the player still uses the
+    // node's own primary Continue button (pvPrimaryButton) to move on, same
+    // split as Story Block's connection buttons vs. its back button.
+    defaultContent: function () {
+      return { body: "Here are some links to explore.", links: [], showBackButton: false };
+    },
+    summary: function (c) { return (c.links || []).length + " link" + ((c.links || []).length === 1 ? "" : "s"); }
+  },
+  freeDesign: {
+    family: "narrative", label: "Free Design", icon: "🎨",
+    defaultTitle: "New Free Design",
+    // A freeform canvas of absolutely-positioned elements (text/image/link)
+    // built in the Studio inspector's expandable design pane (see
+    // buildFreeDesignFields/wireFreeDesignFields in app.js) and rendered at
+    // the same canvasWidth:canvasHeight aspect ratio at player-time (see the
+    // "freeDesign" branch in renderPreviewNode). Each element carries its
+    // own x/y/width/height as percentages of the canvas (so it reflows
+    // sanely across player screen sizes) plus type-specific style fields —
+    // text: text/fontSize/color/align/fontWeight; image: imageAsset;
+    // link: text/url/color/style (same 3 button styles as Hyperlinks).
+    defaultContent: function () {
+      return { canvasWidth: 320, canvasHeight: 480, backgroundColor: "", elements: [], showBackButton: false };
+    },
+    summary: function (c) { return (c.elements || []).length + " element" + ((c.elements || []).length === 1 ? "" : "s"); }
+  },
   videoStory: {
     family: "narrative", label: "Video Story", icon: "🎞️",
     defaultTitle: "New Video Story",
@@ -2839,7 +2872,7 @@ function pv_action_revealHint(session, hintNodeId) {
    only ever queries inside its own root element, so several can be on
    screen at once without id clashes.
 --------------------------------------------------------------------- */
-var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "videoStory", "answerEntry", "ordering", "matching", "locationPlaceholder", "geolocationCheckIn", "ending",
+var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "videoStory", "hyperlinks", "freeDesign", "answerEntry", "ordering", "matching", "locationPlaceholder", "geolocationCheckIn", "ending",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer", "physicalLockCode", "cryptexLock", "crossReferenceLookup",
   "imageReveal", "videoReveal", "fusePanel", "clickableImage", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "cellPhone", "lockAndKey", "controlPanel"];
 
@@ -2855,7 +2888,7 @@ var PLAYER_SCREEN_TYPES = ["scene", "choice", "storyBlock", "videoStory", "answe
 // block at the end of renderPreviewNode's node-type if/else chain, and
 // buildTypeSpecificFields/wireNodeInspector in app.js for the matching
 // Studio inspector field.
-var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locationPlaceholder", "geolocationCheckIn",
+var BACK_BUTTON_TYPES = ["choice", "hyperlinks", "freeDesign", "answerEntry", "ordering", "matching", "locationPlaceholder", "geolocationCheckIn",
   "cipher", "mathLogic", "anagram", "sequencePattern", "slidingTile", "multiPartAnswer",
   "physicalLockCode", "cryptexLock", "crossReferenceLookup", "imageReveal", "videoReveal", "fusePanel", "pdfReveal", "ropeTying", "lumenPuzzle", "gearPulley", "weightScale", "categoryGrid", "constraintSatisfaction", "lockAndKey", "controlPanel"];
 
@@ -2868,6 +2901,7 @@ var BACK_BUTTON_TYPES = ["choice", "answerEntry", "ordering", "matching", "locat
 // BUTTON_LABEL_TYPES export).
 var DEFAULT_BUTTON_LABEL = {
   scene: "Continue →", imageReveal: "Continue →", videoReveal: "Continue →", locationPlaceholder: "Continue →", pdfReveal: "Continue →",
+  hyperlinks: "Continue →", freeDesign: "Continue →",
   answerEntry: "Submit", cipher: "Submit", mathLogic: "Submit", anagram: "Submit", crossReferenceLookup: "Submit",
   ordering: "Submit order", matching: "Submit matches",
   multiPartAnswer: "Submit all parts", physicalLockCode: "Unlock", ropeTying: "Hoist", geolocationCheckIn: "📍 Check my location"
@@ -3464,6 +3498,66 @@ function pvItemButton(cls, dataAttr, label, fontSize, baseStyle) {
   return '<button class="' + cls + '" ' + dataAttr + ' style="' + style + '">' + esc(label) + '</button>';
 }
 
+// Maps a Hyperlinks/Free Design link's "style" field to its CSS variant
+// class — "solid" (default/unset) is the plain filled .pv-choice-btn look,
+// "outline" is a bordered transparent button, "pill" is a fully-rounded
+// filled button. All three read their fill/border/text color from the
+// --pv-link-color custom property (see renderHyperlinkGrid/
+// renderFreeDesignCanvas), which falls back to the style pack's own accent
+// color when a link doesn't set one — see .pv-link-btn in styles.css.
+function pvLinkStyleClass(style) {
+  if (style === "outline") return "pv-link-outline";
+  if (style === "pill") return "pv-link-pill";
+  return "pv-link-solid";
+}
+
+// Renders a Hyperlinks node's link list as a real <a target="_blank">
+// grid — up to 10 links, 2 columns x 5 rows (see .pv-hyperlink-grid in
+// styles.css) — rather than JS-wired buttons, since "open this URL in a
+// new tab" is exactly what a plain anchor tag already does, no click
+// handler/wiring needed in wirePreviewNodeInteractions.
+function renderHyperlinkGrid(links) {
+  if (!links || !links.length) return "";
+  var html = '<div class="pv-hyperlink-grid">';
+  links.slice(0, 10).forEach(function (l) {
+    var style = l.color ? ' style="--pv-link-color:' + esc(l.color) + '"' : "";
+    html += '<a class="pv-link-btn ' + pvLinkStyleClass(l.style) + '" href="' + esc(l.url || "#") +
+      '" target="_blank" rel="noopener noreferrer"' + style + '>' + esc(l.text || "Link") + '</a>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// Renders a Free Design node's freeform element list inside a fixed
+// aspect-ratio canvas (content.canvasWidth:canvasHeight) with each element
+// absolutely positioned by its own x/y/width/height percentages — see
+// .pv-freedesign-canvas/.pv-fd-el in styles.css. Text/image/link are the
+// three element types the Studio inspector's design pane can add
+// (buildFreeDesignFields in app.js); unknown types are skipped rather than
+// throwing, in case content was hand-edited via the generic JSON fallback.
+function renderFreeDesignCanvas(c) {
+  var w = c.canvasWidth || 320, h = c.canvasHeight || 480;
+  var wrapStyle = 'aspect-ratio:' + w + '/' + h + (c.backgroundColor ? ';background:' + esc(c.backgroundColor) : "");
+  var html = '<div class="pv-freedesign-canvas" style="' + wrapStyle + '">';
+  (c.elements || []).forEach(function (el) {
+    var pos = 'left:' + (el.x || 0) + '%;top:' + (el.y || 0) + '%;width:' + (el.width || 30) + '%;height:' + (el.height || 12) + '%;';
+    if (el.type === "text") {
+      var tStyle = pos + 'color:' + (el.color || "inherit") + ';font-size:' + (el.fontSize || 15) + 'px;text-align:' +
+        (el.align || "left") + ';font-weight:' + (el.fontWeight || "normal") + ';';
+      html += '<div class="pv-fd-el pv-fd-text" style="' + tStyle + '">' + esc(el.text || "") + '</div>';
+    } else if (el.type === "image") {
+      var iStyle = pos + (el.imageAsset ? 'background-image:url(&quot;' + esc(el.imageAsset) + '&quot;)' : "");
+      html += '<div class="pv-fd-el pv-fd-image" style="' + iStyle + '"></div>';
+    } else if (el.type === "link") {
+      var lStyle = pos + (el.color ? '--pv-link-color:' + esc(el.color) + ';' : "");
+      html += '<a class="pv-fd-el pv-link-btn ' + pvLinkStyleClass(el.style) + '" style="' + lStyle + '" href="' +
+        esc(el.url || "#") + '" target="_blank" rel="noopener noreferrer">' + esc(el.text || "Link") + '</a>';
+    }
+  });
+  html += '</div>';
+  return html;
+}
+
 /* ---------------------------------------------------------------------
    Cell Phone — player runtime helpers. A self-contained prop (see the
    cellPhone entry in NODE_TYPES above): its own internal screen-stack
@@ -3605,6 +3699,13 @@ function renderPreviewNode(session, n, ctl) {
     c.options.forEach(function (o) { html += pvItemButton("pv-option-btn", 'data-opt="' + o.id + '"', o.label, o.fontSize); });
     var fbCh = session.state.feedback[n.id];
     if (fbCh === "incorrect") html += '<div class="pv-feedback incorrect">Not yet — the requirement for this to continue hasn’t been met.</div>';
+  } else if (n.type === "hyperlinks") {
+    html += '<div class="pv-scene-body"' + pvFontStyle(c.bodyFontSize) + '>' + esc(c.body) + '</div>';
+    html += renderHyperlinkGrid(c.links);
+    html += pvPrimaryButton(n, "pvContinue", "max-width:200px;margin-top:12px");
+  } else if (n.type === "freeDesign") {
+    html += renderFreeDesignCanvas(c);
+    html += pvPrimaryButton(n, "pvContinue", "max-width:200px;margin-top:12px");
   } else if (n.type === "answerEntry") {
     if (c.imageAsset) html += renderImageRevealBlock(c);
     html += '<div class="pv-scene-body"' + pvFontStyle(c.promptFontSize) + '>' + esc(c.prompt) + '</div>';
