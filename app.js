@@ -4575,14 +4575,14 @@ function wireCtpFormulaEditor(comp, eid, outputField, c) {
       var v = f.vars[+sel.dataset.idx];
       if (v) v.componentId = sel.value;
       afterEdit(false);
-      renderProps();
+      renderInspector();
     };
   });
   Array.prototype.forEach.call(document.querySelectorAll("." + eid("VarRemoveBtn")), function (btn) {
     btn.onclick = function () {
       f.vars.splice(+btn.dataset.idx, 1);
       afterEdit(false);
-      renderProps();
+      renderInspector();
     };
   });
   var addBtn = document.getElementById(eid("VarAddBtn"));
@@ -4595,7 +4595,7 @@ function wireCtpFormulaEditor(comp, eid, outputField, c) {
     var firstUnused = interactiveComps.filter(function (ic) { return assignedIds.indexOf(ic.id) === -1; })[0] || interactiveComps[0];
     f.vars.push({ letter: letter, componentId: firstUnused ? firstUnused.id : "" });
     afterEdit(false);
-    renderProps();
+    renderInspector();
   };
 
   var exprEl = document.getElementById(eid("FormulaExpr"));
